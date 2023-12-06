@@ -4,7 +4,7 @@ layout: plugin
 id: SpoolManager
 title: OctoPrint-SpoolManager
 description: Plugin to manage Spools
-author: OllisGit
+author: dojohnso
 license: AGPLv3
 
 # TODO
@@ -12,7 +12,7 @@ date: today's date in format YYYY-MM-DD, e.g. 2015-04-21
 
 homepage: https://github.com/you/OctoPrint-SpoolManager
 source: https://github.com/you/OctoPrint-SpoolManager
-archive: https://github.com/you/OctoPrint-SpoolManager/archive/master.zip
+archive: https://github.com/you/OctoPrint-SpoolManager/archive/main.zip
 
 # TODO
 # Set this to true if your plugin uses the dependency_links setup parameter to include

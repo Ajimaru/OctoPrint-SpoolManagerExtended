@@ -5,7 +5,7 @@
 script:
 # debug  - echo 'Hello World'
   - export PLUGIN_VERSION=$(cat setup.py | grep 'plugin_version = "*"' | cut -d '"' -f2)
-  - zip -r master.zip * -i '\octoprint_*' 'translations' 'README.md' 'requirements.txt' 'setup.py'
+  - zip -r main.zip * -i '\octoprint_*' 'translations' 'README.md' 'requirements.txt' 'setup.py'
 # debug  - ls -al
 
 ## see "Fix travis automatic build and deploy"
@@ -23,7 +23,7 @@ deploy:
   draft: true
   provider: releases
   api_key: "${GITHUB_TOKEN}"
-  file: "master.zip"
+  file: "main.zip"
   overwrite: true
   skip_cleanup: true
   target_commitish: $TRAVIS_COMMIT
