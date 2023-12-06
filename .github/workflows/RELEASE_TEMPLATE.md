@@ -7,7 +7,7 @@
 - #xxx
 
 ## Counter
-![downloaded](https://img.shields.io/github/downloads/dojohnso/OctoPrint-SpooManager/xxx/total)
+![downloaded](https://img.shields.io/github/downloads/dojohnso/OctoPrint-SpoolManager/xxx/total)
 
 ### NOTE: this plugin has been abandoned by the original creator and adopted here by a new maintainer
 
