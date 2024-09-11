@@ -117,7 +117,7 @@ class DatabaseManager(object):
 				schemeVersionFromDatabase = int(result[0])
 				self._logger.info("Current databasescheme: " + str(schemeVersionFromDatabase))
 			else:
-				self._logger.warn("Strange, table is found (maybe), but there is no result of the schem version. Try to recreate a new db-scheme")
+				self._logger.warning("Strange, table is found (maybe), but there is no result of the schem version. Try to recreate a new db-scheme")
 				self.backupDatabaseFile() # safty first
 				self._createDatabaseTables()
 				return
@@ -144,7 +144,7 @@ class DatabaseManager(object):
 			if (currentDatabaseSchemeVersion < CURRENT_DATABASE_SCHEME_VERSION):
 				# auto upgrade done only for local database
 				if (self._databaseSettings.useExternal == True):
-					self._logger.warn("Scheme upgrade is only done for local database")
+					self._logger.warning("Scheme upgrade is only done for local database")
 					return
 
 				# evautate upgrade steps (from 1-2 , 1...6)
@@ -161,7 +161,7 @@ class DatabaseManager(object):
 			else:
 				self._logger.info("...Database-scheme upgraded not needed.")
 		else:
-			self._logger.warn("...something was strange. Should not be shwon in log. Check full log")
+			self._logger.warning("...something was strange. Should not be shwon in log. Check full log")
 		pass
 
 	def _upgradeDatabase(self,currentDatabaseSchemeVersion, targetDatabaseSchemeVersion):
@@ -740,7 +740,7 @@ class DatabaseManager(object):
 				shutil.copy(self._databaseSettings.fileLocation, backupDatabaseFilePath)
 				self._logger.info("Backup of spoolmanager database created '" + backupDatabaseFilePath + "'")
 			else:
-				self._logger.warn("Backup of spoolmanager database ('" + backupDatabaseFilePath + "') is already present. No backup created.")
+				self._logger.warning("Backup of spoolmanager database ('" + backupDatabaseFilePath + "') is already present. No backup created.")
 			return backupDatabaseFilePath
 		else:
 			self._logger.info("No database backup needed, because there is no databasefile '"+str(self._databaseSettings.fileLocation)+"'")
