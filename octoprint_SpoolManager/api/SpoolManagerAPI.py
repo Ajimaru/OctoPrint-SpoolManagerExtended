@@ -818,7 +818,11 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             currentDate = now.strftime("%Y%m%d-%H%M")
             fileName = "SpoolManager-" + currentDate + ".csv"
 
-            return Response(CSVExportImporter.transform2CSV(allSpoolModels),
+            csv = []
+            for csvline in CSVExportImporter.transform2CSV(allSpoolModels):
+                csv.append(csvline)
+
+            return Response(csv,
                             mimetype='text/csv',
                             headers={'Content-Disposition': 'attachment; filename=' + fileName})
 
