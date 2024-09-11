@@ -142,7 +142,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 self._databaseManager.closeDatabase()
                 if (spoolModel == None):
                     self._logger.warning(
-                        "Last selected Spool for Tool %d from plugin-settings not found in database. Maybe deleted in the meantime." % i)
+                        "Last selected Spool for Tool %d from plugin-settings not found in database. Maybe deleted in the meantime." % toolIndex)
             spoolModelList.append(spoolModel)
             if (spoolModel != None):
                 eventPayload = {
