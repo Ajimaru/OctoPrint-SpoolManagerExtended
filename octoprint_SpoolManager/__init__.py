@@ -880,7 +880,7 @@ class SpoolmanagerPlugin(
     ##~~ Softwareupdate hook
     def get_update_information(self):
         # Define the configuration for your plugin to use with the Software Update
-        # Plugin here. See https://github.com/foosel/OctoPrint/wiki/Plugin:-Software-Update
+        # Plugin here. See https://docs.octoprint.org/en/master/bundledplugins/softwareupdate.html
         # for details.
         return dict(
             SpoolManager=dict(
@@ -889,7 +889,7 @@ class SpoolmanagerPlugin(
 
                 # version check: github repository
                 type="github_release",
-                user="dojohnso",
+                user="WildRikku",
                 repo="OctoPrint-SpoolManager",
                 current=self._plugin_version,
 
@@ -899,21 +899,21 @@ class SpoolmanagerPlugin(
                     branch="main",
                     comittish=["main"]
                 ),
-                prerelease_branches=[
-                    # dict(
+                #prerelease_branches=[
+#                    dict(
                     #   name="Release & Candidate",
                     #   branch="pre-release",
                     #   comittish=["pre-release", "main"],
                     # ),
-                    dict(
-                        name="Release & in development",
-                        branch="dev",
-                        comittish=["dev", "main"],
-                    )
-                ],
+#                    dict(
+#                        name="Release & in development",
+#                        branch="dev",
+#                        comittish=["dev", "main"],
+#                    )
+#                ],
 
                 # update method: pip
-                pip="https://github.com/dojohnso/OctoPrint-SpoolManager/releases/download/{target_version}/main.zip"
+                pip="https://github.com/WildRikku/OctoPrint-SpoolManager/releases/download/{target_version}/main.zip"
             )
         )
 
