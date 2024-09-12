@@ -1,19 +1,15 @@
 # OctoPrint-SpoolManager
 
-[![Version](https://img.shields.io/badge/dynamic/json.svg?color=brightgreen&label=version&url=https://api.github.com/repos/dojohnso/OctoPrint-SpoolManager/releases&query=$[0].name)]()
-[![Released](https://img.shields.io/badge/dynamic/json.svg?color=brightgreen&label=released&url=https://api.github.com/repos/dojohnso/OctoPrint-SpoolManager/releases&query=$[0].published_at)]()
-![GitHub Releases (by Release)](https://img.shields.io/github/downloads/dojohnso/OctoPrint-SpoolManager/latest/total.svg)
+[![Version](https://img.shields.io/badge/dynamic/json.svg?color=brightgreen&label=version&url=https://api.github.com/repos/WildRikku/OctoPrint-SpoolManager/releases&query=$[0].name)]()
+[![Released](https://img.shields.io/badge/dynamic/json.svg?color=brightgreen&label=released&url=https://api.github.com/repos/WildRikku/OctoPrint-SpoolManager/releases&query=$[0].published_at)]()
+![GitHub Releases (by Release)](https://img.shields.io/github/downloads/WildRikku/OctoPrint-SpoolManager/latest/total.svg)
 
 The OctoPrint-Plugin manages all spool informations and stores it in a database.
 
-#### *NOTE: this plugin has been abandoned by the original creator and adopted here by a new maintainer*
-
-**This plugin is under new management** and will focus on critical bug fixes to start. Please bear with me as I get acclimated to this new plugin. If you would like to support these new efforts, please consider buying me a coffee or two. Thank you!
-
-<a href="https://www.buymeacoffee.com/djohnson.tech" target="_blank"><img src="https://djohnson.tech/images/white-button.png" width=300 /></a>
-
 ## Tested with:
-- OctoPrint 1.7.2:  with Python 3.7.3
+- OctoPrint 1.10.2 with Python 3.12.4
+
+Note that this does not necessarily mean that this plugin will not work with older versions of OctoPrint or Python.
 
 ## Included features
 
