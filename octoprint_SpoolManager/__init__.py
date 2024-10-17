@@ -246,6 +246,10 @@ class SpoolmanagerPlugin(
                                 self.metaDataFilamentLengths += [0.0] * (toolIndex + 1 - len(self.metaDataFilamentLengths))
                                 self.metaDataFilamentLengths[toolIndex] = toolData["length"]
                                 filamentLengthPresentInMeta = True
+                        else:
+                            self._logger.warning("calculating filament aborted because filament was missing from analysis metadata")
+                    else:
+                        self._logger.warning("calculating filament aborted because analysis metadata was missing")
         return filamentLengthPresentInMeta
 
     def _evaluateRequiredWeight(self, selectedSpools, forToolIndex=None, warnUser=False):
