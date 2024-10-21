@@ -703,6 +703,7 @@ class SpoolmanagerPlugin(
 
         if (Events.FILE_SELECTED == event or
             Events.FILE_DESELECTED == event or
+            Events.METADATA_ANALYSIS_FINISHED == event or
             Events.UPDATED_FILES == event):
             self._on_file_selectionChanged(payload)
             return
