@@ -21,6 +21,29 @@
                     </div>
                 </div>
                 <hr/>
+                <h4>Display units</h4>
+                <div class="control-group">
+                    <label class="control-label">Filament length unit</label>
+                    <div class="controls">
+                        <select class="input-small" data-bind="value: pluginSettings.lengthUnit">
+                            <option value="mm">mm</option>
+                            <option value="cm">cm</option>
+                            <option value="m">m</option>
+                        </select>
+                        <span class="help-inline">Used for the length fields in the spool edit dialog.</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Weight unit</label>
+                    <div class="controls">
+                        <select class="input-small" data-bind="value: pluginSettings.weightUnit">
+                            <option value="g">g</option>
+                            <option value="kg">kg</option>
+                        </select>
+                        <span class="help-inline">Used for the weight fields in the spool edit dialog.</span>
+                    </div>
+                </div>
+                <hr/>
                 <h4>Notifications</h4>
                 <div class="control-group">
                     <div class="controls">
