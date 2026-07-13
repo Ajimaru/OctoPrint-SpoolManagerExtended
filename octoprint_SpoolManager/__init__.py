@@ -739,6 +739,10 @@ class SpoolmanagerPlugin(
         #   pass
 
 
+    # explicitly declare the API protection status, will become the default in a future OctoPrint version
+    def is_api_protected(self):
+        return True
+
     # to allow the frontend to trigger an update
     def on_api_get(self, request):
         if not Permissions.SETTINGS.can():
