@@ -44,6 +44,34 @@ $("#colorFilter").select2({
 
  // END: TESTZONE
 
+// Builds a CSS background value for a spool color field.
+// Supported values: single hex ("#ff0000"), multi-color ("#ff0000;#0000ff",
+// up to three colors, rendered as a diagonally split box) and the keyword
+// "rainbow" (rendered as a rainbow gradient). See upstream issue #19.
+// Attached to window because OctoPrint wraps packed plugin JS in a closure,
+// but the knockout bindings in the templates need global access.
+window.spmSpoolColorCss = function(color) {
+    var colorValue = ko.utils.unwrapObservable(color);
+    if (!colorValue) {
+        return "";
+    }
+    colorValue = "" + colorValue;
+    if (colorValue.toLowerCase() === "rainbow") {
+        return "linear-gradient(135deg, #ff2d2d 0%, #ff9a00 20%, #ffe600 40%, #16c172 60%, #2f7bff 80%, #a044ff 100%)";
+    }
+    var colors = colorValue.split(";");
+    if (colors.length === 1) {
+        return colorValue;
+    }
+    var stops = [];
+    var step = 100 / colors.length;
+    for (var i = 0; i < colors.length; i++) {
+        stops.push(colors[i] + " " + (i * step).toFixed(1) + "%");
+        stops.push(colors[i] + " " + ((i + 1) * step).toFixed(1) + "%");
+    }
+    return "linear-gradient(135deg, " + stops.join(", ") + ")";
+};
+
 $(function() {
 
     var PLUGIN_ID = "SpoolManager"; // from setup.py plugin_identifier
