@@ -44,7 +44,11 @@ class DatabaseManager(object):
         password = ""
 
         def __str__(self):
-            return str(self.__dict__)
+            # mask the password, because this string ends up in octoprint.log
+            maskedDict = dict(self.__dict__)
+            if (maskedDict.get("password")):
+                maskedDict["password"] = "*****"
+            return str(maskedDict)
 
     def __init__(self, parentLogger, sqlLoggingEnabled):
         self.sqlLoggingEnabled = sqlLoggingEnabled
