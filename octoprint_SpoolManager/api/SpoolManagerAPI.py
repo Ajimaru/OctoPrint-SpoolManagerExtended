@@ -613,10 +613,11 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         spoolModel = self._databaseManager.loadSpool(databaseId)
         if (spoolModel is not None):
             self._logger.info("Generate HTML iew for QR-Code")
+            qrCodeImageUrl = flask.url_for("plugin.SpoolManager.generateSpoolQRCode", databaseId=databaseId)
             htmlContent = \
                         "<h3>Database Id: " + str(spoolModel.databaseId) + "</h3>" \
                         "<h3>Spoolname: " + spoolModel.displayName + "</h3>" \
-                        "<img loading='lazy' src='/plugin/SpoolManager/generateQRCode/"+str(databaseId)+"' />"
+                        "<img loading='lazy' src='" + qrCodeImageUrl + "' />"
         else:
             htmlContent = "<h3>Spool with database Id not found</h3>"
 
