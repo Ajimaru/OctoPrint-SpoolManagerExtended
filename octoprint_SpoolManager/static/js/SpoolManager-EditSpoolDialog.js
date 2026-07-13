@@ -618,6 +618,56 @@ function SpoolManagerEditSpoolDialog(){
         var remainingLengthPercentageKo = self.spoolItemForEditing.remainingLengthPercentage;
         var drivenScopeKo = self.spoolItemForEditing.drivenScope;
 
+        // ----------------- start: display units
+        // the base observables always hold mm/g, these computeds only convert for display/input
+        var LENGTH_UNIT_FACTORS = { "mm": 1, "cm": 10, "m": 1000 };
+        var WEIGHT_UNIT_FACTORS = { "g": 1, "kg": 1000 };
+        var UNIT_DISPLAY_DECIMALS = { "mm": 1, "cm": 2, "m": 3, "g": 1, "kg": 3 };
+
+        var selectedLengthUnit = function () {
+            var unit = self.pluginSettings.lengthUnit ? self.pluginSettings.lengthUnit() : "mm";
+            return LENGTH_UNIT_FACTORS[unit] ? unit : "mm";
+        };
+        var selectedWeightUnit = function () {
+            var unit = self.pluginSettings.weightUnit ? self.pluginSettings.weightUnit() : "g";
+            return WEIGHT_UNIT_FACTORS[unit] ? unit : "g";
+        };
+        self.lengthUnitText = ko.pureComputed(selectedLengthUnit);
+        self.weightUnitText = ko.pureComputed(selectedWeightUnit);
+
+        var _makeUnitDisplayKo = function (baseKo, unitFunction, unitFactors) {
+            return ko.pureComputed({
+                read: function () {
+                    var unit = unitFunction();
+                    var value = parseFloat(baseKo());
+                    if (isNaN(value)) {
+                        return baseKo();
+                    }
+                    return parseFloat((value / unitFactors[unit]).toFixed(UNIT_DISPLAY_DECIMALS[unit]));
+                },
+                write: function (newValue) {
+                    var unit = unitFunction();
+                    var value = parseFloat(newValue);
+                    if (isNaN(value)) {
+                        baseKo(newValue);
+                        return;
+                    }
+                    baseKo(parseFloat((value * unitFactors[unit]).toFixed(1)));
+                }
+            });
+        };
+
+        self.totalWeightDisplay = _makeUnitDisplayKo(totalWeightKo, selectedWeightUnit, WEIGHT_UNIT_FACTORS);
+        self.usedWeightDisplay = _makeUnitDisplayKo(usedWeightKo, selectedWeightUnit, WEIGHT_UNIT_FACTORS);
+        self.remainingWeightDisplay = _makeUnitDisplayKo(remainingWeightKo, selectedWeightUnit, WEIGHT_UNIT_FACTORS);
+        self.totalLengthDisplay = _makeUnitDisplayKo(totalLengthKo, selectedLengthUnit, LENGTH_UNIT_FACTORS);
+        self.usedLengthDisplay = _makeUnitDisplayKo(usedLengthKo, selectedLengthUnit, LENGTH_UNIT_FACTORS);
+        self.remainingLengthDisplay = _makeUnitDisplayKo(remainingLengthKo, selectedLengthUnit, LENGTH_UNIT_FACTORS);
+        self.spoolWeightDisplay = _makeUnitDisplayKo(spoolWeightKo, selectedWeightUnit, WEIGHT_UNIT_FACTORS);
+        self.totalCombinedWeightDisplay = _makeUnitDisplayKo(totalCombinedWeightKo, selectedWeightUnit, WEIGHT_UNIT_FACTORS);
+        self.remainingCombinedWeightDisplay = _makeUnitDisplayKo(remainingCombinedWeightKo, selectedWeightUnit, WEIGHT_UNIT_FACTORS);
+        // ----------------- end: display units
+
         function addition(a, b) {
             return a + b;
         }

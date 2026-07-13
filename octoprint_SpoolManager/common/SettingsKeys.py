@@ -13,6 +13,10 @@ class SettingsKeys():
 
 	SETTINGS_KEY_SAFETY_LENGTH = "safetyLength" # in mm e.g. ptfe-tube
 
+	## Display units for the edit spool dialog (values are always stored in mm/g)
+	SETTINGS_KEY_LENGTH_UNIT = "lengthUnit" # mm, cm, m
+	SETTINGS_KEY_WEIGHT_UNIT = "weightUnit" # g, kg
+
 	## QR - Code
 	SETTINGS_KEY_QR_CODE_ENABLED = "qrCodeEnabled"
 	SETTINGS_KEY_QR_CODE_USE_URL_PREFIX = "qrCodeUseURLPrefix"
