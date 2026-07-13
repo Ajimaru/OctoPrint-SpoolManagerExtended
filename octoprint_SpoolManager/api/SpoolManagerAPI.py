@@ -655,6 +655,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
         qrCodeHTMLViewTemplate = ""\
                                 "<html>" \
+                                "<head><link rel='icon' href='data:,'></head>" \
                                 + htmlContent +\
                                 "</html>" \
                                 ""
