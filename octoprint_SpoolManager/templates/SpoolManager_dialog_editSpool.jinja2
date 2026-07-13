@@ -139,7 +139,25 @@
                         <div class="control-group" data-bind="css: {error: !spoolDialog.isColorNamePresent()}">
                             <label class="control-label">Color <sup>1</sup></label>
                             <div class="row controls">
-                                <input data-bind="textInput: spoolDialog.spoolItemForEditing.colorName"  type="text" class="input-small"  /><input id="filament-color-picker" type="text" name="border-color" class="pick-a-color form-control input-mini">
+                                <input data-bind="textInput: spoolDialog.spoolItemForEditing.colorName"  type="text" class="input-small"  /><span class="color-preview" style="margin-bottom: -5px; cursor: default;" data-bind="style: {'background': spmSpoolColorCss(spoolDialog.spoolItemForEditing.color)}"></span>
+                            </div>
+                            <div class="row controls" style="margin-top: 4px;" data-bind="visible: !spoolDialog.spoolItemForEditing.isRainbow()">
+                                <input id="filament-color-picker" type="text" name="border-color" class="pick-a-color form-control input-mini">
+                                <span data-bind="visible: spoolDialog.spoolItemForEditing.colorCount() >= 2">
+                                    <input id="filament-color-picker2" type="text" name="border-color" class="pick-a-color form-control input-mini">
+                                </span>
+                                <span data-bind="visible: spoolDialog.spoolItemForEditing.colorCount() >= 3">
+                                    <input id="filament-color-picker3" type="text" name="border-color" class="pick-a-color form-control input-mini">
+                                </span>
+                                <a href="#" class="btn btn-mini" title="Add a color (multi-color spool)"
+                                   data-bind="click: spoolDialog.addColorClicked, visible: spoolDialog.spoolItemForEditing.colorCount() < 3"><i class="fas fa-plus"></i></a>
+                                <a href="#" class="btn btn-mini" title="Remove last color"
+                                   data-bind="click: spoolDialog.removeColorClicked, visible: spoolDialog.spoolItemForEditing.colorCount() > 1"><i class="fas fa-minus"></i></a>
+                            </div>
+                            <div class="row controls">
+                                <label class="checkbox">
+                                    <input type="checkbox" data-bind="checked: spoolDialog.spoolItemForEditing.isRainbow"> Rainbow / multi-color gradient
+                                </label>
                             </div>
                         </div>
                         <div class="control-group">

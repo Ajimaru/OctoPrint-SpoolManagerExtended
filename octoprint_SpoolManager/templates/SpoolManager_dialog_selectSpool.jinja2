@@ -10,7 +10,7 @@
             <div>Tool <span data-bind="text: sidebarSelectSpoolModalToolIndex()"></span>:&nbsp;&nbsp;
                 <!-- ko if: sidebarSelectSpoolModalSpoolItem() -->
                     <span class="color-preview" style="margin-bottom: -5px;"
-                          data-bind="style: {'background-color': sidebarSelectSpoolModalSpoolItem().color},
+                          data-bind="style: {'background': spmSpoolColorCss(sidebarSelectSpoolModalSpoolItem().color)},
                                      attr: { title: sidebarSelectSpoolModalSpoolItem().colorName }"></span>
                     <span>
                         <!-- ko if: sidebarSelectSpoolModalSpoolItem().material -->

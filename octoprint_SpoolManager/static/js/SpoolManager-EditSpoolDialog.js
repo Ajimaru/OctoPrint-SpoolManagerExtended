@@ -144,9 +144,61 @@ function SpoolManagerEditSpoolDialog(){
         });
 
         if (editable == true){
+            // Multi-color support (issue #19): "color" holds the composed value
+            // ("#hex", "#hex;#hex[;#hex]" or "rainbow"), the pickers hold the parts.
+            var spoolItemInstance = this;
+            this.colorCount = ko.observable(1);
+            this.isRainbow = ko.observable(false);
             var colorViewModel = self.componentFactory.createColorPicker("filament-color-picker");
-            this.color = colorViewModel.selectedColor;
+            var colorViewModel2 = self.componentFactory.createColorPicker("filament-color-picker2");
+            var colorViewModel3 = self.componentFactory.createColorPicker("filament-color-picker3");
+            var pickerColors = [colorViewModel.selectedColor, colorViewModel2.selectedColor, colorViewModel3.selectedColor];
+            var applyingColor = false;
+            var composeColor = function(){
+                if (applyingColor == true){
+                    return;
+                }
+                if (spoolItemInstance.isRainbow() == true){
+                    spoolItemInstance.color("rainbow");
+                    return;
+                }
+                var colors = [];
+                for (var i = 0; i < spoolItemInstance.colorCount(); i++){
+                    colors.push(pickerColors[i]() || DEFAULT_COLOR);
+                }
+                spoolItemInstance.color(colors.join(";"));
+            };
+            pickerColors[0].subscribe(composeColor);
+            pickerColors[1].subscribe(composeColor);
+            pickerColors[2].subscribe(composeColor);
+            this.colorCount.subscribe(composeColor);
+            this.isRainbow.subscribe(composeColor);
+            // pushes a stored color value into the picker widgets/flags
+            this.applyColorToEditor = function(colorValue){
+                applyingColor = true;
+                try {
+                    if (("" + colorValue).toLowerCase() === "rainbow"){
+                        spoolItemInstance.isRainbow(true);
+                        spoolItemInstance.colorCount(1);
+                        pickerColors[0](DEFAULT_COLOR);
+                    } else {
+                        var colors = ("" + colorValue).split(";");
+                        spoolItemInstance.isRainbow(false);
+                        spoolItemInstance.colorCount(Math.min(colors.length, 3));
+                        for (var i = 0; i < 3; i++){
+                            if (i < colors.length && colors[i]){
+                                pickerColors[i](colors[i]);
+                            }
+                        }
+                    }
+                } finally {
+                    applyingColor = false;
+                }
+            };
             this.color(DEFAULT_COLOR);  // needed
+            pickerColors[0](DEFAULT_COLOR);
+            pickerColors[1]("#0000ff");
+            pickerColors[2]("#ffff00");
 
             var firstUseViewModel = self.componentFactory.createDateTimePicker("firstUse-date-picker");
             var lastUseViewModel = self.componentFactory.createDateTimePicker("lastUse-date-picker");
@@ -216,10 +268,19 @@ function SpoolManagerEditSpoolDialog(){
         this.diameter(updateData.diameter);
         this.diameterTolerance(updateData.diameterTolerance);
         // first update color code, and then update the color name
-        this.color(updateData.color == null ? DEFAULT_COLOR : updateData.color);
+        var rawColor = updateData.color == null ? DEFAULT_COLOR : updateData.color;
+        if (this.applyColorToEditor != null){
+            this.applyColorToEditor(rawColor);
+        }
+        this.color(rawColor);
         // if no custom color name present, use predefined name
         if (updateData.colorName == null || updateData.colorName.length == 0){
-            var preDefinedColorName = tinycolor(this.color()).toName();
+            var preDefinedColorName = false;
+            if (("" + rawColor).toLowerCase() === "rainbow"){
+                preDefinedColorName = "Rainbow";
+            } else {
+                preDefinedColorName = tinycolor(("" + rawColor).split(";")[0]).toName();
+            }
             if (preDefinedColorName != false){
                 this.colorName(preDefinedColorName);
             }
@@ -410,6 +471,20 @@ function SpoolManagerEditSpoolDialog(){
         return (!displayName || displayName.trim().length === 0) == false;
     }
 
+    self.addColorClicked = function(){
+        var count = self.spoolItemForEditing.colorCount();
+        if (count < 3){
+            self.spoolItemForEditing.colorCount(count + 1);
+        }
+    }
+
+    self.removeColorClicked = function(){
+        var count = self.spoolItemForEditing.colorCount();
+        if (count > 1){
+            self.spoolItemForEditing.colorCount(count - 1);
+        }
+    }
+
     self.isColorNamePresent = function(){
         var colorName = self.spoolItemForEditing.colorName();
         return (!colorName || colorName.trim().length === 0) == false;
@@ -447,25 +522,28 @@ function SpoolManagerEditSpoolDialog(){
     }
 
     this._reColorFilamentIcon = function(newColor){
-        var loopCount = 0;
-        var primaryColor = newColor; //"#FF1D25"
-        var secondaryColor = tinycolor(primaryColor).darken(12).toString();
-        //            console.info(primaryColor);
-        //            console.info(secondaryColor);
+        var colorValue = "" + newColor;
+        var rectColors;
+        var strokeColor;
+        if (colorValue.toLowerCase() === "rainbow"){
+            rectColors = ["#ff2d2d", "#ff9a00", "#ffe600", "#16c172", "#2f7bff", "#a044ff"];
+            strokeColor = rectColors[0];
+        } else {
+            var colors = colorValue.split(";");
+            if (colors.length === 1){
+                // single color: alternate with a slightly darkened shade
+                rectColors = [colors[0], tinycolor(colors[0]).darken(12).toString()];
+            } else {
+                rectColors = colors;
+            }
+            strokeColor = colors[0];
+        }
         var svgIcon = $("#svg-filament")
         svgIcon.children("rect").each(function(loopIndex){
-            if (loopIndex %2 == 0){
-                //Change color of filament
-                $(this).attr("fill",primaryColor);
-
-            } else {
-                //Change color of filament
-                $(this).attr("fill",secondaryColor);
-            }
-            loopCount++;
+            $(this).attr("fill", rectColors[loopIndex % rectColors.length]);
         });
         svgIcon.children("path").each(function(loopIndex){
-            $(this).attr("stroke",primaryColor);
+            $(this).attr("stroke", strokeColor);
         });
     };
 
@@ -509,6 +587,14 @@ function SpoolManagerEditSpoolDialog(){
         self._reColorFilamentIcon(self.spoolItemForEditing.color());
         self.spoolItemForEditing.color.subscribe(function(newColor){
             self._reColorFilamentIcon(newColor);
+            if (("" + newColor).toLowerCase() === "rainbow"){
+                self.spoolItemForEditing.colorName("Rainbow");
+                return;
+            }
+            if (("" + newColor).indexOf(";") !== -1){
+                // multi-color: keep the name the user typed
+                return;
+            }
             var colorName = tinycolor(newColor).toName();
             if (colorName != false){
                 self.spoolItemForEditing.colorName(colorName);
