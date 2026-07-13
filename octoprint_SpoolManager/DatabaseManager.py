@@ -799,9 +799,13 @@ class DatabaseManager(object):
             databaseSettings.useExternal = False
             self._databaseSettings = databaseSettings
 
+            allSpoolDicts = None
             try:
                 self.connectoToDatabase( sendErrorPopUp=False)
-                allSpools = SpoolModel.select()
+                # materialize the query result before closing the connection,
+                # since peewee's select() is lazy and would otherwise be
+                # evaluated after switching to the external database
+                allSpoolDicts = [model_to_dict(spool) for spool in SpoolModel.select()]
                 self.closeDatabase()
             except Exception as e:
                 errorMessage = "local database: " + str(e)
@@ -817,22 +821,23 @@ class DatabaseManager(object):
             databaseSettings.useExternal = True
             self._databaseSettings = databaseSettings
 
-            try:
-                self.connectoToDatabase( sendErrorPopUp=False)
-                self._createDatabase(True)
-                for spool in allSpools:
-                    spoolJson = model_to_dict(spool)
-                    SpoolModel.insert(spoolJson).execute()
-                    copySpoolCount = copySpoolCount + 1
-                self.closeDatabase()
-            except Exception as e:
-                errorMessage = "database: " + str(e)
-                self._logger.error("Connecting to external database not possible")
-                self._logger.exception(e)
+            if allSpoolDicts is not None:
                 try:
+                    self.connectoToDatabase( sendErrorPopUp=False)
+                    self._createDatabase(True)
+                    for spoolJson in allSpoolDicts:
+                        SpoolModel.insert(spoolJson).execute()
+                        copySpoolCount = copySpoolCount + 1
                     self.closeDatabase()
-                except Exception:
-                    pass  # ignore close exception
+                    loadResult = True
+                except Exception as e:
+                    errorMessage = "database: " + str(e)
+                    self._logger.error("Connecting to external database not possible")
+                    self._logger.exception(e)
+                    try:
+                        self.closeDatabase()
+                    except Exception:
+                        pass  # ignore close exception
 
         finally:
             # restore orig. databasettings
