@@ -12,6 +12,7 @@ import shutil
 import tempfile
 import threading
 import qrcode
+import re
 from io import BytesIO     # for handling byte strings
 from math import pi as PI
 
@@ -607,6 +608,27 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             abort(404)
 
 
+    # python twin of window.spmSpoolColorCss in SpoolManager.js, because this view is rendered server-side
+    def _buildSpoolColorCss(self, colorValue):
+        if (colorValue is None):
+            return ""
+        colorValue = str(colorValue).strip()
+        if (colorValue.lower() == "rainbow"):
+            return "linear-gradient(135deg, #ff2d2d 0%, #ff9a00 20%, #ffe600 40%, #16c172 60%, #2f7bff 80%, #a044ff 100%)"
+        # only accept hex colors, the value ends up in a style-attribute
+        if (re.match(r"^#[0-9a-fA-F]{3,8}(;#[0-9a-fA-F]{3,8}){0,2}$", colorValue) is None):
+            return ""
+        colors = colorValue.split(";")
+        if (len(colors) == 1):
+            return colorValue
+        stops = []
+        step = 100.0 / len(colors)
+        for i, color in enumerate(colors):
+            stops.append("%s %.1f%%" % (color, i * step))
+            stops.append("%s %.1f%%" % (color, (i + 1) * step))
+        return "linear-gradient(135deg, %s)" % ", ".join(stops)
+
+
     @octoprint.plugin.BlueprintPlugin.route("/generateQRCodeView/<string:databaseId>", methods=["GET"])
     def generateSpoolQRCodeHTMLView(self, databaseId):
         htmlContent = ""
@@ -614,9 +636,19 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         if (spoolModel is not None):
             self._logger.info("Generate HTML iew for QR-Code")
             qrCodeImageUrl = flask.url_for("plugin.SpoolManager.generateSpoolQRCode", databaseId=databaseId)
+            colorCss = self._buildSpoolColorCss(spoolModel.color)
+            colorHtml = ""
+            if (colorCss != ""):
+                colorName = spoolModel.colorName if spoolModel.colorName else ""
+                # value ends up in a html-attribute
+                colorName = re.sub(r"[^\w\s#,()-]", "", colorName)
+                colorHtml = "<h3>Spoolcolor: <span title='" + colorName + "' style=\"display:inline-block;" \
+                            "width:0.9em;height:0.9em;border:1px solid #808080;border-radius:3px;" \
+                            "vertical-align:baseline;background:" + colorCss + "\"></span> " + colorName + "</h3>"
             htmlContent = \
                         "<h3>Database Id: " + str(spoolModel.databaseId) + "</h3>" \
                         "<h3>Spoolname: " + spoolModel.displayName + "</h3>" \
+                        + colorHtml + \
                         "<img loading='lazy' src='" + qrCodeImageUrl + "' />"
         else:
             htmlContent = "<h3>Spool with database Id not found</h3>"
