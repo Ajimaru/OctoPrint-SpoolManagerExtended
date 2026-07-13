@@ -928,6 +928,9 @@ function SpoolManagerEditSpoolDialog(){
 
             // Force the current day on new spools
             self.spoolItemForEditing.purchasedOnKO(moment().format("YYYY-MM-DD"))
+
+            // Prefill diameter with the de-facto consumer standard of 1.75mm
+            self.spoolItemForEditing.diameter(1.75);
         } else {
             self.isExistingSpool(true);
             // Make a copy of provided spoolItem
