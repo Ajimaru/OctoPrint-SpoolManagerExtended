@@ -20,9 +20,7 @@
                         <!-- ko if: sidebarSelectSpoolModalSpoolItem().vendor -->
                         (<span data-bind="text: sidebarSelectSpoolModalSpoolItem().vendor"></span>)
                         <!-- /ko -->
-                        <span data-bind="text: $root.remainingText(sidebarSelectSpoolModalSpoolItem()),
-                                         attr: {title: $root.buildTooltipForSpoolItem(sidebarSelectSpoolModalSpoolItem(), 'Remaining weight: ', 'remainingWeight')}"
-                              class="spool-remaining" title="Remaining weight"></span>
+                        <span data-bind="text: $root.remainingText(sidebarSelectSpoolModalSpoolItem()), attr: {title: $root.buildTooltipForSpoolItem(sidebarSelectSpoolModalSpoolItem(), 'Remaining weight: ', 'remainingWeight', 'g', ' Remaining length: ', 'remainingLength', 'mm')}" class="spool-remaining" title="Remaining weight and length"></span>
                     </span>
                 <!-- /ko -->
                 <!-- ko ifnot: sidebarSelectSpoolModalSpoolItem() -->
