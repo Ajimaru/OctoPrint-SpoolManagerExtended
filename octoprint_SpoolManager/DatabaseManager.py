@@ -23,7 +23,7 @@ from octoprint_SpoolManager.models.SpoolModel import SpoolModel
 
 FORCE_CREATE_TABLES = False
 
-CURRENT_DATABASE_SCHEME_VERSION = 7
+CURRENT_DATABASE_SCHEME_VERSION = 8
 
 # List all Models
 MODELS = [PluginMetaDataModel, SpoolModel]
@@ -60,6 +60,8 @@ class DatabaseManager(object):
         self._sendDataToClient = None
         self._isConnected = False
         self._currentErrorMessageDict = None
+        # True when an external database still has an old scheme (auto-upgrade only runs for local SQLite)
+        self._schemeUpgradeNeeded = False
 
     ################################################################################################## private functions
     # "databaseSettings"] = {
@@ -149,7 +151,8 @@ class DatabaseManager(object):
             if (currentDatabaseSchemeVersion < CURRENT_DATABASE_SCHEME_VERSION):
                 # auto upgrade done only for local database
                 if (self._databaseSettings.useExternal == True):
-                    self._logger.warning("Scheme upgrade is only done for local database")
+                    self._logger.warning("Scheme upgrade is only done for local database. Use the 'Upgrade database scheme' button in the plugin settings (Storage tab).")
+                    self._schemeUpgradeNeeded = True
                     return
 
                 # evautate upgrade steps (from 1-2 , 1...6)
@@ -163,8 +166,10 @@ class DatabaseManager(object):
                     self._logger.exception(e)
                     return
                 self._logger.info("...Database-scheme successfully upgraded.")
+                self._schemeUpgradeNeeded = False
             else:
                 self._logger.info("...Database-scheme upgraded not needed.")
+                self._schemeUpgradeNeeded = False
         else:
             self._logger.warning("...something was strange. Should not be shwon in log. Check full log")
         pass
@@ -207,9 +212,20 @@ class DatabaseManager(object):
     def _upgradeFrom7To8(self):
         self._logger.info(" Starting 7 -> 8")
         # What is changed:
-        # -
-        self._passMessageToClient("error", "DatabaseManager",
-                                  "Could not upgrade database scheme V1 to V2. See OctoPrint.log for details!")
+        # - batchNumber = CharField(null=True) # since V8
+        # Unlike the legacy migrations this one is database-agnostic (local SQLite and external MySQL/PostgreSQL):
+        # it uses the already open peewee connection instead of a direct sqlite3 connection.
+
+        # column check makes the migration idempotent (several OctoPrint instances may share one external database)
+        columnNames = [column.name for column in self._database.get_columns("spo_spoolmodel")]
+        if ("batchNumber" in columnNames):
+            self._logger.info("  column 'batchNumber' already present, skipping ALTER TABLE")
+        else:
+            self._database.execute_sql("ALTER TABLE spo_spoolmodel ADD COLUMN batchNumber VARCHAR(255)")
+
+        PluginMetaDataModel.update(value="8").where(
+            PluginMetaDataModel.key == PluginMetaDataModel.KEY_DATABASE_SCHEME_VERSION).execute()
+
         self._logger.info(" Successfully 7 -> 8")
 
     def _upgradeFrom6To7(self):
@@ -716,6 +732,30 @@ class DatabaseManager(object):
     def isConnected(self):
         return self._isConnected
 
+    def isSchemeUpgradeNeeded(self):
+        return self._schemeUpgradeNeeded
+
+    # re-reads the scheme version from the database; the startup check goes stale
+    # when the (external) database is replaced at runtime, e.g. after a dump restore
+    def recheckSchemeUpgradeNeeded(self, withReusedConnection=False):
+        def databaseCallMethode():
+            schemeVersionFromDatabase = int(str(PluginMetaDataModel.get(
+                PluginMetaDataModel.key == PluginMetaDataModel.KEY_DATABASE_SCHEME_VERSION).value))
+            self._schemeUpgradeNeeded = schemeVersionFromDatabase < CURRENT_DATABASE_SCHEME_VERSION
+            return self._schemeUpgradeNeeded
+
+        try:
+            if (withReusedConnection == True):
+                return databaseCallMethode()
+            self.connectoToDatabase(sendErrorPopUp=False)
+            try:
+                return databaseCallMethode()
+            finally:
+                self.closeDatabase()
+        except Exception:
+            # keep the last known state, e.g. when the database is not reachable at all
+            return self._schemeUpgradeNeeded
+
     def showSQLLogging(self, enabled):
         import logging
         logger = logging.getLogger('peewee')
@@ -865,6 +905,66 @@ class DatabaseManager(object):
                self._databaseSettings.useExternal == True and \
                "mysql" == self._databaseSettings.type
 
+    # builds the dump text, requires an already open MySQL connection (caller handles connect/close)
+    def _generateMySQLDumpText(self):
+
+        # raw pymysql connection, needed for proper SQL value escaping
+        rawConnection = self._database.connection()
+
+        schemeVersion = str(CURRENT_DATABASE_SCHEME_VERSION)
+        pluginVersion = "unknown"
+        try:
+            schemeVersion = str(PluginMetaDataModel.get(
+                PluginMetaDataModel.key == PluginMetaDataModel.KEY_DATABASE_SCHEME_VERSION).value)
+        except Exception:
+            self._logger.warning("Could not read the database scheme version for the dump header, using default.")
+        try:
+            pluginVersion = str(PluginMetaDataModel.get(
+                PluginMetaDataModel.key == PluginMetaDataModel.KEY_PLUGIN_VERSION).value)
+        except DoesNotExist:
+            # the plugin never writes this metadata key, so it being absent is the normal case
+            pass
+        except Exception:
+            self._logger.warning("Could not read the plugin version for the dump header, using default.")
+
+        now = datetime.datetime.now()
+        dumpLines = [
+            self.SQL_DUMP_MARKER,
+            "-- pluginVersion: " + pluginVersion,
+            "-- schemeVersion: " + schemeVersion,
+            "-- database: " + str(self._databaseSettings.name),
+            "-- exportDate: " + now.strftime("%Y-%m-%d %H:%M:%S"),
+            "",
+            "SET NAMES utf8mb4;",
+            ""
+        ]
+
+        for model in MODELS:
+            tableName = model._meta.table_name
+
+            dumpLines.append("DROP TABLE IF EXISTS `" + tableName + "`;")
+
+            cursor = self._database.execute_sql("SHOW CREATE TABLE `" + tableName + "`")
+            createTableStatement = cursor.fetchone()[1]
+            dumpLines.append(createTableStatement + ";")
+            dumpLines.append("")
+
+            cursor = self._database.execute_sql("SHOW COLUMNS FROM `" + tableName + "`")
+            columnNames = [column[0] for column in cursor.fetchall()]
+            # make sure databaseId is the first column, the append-import relies on it
+            if ("databaseId" in columnNames):
+                columnNames.remove("databaseId")
+                columnNames.insert(0, "databaseId")
+            columnList = ", ".join(["`" + columnName + "`" for columnName in columnNames])
+
+            cursor = self._database.execute_sql("SELECT " + columnList + " FROM `" + tableName + "`")
+            for row in cursor.fetchall():
+                valueList = ", ".join([rawConnection.escape(value) for value in row])
+                dumpLines.append("INSERT INTO `" + tableName + "` (" + columnList + ") VALUES (" + valueList + ");")
+            dumpLines.append("")
+
+        return "\n".join(dumpLines)
+
     def exportMySQLDatabaseDump(self):
 
         if (self._isExternalMySQL() == False):
@@ -886,64 +986,9 @@ class DatabaseManager(object):
                     "errorMessage": errorMessage
                 }
 
-            # raw pymysql connection, needed for proper SQL value escaping
-            rawConnection = self._database.connection()
-
-            schemeVersion = str(CURRENT_DATABASE_SCHEME_VERSION)
-            pluginVersion = "unknown"
-            try:
-                schemeVersion = str(PluginMetaDataModel.get(
-                    PluginMetaDataModel.key == PluginMetaDataModel.KEY_DATABASE_SCHEME_VERSION).value)
-            except Exception:
-                self._logger.warning("Could not read the database scheme version for the dump header, using default.")
-            try:
-                pluginVersion = str(PluginMetaDataModel.get(
-                    PluginMetaDataModel.key == PluginMetaDataModel.KEY_PLUGIN_VERSION).value)
-            except DoesNotExist:
-                # the plugin never writes this metadata key, so it being absent is the normal case
-                pass
-            except Exception:
-                self._logger.warning("Could not read the plugin version for the dump header, using default.")
-
-            now = datetime.datetime.now()
-            dumpLines = [
-                self.SQL_DUMP_MARKER,
-                "-- pluginVersion: " + pluginVersion,
-                "-- schemeVersion: " + schemeVersion,
-                "-- database: " + str(self._databaseSettings.name),
-                "-- exportDate: " + now.strftime("%Y-%m-%d %H:%M:%S"),
-                "",
-                "SET NAMES utf8mb4;",
-                ""
-            ]
-
-            for model in MODELS:
-                tableName = model._meta.table_name
-
-                dumpLines.append("DROP TABLE IF EXISTS `" + tableName + "`;")
-
-                cursor = self._database.execute_sql("SHOW CREATE TABLE `" + tableName + "`")
-                createTableStatement = cursor.fetchone()[1]
-                dumpLines.append(createTableStatement + ";")
-                dumpLines.append("")
-
-                cursor = self._database.execute_sql("SHOW COLUMNS FROM `" + tableName + "`")
-                columnNames = [column[0] for column in cursor.fetchall()]
-                # make sure databaseId is the first column, the append-import relies on it
-                if ("databaseId" in columnNames):
-                    columnNames.remove("databaseId")
-                    columnNames.insert(0, "databaseId")
-                columnList = ", ".join(["`" + columnName + "`" for columnName in columnNames])
-
-                cursor = self._database.execute_sql("SELECT " + columnList + " FROM `" + tableName + "`")
-                for row in cursor.fetchall():
-                    valueList = ", ".join([rawConnection.escape(value) for value in row])
-                    dumpLines.append("INSERT INTO `" + tableName + "` (" + columnList + ") VALUES (" + valueList + ");")
-                dumpLines.append("")
-
             return {
                 "success": True,
-                "dump": "\n".join(dumpLines),
+                "dump": self._generateMySQLDumpText(),
                 "errorMessage": None
             }
         except Exception as e:
@@ -955,6 +1000,90 @@ class DatabaseManager(object):
             }
         finally:
             self.closeDatabase()
+
+    def upgradeExternalDatabaseScheme(self, createBackupFile=True):
+        # user-triggered scheme upgrade for external databases (Settings dialog);
+        # local SQLite databases are upgraded automatically during plugin startup.
+        # A dump backup is mandatory: either already downloaded by the frontend (createBackupFile=False)
+        # or written to the plugin data folder here - without one the upgrade is aborted.
+        result = {
+            "success": False,
+            "fromVersion": None,
+            "toVersion": CURRENT_DATABASE_SCHEME_VERSION,
+            "backupFilePath": None,
+            "errorMessage": None
+        }
+
+        if (self._databaseSettings == None or self._databaseSettings.useExternal == False):
+            result["errorMessage"] = "Scheme upgrade via settings is only needed for external databases. Local databases are upgraded automatically."
+            return result
+
+        try:
+            connected = self.connectoToDatabase(sendErrorPopUp=False)
+            if (connected == False):
+                errorMessage = "Could not connect to the external database."
+                if (self._currentErrorMessageDict != None):
+                    errorMessage = errorMessage + " " + str(self._currentErrorMessageDict.get("message", ""))
+                result["errorMessage"] = errorMessage
+                return result
+
+            try:
+                currentSchemeVersion = int(PluginMetaDataModel.get(
+                    PluginMetaDataModel.key == PluginMetaDataModel.KEY_DATABASE_SCHEME_VERSION).value)
+            except Exception as e:
+                result["errorMessage"] = "Could not read the database scheme version: " + str(e)
+                return result
+
+            result["fromVersion"] = currentSchemeVersion
+
+            if (currentSchemeVersion == CURRENT_DATABASE_SCHEME_VERSION):
+                result["success"] = True
+                return result
+            if (currentSchemeVersion > CURRENT_DATABASE_SCHEME_VERSION):
+                result["errorMessage"] = "Database scheme version " + str(currentSchemeVersion) + \
+                                         " is newer than this plugin supports (" + str(CURRENT_DATABASE_SCHEME_VERSION) + \
+                                         "). Please update the plugin instead."
+                return result
+            if (currentSchemeVersion < 7):
+                # the legacy migrations (1..7) use SQLite-specific scripts and can't run against external databases
+                result["errorMessage"] = "Upgrades from scheme version " + str(currentSchemeVersion) + \
+                                         " are not supported for external databases. Please migrate manually via SQL console."
+                return result
+
+            # mandatory backup, the upgrade is aborted if it fails
+            if (self._isExternalMySQL() == False):
+                result["errorMessage"] = "No dump backup is available for this database type. " \
+                                         "Please create a backup manually (e.g. pg_dump) and migrate via SQL console."
+                return result
+            if (createBackupFile == True):
+                try:
+                    dumpText = self._generateMySQLDumpText()
+                    now = datetime.datetime.now()
+                    backupFileName = "spoolmanager_external_backup-V" + str(currentSchemeVersion) + "-" + now.strftime("%Y%m%d-%H%M") + ".sql"
+                    backupFilePath = os.path.join(self._databaseSettings.baseFolder, backupFileName)
+                    with open(backupFilePath, "w") as backupFile:
+                        backupFile.write(dumpText)
+                    result["backupFilePath"] = backupFilePath
+                    self._logger.info("Created external database backup dump '" + backupFilePath + "'")
+                except Exception as e:
+                    self._logger.exception("Could not create the backup dump, scheme upgrade aborted")
+                    result["errorMessage"] = "Could not create the backup dump, scheme upgrade aborted: " + str(e)
+                    return result
+            else:
+                self._logger.info("Backup dump was already downloaded by the frontend, skipping backup file creation.")
+
+            self._logger.info("Upgrading external database scheme from '" + str(currentSchemeVersion) + "' to '" + str(CURRENT_DATABASE_SCHEME_VERSION) + "'")
+            self._upgradeDatabase(currentSchemeVersion, CURRENT_DATABASE_SCHEME_VERSION)
+            self._logger.info("...external database scheme successfully upgraded.")
+            self._schemeUpgradeNeeded = False
+            result["success"] = True
+        except Exception as e:
+            self._logger.exception("upgradeExternalDatabaseScheme")
+            result["errorMessage"] = str(e)
+        finally:
+            self.closeDatabase()
+
+        return result
 
     def importMySQLDatabaseDump(self, dumpText, importMode):
 
@@ -1109,9 +1238,23 @@ class DatabaseManager(object):
             errorMessage = "Database call error in methode " + methodeNameForLogging
             self._logger.exception(errorMessage)
 
-            self._passMessageToClient("error",
-                                      "DatabaseManager",
-                                      errorMessage + ". See OctoPrint.log for details!")
+            # the startup check goes stale when the database is replaced at runtime, so re-evaluate;
+            # the connection from this call is still open at this point
+            try:
+                self.recheckSchemeUpgradeNeeded(withReusedConnection=True)
+            except Exception:
+                pass
+
+            if (self._schemeUpgradeNeeded == True):
+                # most likely cause: the model expects columns the old scheme doesn't have yet
+                self._passMessageToClient("error",
+                                          "DatabaseManager",
+                                          "The database scheme is outdated. "
+                                          "Open Plugin Settings -> SpoolManager -> Storage and press 'Upgrade database scheme'!")
+            else:
+                self._passMessageToClient("error",
+                                          "DatabaseManager",
+                                          errorMessage + ". See OctoPrint.log for details!")
             return defaultReturnValue
         finally:
             try:
@@ -1225,6 +1368,12 @@ class DatabaseManager(object):
             return SpoolModel.select().where(SpoolModel.isTemplate == True)
 
         return self._handleReusableConnection(databaseCallMethode, withReusedConnection, "loadSpoolTemplates")
+
+    def getMaxSpoolDatabaseId(self, withReusedConnection=False):
+        def databaseCallMethode():
+            return SpoolModel.select(fn.MAX(SpoolModel.databaseId)).scalar()
+
+        return self._handleReusableConnection(databaseCallMethode, withReusedConnection, "getMaxSpoolDatabaseId")
 
     def loadAllSpoolsByQuery(self, tableQuery = None, withReusedConnection = False):
 
