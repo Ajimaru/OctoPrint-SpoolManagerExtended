@@ -1,7 +1,6 @@
 # coding=utf-8
 # borrowed from FilamentManager
 # master commit hash: bd1a9c0 on 1 Dec 2017
-from __future__ import absolute_import
 
 __author__ = "Sven Lohrmann <malnvenshorn@gmail.com> based on work by Gina Häußge <osd@foosel.net>"
 __license__ = "GNU Affero General Public License http://www.gnu.org/licenses/agpl.html"

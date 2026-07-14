@@ -1,5 +1,4 @@
 # coding=utf-8
-from __future__ import absolute_import
 
 import datetime
 import re
@@ -183,31 +182,27 @@ def isEmpty(value):
 def isNotEmpty(value):
 	return isEmpty(value) == False
 
-#################### START: copied from octorprint 1.4.x for 1.3.x compatible reason
-
-import sys
-from past.builtins import basestring, unicode
 def to_bytes(s_or_u, encoding="utf-8", errors="strict"):
-	# type: (Union[unicode, bytes], str, str) -> bytes
+	# type: (Union[str, bytes], str, str) -> bytes
 	"""Make sure ``s_or_u`` is a bytestring."""
 	if s_or_u is None:
 		return s_or_u
 
-	if not isinstance(s_or_u, basestring):
+	if not isinstance(s_or_u, (str, bytes)):
 		s_or_u = str(s_or_u)
 
-	if isinstance(s_or_u, unicode):
+	if isinstance(s_or_u, str):
 		return s_or_u.encode(encoding, errors=errors)
 	else:
 		return s_or_u
 
 def to_unicode(s_or_u, encoding="utf-8", errors="strict"):
-	# type: (Union[unicode, bytes], str, str) -> unicode
+	# type: (Union[str, bytes], str, str) -> str
 	"""Make sure ``s_or_u`` is a unicode string."""
 	if s_or_u is None:
 		return s_or_u
 
-	if not isinstance(s_or_u, basestring):
+	if not isinstance(s_or_u, (str, bytes)):
 		s_or_u = str(s_or_u)
 
 	if isinstance(s_or_u, bytes):
@@ -217,12 +212,9 @@ def to_unicode(s_or_u, encoding="utf-8", errors="strict"):
 
 
 def to_native_str(s_or_u):
-	# type: (Union[unicode, bytes]) -> str
+	# type: (Union[str, bytes]) -> str
 	"""Make sure ``s_or_u`` is a 'str'."""
-	if sys.version_info[0] == 2:
-		return to_bytes(s_or_u)
-	else:
-		return to_unicode(s_or_u)
+	return to_unicode(s_or_u)
 
 
 # f = "0";
