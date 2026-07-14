@@ -30,7 +30,7 @@
             </div>
             <div class="spool-label">
                 <!-- ko if: material -->
-                <span data-bind="text: material"></span> -
+                <span data-bind="text: material"></span><!-- ko if: finish --> (<span data-bind="text: finish"></span>)<!-- /ko --> -
                 <!-- /ko -->
                 <span data-bind="text: displayName"></span>
                 <!-- ko if: vendor -->

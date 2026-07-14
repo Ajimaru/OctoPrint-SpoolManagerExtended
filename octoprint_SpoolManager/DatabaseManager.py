@@ -23,7 +23,7 @@ from octoprint_SpoolManager.models.SpoolModel import SpoolModel
 
 FORCE_CREATE_TABLES = False
 
-CURRENT_DATABASE_SCHEME_VERSION = 8
+CURRENT_DATABASE_SCHEME_VERSION = 9
 
 # List all Models
 MODELS = [PluginMetaDataModel, SpoolModel]
@@ -204,9 +204,18 @@ class DatabaseManager(object):
     def _upgradeFrom8To9(self):
         self._logger.info(" Starting 8 -> 9")
         # What is changed:
-        # -
-        self._passMessageToClient("error", "DatabaseManager",
-                                  "Could not upgrade database scheme V1 to V2. See OctoPrint.log for details!")
+        # - finish = CharField(null=True) # since V9
+        # Database-agnostic migration (local SQLite and external MySQL/PostgreSQL),
+        # column check makes the migration idempotent (several OctoPrint instances may share one external database)
+        columnNames = [column.name for column in self._database.get_columns("spo_spoolmodel")]
+        if ("finish" in columnNames):
+            self._logger.info("  column 'finish' already present, skipping ALTER TABLE")
+        else:
+            self._database.execute_sql("ALTER TABLE spo_spoolmodel ADD COLUMN finish VARCHAR(255)")
+
+        PluginMetaDataModel.update(value="9").where(
+            PluginMetaDataModel.key == PluginMetaDataModel.KEY_DATABASE_SCHEME_VERSION).execute()
+
         self._logger.info(" Successfully 8 -> 9")
 
     def _upgradeFrom7To8(self):

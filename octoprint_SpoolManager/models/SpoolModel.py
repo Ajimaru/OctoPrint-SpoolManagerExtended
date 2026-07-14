@@ -65,6 +65,7 @@ class SpoolModel(BaseModel):
 	diameterTolerance = FloatField(null=True) # since V3
 	colorName = CharField(null=True)
 	color = CharField(null=True)
+	finish = CharField(null=True) # since V9: silk, matt, marble, metal, glow or custom text
 
 	######################
 	## PRINTER SETTINGS - FIELDS
