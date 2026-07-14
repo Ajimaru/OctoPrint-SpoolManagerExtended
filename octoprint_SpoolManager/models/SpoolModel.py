@@ -34,6 +34,8 @@ class SpoolModel(BaseModel):
 	usedLength = IntegerField(null=True)
 	# Bar or QR Code
 	code = CharField(null=True)
+	# Manufacturer batch/lot number, shared by spools of the same production batch # since V8
+	batchNumber = CharField(null=True)
 
 	firstUse = DateTimeField(null=True)
 	lastUse = DateTimeField(null=True)

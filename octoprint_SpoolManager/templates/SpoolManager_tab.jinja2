@@ -9,6 +9,11 @@
             <font color="red"><b>Plugin not working, because of Database issues. Check Plugin-Settings!</b></font>
         </div>
     </div>
+    <div data-bind="visible: schemeUpgradeNeeded()==true">
+        <div class="row-fluid">
+            <font color="orange"><b>The database scheme is outdated. Open Plugin Settings &rarr; SpoolManager &rarr; Storage and press 'Upgrade database scheme'!</b></font>
+        </div>
+    </div>
     <div data-bind="visible: pluginNotWorking()==false">
         <div class="row-fluid" >
             <div class="span3">
@@ -20,7 +25,10 @@
                                    value: spoolItemTableHelper.selectedPageSize">
                 </select>
                 <div class="pull-left">
-                    <button title="Add new Spool" class="btn" data-bind="click: addNewSpool"><i class="fa fa-plus"></i> Add Spool</button>
+                    <button class="btn"
+                            data-bind="click: addNewSpool,
+                                       enable: schemeUpgradeNeeded() == false,
+                                       attr: { title: schemeUpgradeNeeded() ? 'Upgrade the database scheme first (Plugin Settings -> Storage)' : 'Add new Spool' }"><i class="fa fa-plus"></i> Add Spool</button>
                 </div>
             </div>
 

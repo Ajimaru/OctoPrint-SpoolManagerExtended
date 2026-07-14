@@ -98,6 +98,19 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
         });
     }
 
+    //////////////////////////////////////////////////////////////////////////////////// UPGRADE Database Scheme
+    this.callUpgradeDatabaseScheme = function (payload, responseHandler){
+        $.ajax({
+            url: this.baseUrl + "plugin/" + this.pluginId + "/upgradeDatabaseScheme",
+            dataType: "json",
+            contentType: "application/json; charset=UTF-8",
+            data: JSON.stringify(payload || {}),
+            type: "PUT"
+        }).always(function( data ){
+            responseHandler(data);
+        });
+    }
+
     //////////////////////////////////////////////////////////////////////////////// CONFIRM DatabaseConnectionPoblem
     this.confirmDatabaseProblemMessage = function (responseHandler){
         $.ajax({
@@ -128,6 +141,16 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
         });
     }
 
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////// LOAD NEXT Spool-Id
+    this.callLoadNextSpoolId = function (responseHandler){
+        $.ajax({
+            url: this.baseUrl + "plugin/" + this.pluginId + "/nextSpoolId",
+            type: "GET"
+        }).always(function( data ){
+            responseHandler(data);
+        });
+    }
 
     //////////////////////////////////////////////////////////////////////////////////////////////////// SAVE Spool-Item
     this.callSaveSpool = function (spoolItem, responseHandler){

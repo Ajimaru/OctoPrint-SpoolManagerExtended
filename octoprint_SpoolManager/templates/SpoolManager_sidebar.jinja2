@@ -1,5 +1,9 @@
 <div id="sidebar_spool_select" class="control-group">
 
+    <div data-bind="visible: schemeUpgradeNeeded()==true">
+        <font color="orange"><b>Database scheme is outdated. Open Plugin Settings &rarr; SpoolManager &rarr; Storage and press 'Upgrade database scheme'!</b></font>
+    </div>
+
     <div id="selectedSpools" data-bind="foreach: selectedSpoolsForSidebar">
         <div>
             <!-- ko if: $parent.selectedSpoolsForSidebar().length > 1 -->
