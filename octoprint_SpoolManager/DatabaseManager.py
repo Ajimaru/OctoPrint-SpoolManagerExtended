@@ -894,10 +894,16 @@ class DatabaseManager(object):
             try:
                 schemeVersion = str(PluginMetaDataModel.get(
                     PluginMetaDataModel.key == PluginMetaDataModel.KEY_DATABASE_SCHEME_VERSION).value)
+            except Exception:
+                self._logger.warning("Could not read the database scheme version for the dump header, using default.")
+            try:
                 pluginVersion = str(PluginMetaDataModel.get(
                     PluginMetaDataModel.key == PluginMetaDataModel.KEY_PLUGIN_VERSION).value)
+            except DoesNotExist:
+                # the plugin never writes this metadata key, so it being absent is the normal case
+                pass
             except Exception:
-                self._logger.warning("Could not read plugin metadata for the dump header, using defaults.")
+                self._logger.warning("Could not read the plugin version for the dump header, using default.")
 
             now = datetime.datetime.now()
             dumpLines = [
