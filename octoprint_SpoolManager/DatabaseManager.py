@@ -1295,12 +1295,12 @@ class DatabaseManager(object):
             if ("onlyTemplates" in filterName):
                 myQuery = myQuery.where( (SpoolModel.isTemplate == True) )
             else:
-                if (filterName == "hideEmptySpools"):
+                if ("noTemplates" in filterName):
+                    myQuery = myQuery.where( (SpoolModel.isTemplate == False) | (SpoolModel.isTemplate == None) )
+                if ("hideEmptySpools" in filterName):
                     myQuery = myQuery.where( (SpoolModel.remainingWeight > 0) | (SpoolModel.remainingWeight == None))
-                if (filterName == "hideInactiveSpools"):
+                if ("hideInactiveSpools" in filterName):
                     myQuery = myQuery.where( (SpoolModel.isActive == True) )
-                if (filterName == "hideEmptySpools,hideInactiveSpools"):
-                    myQuery = myQuery.where( ((SpoolModel.remainingWeight > 0) | (SpoolModel.remainingWeight == None)) & (SpoolModel.isActive == True) )
 
             if ("displayName" == sortColumn):
                 if ("desc" == sortOrder):

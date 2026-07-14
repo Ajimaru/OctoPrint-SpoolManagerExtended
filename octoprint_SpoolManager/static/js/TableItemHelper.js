@@ -213,6 +213,12 @@ function TableItemHelper(loadItemsFunction, defaultPageSize, defaultSortColumn, 
         if (self.selectedFilterNameArrayKO().includes(newFilterName)){
             self.selectedFilterNameArrayKO.remove(newFilterName);
         } else {
+            // "noTemplates" and "onlyTemplates" are mutually exclusive
+            if (newFilterName == "noTemplates"){
+                self.selectedFilterNameArrayKO.remove("onlyTemplates");
+            } else if (newFilterName == "onlyTemplates"){
+                self.selectedFilterNameArrayKO.remove("noTemplates");
+            }
             // Add the Filter
             self.selectedFilterNameArrayKO.push(newFilterName);
         }
