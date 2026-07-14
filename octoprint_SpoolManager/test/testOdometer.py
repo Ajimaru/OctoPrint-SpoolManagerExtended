@@ -61,7 +61,7 @@ class TestOdometer(unittest.TestCase):
         print(filename)
         print("Old-Implementation")
         for total in extrusion:
-			print(total + " " + str(extrusion[total].totalExtrusion))
+            print(total + " " + str(extrusion[total].totalExtrusion))
         print("New-Implementation")
         print(myExtrusion)
 
