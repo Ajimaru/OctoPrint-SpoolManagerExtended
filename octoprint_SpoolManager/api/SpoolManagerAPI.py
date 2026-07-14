@@ -1131,7 +1131,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
     def _loadAllSpoolsByQueryResponse(self, tableQuery):
         allSpools = self._databaseManager.loadAllSpoolsByQuery(tableQuery)
-        totalItemCount = self._databaseManager.countSpoolsByQuery()
+        totalItemCount = self._databaseManager.countSpoolsByQuery(tableQuery)
 
         # allSpoolsAsDict = self._transformAllSpoolModelsToDict(allSpools)
         allSpoolsAsDict = Transformer.transformAllSpoolModelsToDict(allSpools)
