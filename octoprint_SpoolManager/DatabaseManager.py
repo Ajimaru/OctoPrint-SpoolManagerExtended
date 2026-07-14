@@ -5,6 +5,7 @@ import datetime
 import json
 import os
 import logging
+import re
 import shutil
 import sqlite3
 
@@ -852,6 +853,242 @@ class DatabaseManager(object):
             "success": loadResult,
             "copySpoolCount": copySpoolCount
         }
+
+    ######################################################################################### MYSQL DUMP EXPORT / IMPORT
+    # The dump format is self-generated and validated on import:
+    # - first line is SQL_DUMP_MARKER
+    # - one INSERT per row on a single line (pymysql escaping produces no literal newlines)
+    # - databaseId is always the first column (append-import relies on it)
+    SQL_DUMP_MARKER = "-- SpoolManager MySQL dump"
+
+    def _isExternalMySQL(self):
+        return self._databaseSettings != None and \
+               self._databaseSettings.useExternal == True and \
+               "mysql" == self._databaseSettings.type
+
+    def exportMySQLDatabaseDump(self):
+
+        if (self._isExternalMySQL() == False):
+            return {
+                "success": False,
+                "dump": None,
+                "errorMessage": "Database dump export is only supported for external MySQL databases."
+            }
+
+        try:
+            connected = self.connectoToDatabase(sendErrorPopUp=False)
+            if (connected == False):
+                errorMessage = "Could not connect to the external MySQL database."
+                if (self._currentErrorMessageDict != None):
+                    errorMessage = errorMessage + " " + str(self._currentErrorMessageDict.get("message", ""))
+                return {
+                    "success": False,
+                    "dump": None,
+                    "errorMessage": errorMessage
+                }
+
+            # raw pymysql connection, needed for proper SQL value escaping
+            rawConnection = self._database.connection()
+
+            schemeVersion = str(CURRENT_DATABASE_SCHEME_VERSION)
+            pluginVersion = "unknown"
+            try:
+                schemeVersion = str(PluginMetaDataModel.get(
+                    PluginMetaDataModel.key == PluginMetaDataModel.KEY_DATABASE_SCHEME_VERSION).value)
+                pluginVersion = str(PluginMetaDataModel.get(
+                    PluginMetaDataModel.key == PluginMetaDataModel.KEY_PLUGIN_VERSION).value)
+            except Exception:
+                self._logger.warning("Could not read plugin metadata for the dump header, using defaults.")
+
+            now = datetime.datetime.now()
+            dumpLines = [
+                self.SQL_DUMP_MARKER,
+                "-- pluginVersion: " + pluginVersion,
+                "-- schemeVersion: " + schemeVersion,
+                "-- database: " + str(self._databaseSettings.name),
+                "-- exportDate: " + now.strftime("%Y-%m-%d %H:%M:%S"),
+                "",
+                "SET NAMES utf8mb4;",
+                ""
+            ]
+
+            for model in MODELS:
+                tableName = model._meta.table_name
+
+                dumpLines.append("DROP TABLE IF EXISTS `" + tableName + "`;")
+
+                cursor = self._database.execute_sql("SHOW CREATE TABLE `" + tableName + "`")
+                createTableStatement = cursor.fetchone()[1]
+                dumpLines.append(createTableStatement + ";")
+                dumpLines.append("")
+
+                cursor = self._database.execute_sql("SHOW COLUMNS FROM `" + tableName + "`")
+                columnNames = [column[0] for column in cursor.fetchall()]
+                # make sure databaseId is the first column, the append-import relies on it
+                if ("databaseId" in columnNames):
+                    columnNames.remove("databaseId")
+                    columnNames.insert(0, "databaseId")
+                columnList = ", ".join(["`" + columnName + "`" for columnName in columnNames])
+
+                cursor = self._database.execute_sql("SELECT " + columnList + " FROM `" + tableName + "`")
+                for row in cursor.fetchall():
+                    valueList = ", ".join([rawConnection.escape(value) for value in row])
+                    dumpLines.append("INSERT INTO `" + tableName + "` (" + columnList + ") VALUES (" + valueList + ");")
+                dumpLines.append("")
+
+            return {
+                "success": True,
+                "dump": "\n".join(dumpLines),
+                "errorMessage": None
+            }
+        except Exception as e:
+            self._logger.exception("exportMySQLDatabaseDump")
+            return {
+                "success": False,
+                "dump": None,
+                "errorMessage": str(e)
+            }
+        finally:
+            self.closeDatabase()
+
+    def importMySQLDatabaseDump(self, dumpText, importMode):
+
+        result = {
+            "success": False,
+            "executedStatementCount": 0,
+            "importedSpoolCount": 0,
+            "errorMessage": None
+        }
+
+        if (self._isExternalMySQL() == False):
+            result["errorMessage"] = "Database dump import is only supported for external MySQL databases."
+            return result
+
+        # - validate the marker, only self-generated dumps are accepted (see comment above SQL_DUMP_MARKER)
+        firstContentLine = None
+        for line in dumpText.splitlines():
+            if (line.strip() != ""):
+                firstContentLine = line.strip()
+                break
+        if (firstContentLine != self.SQL_DUMP_MARKER):
+            result["errorMessage"] = "Not a SpoolManager dump file. Only dumps exported by this plugin can be imported."
+            return result
+
+        # - validate the database scheme version (there is no MySQL scheme-upgrade path)
+        schemeVersionMatch = re.search(r"^-- schemeVersion: (\d+)$", dumpText, re.MULTILINE)
+        if (schemeVersionMatch == None):
+            result["errorMessage"] = "Dump file has no schemeVersion header."
+            return result
+        dumpSchemeVersion = int(schemeVersionMatch.group(1))
+        if (dumpSchemeVersion != CURRENT_DATABASE_SCHEME_VERSION):
+            result["errorMessage"] = "Dump has database scheme version " + str(dumpSchemeVersion) + \
+                                     ", but the plugin requires version " + str(CURRENT_DATABASE_SCHEME_VERSION) + \
+                                     ". Export and import with matching plugin versions."
+            return result
+
+        statements = self._splitSQLDumpStatements(dumpText)
+        if (len(statements) == 0):
+            result["errorMessage"] = "Dump file contains no SQL statements."
+            return result
+
+        # - validate all statements against the whitelist before executing anything
+        allowedTableNames = [model._meta.table_name for model in MODELS]
+        for index, statement in enumerate(statements):
+            if (self._isAllowedDumpStatement(statement, allowedTableNames) == False):
+                result["errorMessage"] = "Statement #" + str(index + 1) + " is not allowed. " \
+                                         "Only SET NAMES, DROP/CREATE/INSERT for the SpoolManager tables are accepted."
+                return result
+
+        spoolTableName = SpoolModel._meta.table_name
+        spoolInsertPrefix = "INSERT INTO `" + spoolTableName + "` ("
+
+        try:
+            connected = self.connectoToDatabase(sendErrorPopUp=False)
+            if (connected == False):
+                errorMessage = "Could not connect to the external MySQL database."
+                if (self._currentErrorMessageDict != None):
+                    errorMessage = errorMessage + " " + str(self._currentErrorMessageDict.get("message", ""))
+                result["errorMessage"] = errorMessage
+                return result
+
+            if ("replace" == importMode):
+                # DROP/CREATE force implicit commits in MySQL, so no single wrapping transaction is possible
+                for index, statement in enumerate(statements):
+                    try:
+                        self._database.execute_sql(statement)
+                        result["executedStatementCount"] = result["executedStatementCount"] + 1
+                        if (statement.startswith(spoolInsertPrefix)):
+                            result["importedSpoolCount"] = result["importedSpoolCount"] + 1
+                    except Exception as e:
+                        # only the statement number is logged, INSERT contents could include user data
+                        self._logger.exception("importMySQLDatabaseDump: statement #" + str(index + 1) + " failed")
+                        result["errorMessage"] = "Statement #" + str(index + 1) + " failed: " + str(e) + \
+                                                 ". The database might be partially restored. " \
+                                                 "Use 'ReCreate Database' and import again."
+                        return result
+            else:
+                # append: only spool-INSERTs, without databaseId so that new ids are generated
+                insertStatements = []
+                for statement in statements:
+                    if (statement.startswith(spoolInsertPrefix)):
+                        rewrittenStatement = self._stripDatabaseIdFromInsertStatement(statement)
+                        if (rewrittenStatement == None):
+                            result["errorMessage"] = "Unexpected INSERT format, could not strip databaseId."
+                            return result
+                        insertStatements.append(rewrittenStatement)
+                if (len(insertStatements) == 0):
+                    result["errorMessage"] = "Dump file contains no spools to append."
+                    return result
+
+                with self._database.atomic():
+                    for statement in insertStatements:
+                        self._database.execute_sql(statement)
+                result["executedStatementCount"] = len(insertStatements)
+                result["importedSpoolCount"] = len(insertStatements)
+
+            result["success"] = True
+            return result
+        except Exception as e:
+            self._logger.exception("importMySQLDatabaseDump")
+            result["errorMessage"] = str(e)
+            return result
+        finally:
+            self.closeDatabase()
+
+    def _splitSQLDumpStatements(self, dumpText):
+        # line-based splitting is safe, because the self-generated dump never
+        # contains literal newlines inside value literals (pymysql escaping)
+        statements = []
+        currentLines = []
+        for line in dumpText.splitlines():
+            strippedLine = line.strip()
+            if (len(currentLines) == 0 and (strippedLine == "" or strippedLine.startswith("--"))):
+                continue
+            currentLines.append(line)
+            if (strippedLine.endswith(";")):
+                statements.append("\n".join(currentLines).strip())
+                currentLines = []
+        return statements
+
+    def _isAllowedDumpStatement(self, statement, allowedTableNames):
+        if ("SET NAMES utf8mb4;" == statement):
+            return True
+        for tableName in allowedTableNames:
+            if (statement.startswith("DROP TABLE IF EXISTS `" + tableName + "`;")):
+                return True
+            if (statement.startswith("CREATE TABLE `" + tableName + "` (")):
+                return True
+            if (statement.startswith("INSERT INTO `" + tableName + "` (")):
+                return True
+        return False
+
+    def _stripDatabaseIdFromInsertStatement(self, statement):
+        # expected single-line format: INSERT INTO `table` (`databaseId`, ...) VALUES (123, ...);
+        insertMatch = re.match(r"^INSERT INTO (`[^`]+`) \(`databaseId`, (.+)\) VALUES \(\d+, (.+)\);$", statement)
+        if (insertMatch == None):
+            return None
+        return "INSERT INTO " + insertMatch.group(1) + " (" + insertMatch.group(2) + ") " \
+               "VALUES (" + insertMatch.group(3) + ");"
 
     ################################################################################################ DATABASE OPERATIONS
     def _handleReusableConnection(self, databaseCallMethode, withReusedConnection, methodeNameForLogging, defaultReturnValue=None):

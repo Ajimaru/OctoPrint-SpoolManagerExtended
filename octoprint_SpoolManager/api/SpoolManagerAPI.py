@@ -804,6 +804,71 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                          as_attachment=True)
 
 
+    ##############################################################################   EXPORT / IMPORT MYSQL DATABASE DUMP
+    # both routes work on the SAVED storage settings and are only available for external MySQL databases
+
+    def _isExternalMySQLConfigured(self):
+        databaseSettings = self._databaseManager.getDatabaseSettings()
+        return databaseSettings != None and \
+               databaseSettings.useExternal == True and \
+               "mysql" == databaseSettings.type
+
+    @octoprint.plugin.BlueprintPlugin.route("/exportDatabaseDump", methods=["GET"])
+    def exportDatabaseDump(self):
+
+        if (self._isExternalMySQLConfigured() == False):
+            return flask.make_response("Database dump export is only available for external MySQL databases. Save the storage settings first.", 400)
+
+        exportResult = self._databaseManager.exportMySQLDatabaseDump()
+        if (exportResult["success"] == False):
+            return flask.make_response("Database dump export failed: " + str(exportResult["errorMessage"]), 400)
+
+        now = datetime.datetime.now()
+        currentDate = now.strftime("%Y%m%d-%H%M")
+        fileName = "SpoolManager-mysql-" + currentDate + ".sql"
+
+        return Response(exportResult["dump"],
+                        mimetype='application/sql',
+                        headers={'Content-Disposition': 'attachment; filename=' + fileName})
+
+    @octoprint.plugin.BlueprintPlugin.route("/importDatabaseDump", methods=["POST"])
+    def importDatabaseDump(self):
+
+        if (self._isExternalMySQLConfigured() == False):
+            return flask.make_response("Database dump import is only available for external MySQL databases. Save the storage settings first.", 400)
+
+        input_name = "file"
+        input_upload_path = input_name + "." + self._settings.global_get(["server", "uploads", "pathSuffix"])
+        if (input_upload_path not in flask.request.values):
+            return flask.make_response("Invalid request, no dump file provided", 400)
+
+        importMode = flask.request.form.get("importMode")
+        if (importMode not in (SettingsKeys.KEY_IMPORTCSV_MODE_REPLACE, SettingsKeys.KEY_IMPORTCSV_MODE_APPEND)):
+            return flask.make_response("Invalid import mode", 400)
+
+        sourceLocation = flask.request.values[input_upload_path]
+        try:
+            with open(sourceLocation, "r", encoding="utf-8") as dumpFile:
+                dumpText = dumpFile.read()
+        except UnicodeDecodeError:
+            return flask.make_response("Dump file is not UTF-8 encoded", 400)
+
+        importResult = self._databaseManager.importMySQLDatabaseDump(dumpText, importMode)
+
+        if (importResult["success"] == True and SettingsKeys.KEY_IMPORTCSV_MODE_REPLACE == importMode):
+            # same behaviour as the CSV replace-import
+            self._resetSelectedSpools()
+
+        metaDataResult = self._databaseManager.loadDatabaseMetaInformations(None)
+
+        return flask.jsonify({
+            "success": importResult["success"],
+            "errorMessage": importResult["errorMessage"],
+            "executedStatementCount": importResult["executedStatementCount"],
+            "importedSpoolCount": importResult["importedSpoolCount"],
+            "metadata": metaDataResult
+        })
+
     #######################################################################################   DELETE DATABASE
     @octoprint.plugin.BlueprintPlugin.route("/deleteDatabase/<string:databaseType>", methods=["POST"])
     def deleteDatabase(self, databaseType):

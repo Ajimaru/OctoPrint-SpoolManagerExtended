@@ -316,6 +316,67 @@ $(function() {
             }
         }
 
+        // - MySQL dump export/import (Storage tab, external database only)
+        self.isExternalMySQL = ko.pureComputed(function(){
+            return self.pluginSettings.useExternal() == true && self.pluginSettings.databaseType() == "mysql";
+        });
+        self.sqlImportMode = ko.observable("append");
+        self.sqlDumpFileName = ko.observable();
+        self.sqlImportInProgress = ko.observable(false);
+        self.sqlImportResultText = ko.observable();
+        self.sqlDumpFile = undefined;
+
+        self.getDatabaseDumpExportUrl = function(){
+            return self.apiClient.getDatabaseDumpExportUrl();
+        }
+
+        self.sqlDumpFileChanged = function(data, event){
+            var files = event.target.files;
+            if (files == null || files.length == 0){
+                self.sqlDumpFileName(undefined);
+                self.sqlDumpFile = undefined;
+                return;
+            }
+            self.sqlDumpFileName(files[0].name);
+            self.sqlDumpFile = files[0];
+        }
+
+        self.performSQLImportFromUpload = function(){
+            if (self.sqlDumpFile === undefined) return;
+
+            if (self.sqlImportMode() == "replace"){
+                var result = confirm("Do you really want to REPLACE all SpoolManager data in the external database with the uploaded dump? A manual backup is recommended.");
+                if (result == false) return;
+            }
+
+            self.resetDatabaseMessages();
+            self.sqlImportResultText(undefined);
+            self.sqlImportInProgress(true);
+            self.showExternalBusyIndicator(true);
+
+            self.apiClient.callImportDatabaseDump(self.sqlDumpFile, self.sqlImportMode(), function(responseData){
+                self.sqlImportInProgress(false);
+                self.showExternalBusyIndicator(false);
+
+                if (responseData != null && responseData.success == true){
+                    self.handleDatabaseMetaDataResponse(responseData);
+                    // show a dedicated import result instead of the generic connection message
+                    self.showExternalSuccessMessage(false);
+                    self.sqlImportResultText("Database dump import successful: " + responseData.importedSpoolCount + " spools imported (" + self.sqlImportMode() + ").");
+                    self.spoolItemTableHelper.reloadItems();
+                } else {
+                    var errorMessage = "Database dump import failed.";
+                    if (responseData != null && responseData.errorMessage != null){
+                        errorMessage = responseData.errorMessage;
+                    } else if (responseData != null && responseData.responseText != null){
+                        errorMessage = responseData.responseText;
+                    }
+                    self.showExternalDatabaseErrorMessage(true);
+                    self.externalDatabaseErrorMessage(errorMessage);
+                }
+            });
+        }
+
         $("#spoolmanger-settings-tab").find('a[data-toggle="tab"]').on('shown', function (e) {
 
               var activatedTab = e.target.hash; // activated tab

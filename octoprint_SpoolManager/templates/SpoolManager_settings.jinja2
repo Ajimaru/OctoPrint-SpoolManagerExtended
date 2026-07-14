@@ -532,6 +532,47 @@ FPE;	2.16
                     </div>
                 </div>
 
+                <!-- MySQL dump export/import, only available for external MySQL databases -->
+                <div class="control-group" data-bind="visible: isExternalMySQL">
+                    <div class="controls">
+                        <div class="alert alert-info" style="margin-bottom: 10px;">
+                            Export/Import works on the <b>saved</b> connection settings (MySQL only). Save the settings first.
+                        </div>
+                        <div style="margin-bottom: 10px;">
+                            <a class="btn btn-info" href="#" data-bind="attr: {href: getDatabaseDumpExportUrl()}">Export Database (.sql)</a>
+                        </div>
+                        <div>
+                            <label class="radio">
+                                <input type="radio" name="sqlImportMode" value="replace" data-bind="checked: sqlImportMode"> Replace external database
+                            </label>
+                            <label class="radio">
+                                <input type="radio" name="sqlImportMode" value="append" data-bind="checked: sqlImportMode"> Append spools to external database
+                            </label>
+                        </div>
+                        <div class="input-prepend" style="margin-top: 5px;">
+                            <span class="btn fileinput-button">
+                                <span>Browse...</span>
+                                <input id="settings-spool-importsql-upload"
+                                       type="file"
+                                       name="file"
+                                       accept=".sql"
+                                       data-bind="event: {change: sqlDumpFileChanged}">
+                            </span>
+                            <span class="add-on" data-bind="text: sqlDumpFileName"></span>
+                        </div>
+                        <button class="btn btn-primary"
+                                data-bind="disable: (sqlImportInProgress() || sqlDumpFileName() == undefined), click: performSQLImportFromUpload">
+                            <i class="fa fa-spinner fa-spin"
+                               data-bind="visible: sqlImportInProgress"></i> Upload & import
+                        </button>
+                        <div class="help-block" data-bind="visible: sqlImportResultText">
+                            <div class="alert alert-success">
+                                <font color="green"><b><span data-bind="text: sqlImportResultText"></span></b></font>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="control-group">
                     <div class="controls">
                         <div class="help-block" data-bind="visible: showExternalDatabaseErrorMessage">
