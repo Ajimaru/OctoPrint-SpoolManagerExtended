@@ -1,5 +1,4 @@
 # coding=utf-8
-from __future__ import absolute_import
 
 import math
 from datetime import datetime
@@ -925,7 +924,7 @@ class SpoolmanagerPlugin(
 # ("OctoPrint-PluginSkeleton"), you may define that here. Same goes for the other metadata derived from setup.py that
 # can be overwritten via __plugin_xyz__ control properties. See the documentation for that.
 __plugin_name__ = "SpoolManager Plugin"
-__plugin_pythoncompat__ = ">=2.7,<4"
+__plugin_pythoncompat__ = ">=3.9,<4"
 
 def __plugin_load__():
     global __plugin_implementation__
