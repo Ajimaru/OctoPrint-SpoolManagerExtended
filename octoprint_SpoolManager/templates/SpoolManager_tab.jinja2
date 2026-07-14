@@ -19,12 +19,28 @@
             <div class="span3">
                 Show/Total: <b><span data-bind="text: spoolItemTableHelper.items().length"></span> /
                                 <span data-bind="text: spoolItemTableHelper.totalItemCount"></span></b>
-                <br/>per Page:
-                <select class="input-mini text-right"
-                        data-bind="options: spoolItemTableHelper.pageSizeOptions,
-                                   value: spoolItemTableHelper.selectedPageSize">
-                </select>
-                <div class="pull-left">
+                <br/>
+                <div style="margin-top: 4px; display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;">
+                    <span style="white-space: nowrap;">per Page:</span>
+                    <select class="input-mini text-right" style="margin-bottom: 0; flex: 0 0 auto;"
+                            data-bind="options: spoolItemTableHelper.pageSizeOptions,
+                                       value: spoolItemTableHelper.selectedPageSize">
+                    </select>
+                    <div style="flex: 1 1 auto; min-width: 220px; position: relative;"
+                         class="search-query-with-clear active-clear"
+                         data-bind="css: {'active-clear': spoolItemTableHelper.filterTextQuery}">
+                        <input type="search"
+                               class="input-block search-query"
+                               style="margin-bottom: 0; padding-right: 30px; width: 100%; box-sizing: border-box; height: 34px; line-height: 20px; font-size: 14px;"
+                               data-bind="value: spoolItemTableHelper.filterTextQuery, valueUpdate: 'input'"
+                               placeholder="Filter...">
+                        <span class="search-clear"
+                              style="position: absolute; top: 50%; right: 10px; transform: translateY(-50%); cursor: pointer; line-height: 1;"
+                              data-bind="visible: spoolItemTableHelper.filterTextQuery,
+                                         click: spoolItemTableHelper.clearFilterTextQuery"><i class="fas fa-times"></i></span>
+                    </div>
+                </div>
+                <div class="pull-left" style="margin-top: 8px;">
                     <button class="btn"
                             data-bind="click: addNewSpool,
                                        enable: schemeUpgradeNeeded() == false,
@@ -54,7 +70,6 @@
                         <a href="#" data-bind="click: function() { spoolItemTableHelper.toggleFilter('onlyTemplates'); }"><i class="icon-ok" data-bind="style: {visibility: spoolItemTableHelper.isFilterSelected('onlyTemplates') ? 'visible' : 'hidden'}"></i> only templates</a>
                     </small>
                 </div>
-
 
                 <div class="pull-right" style="clear: both;">
                     <small>
