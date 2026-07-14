@@ -206,32 +206,39 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                             <label class="control-label">Density <sup>2,3</sup></label>
                             <div class="controls">
                                 <div class="input-append">
-                                    <input type="number" step="0.01" min="0" class="input-small text-right" data-bind="value: spoolDialog.spoolItemForEditing.density" />
+                                    <input type="number" step="0.01" min="0" class="input-small text-right" data-bind="value: spoolDialog.spoolItemForEditing.density,
+                                                              numberField: {invalidFields: spoolDialog.invalidNumberFields, key: 'density', trackOnly: true}" />
                                     <span class="add-on">g/cm³</span>
                                 </div>
+                                <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('density') !== -1">Please enter a valid number</span>
                             </div>
                         </div>
                         <div class="control-group ">
                             <label class="control-label">Diameter <sup>2</sup></label>
                             <div class="controls">
                                 <div class="input-append">
-                                    <input type="number" step="0.01" min="0" class="input-mini text-right" data-bind="value: spoolDialog.spoolItemForEditing.diameter" />
+                                    <input type="number" step="0.01" min="0" class="input-mini text-right" data-bind="value: spoolDialog.spoolItemForEditing.diameter,
+                                                              numberField: {invalidFields: spoolDialog.invalidNumberFields, key: 'diameter', trackOnly: true}" />
                                     <span class="add-on">mm</span>
                                 </div>
                                 <div class="input-prepend input-append">
                                     <span class="add-on">±</span>
-                                    <input type="number" step="0.01" min="0" class="input-mini text-right" data-bind="value: spoolDialog.spoolItemForEditing.diameterTolerance" />
+                                    <input type="number" step="0.01" min="0" class="input-mini text-right" data-bind="value: spoolDialog.spoolItemForEditing.diameterTolerance,
+                                                              numberField: {invalidFields: spoolDialog.invalidNumberFields, key: 'diameterTolerance', trackOnly: true}" />
                                     <span class="add-on">mm</span>
                                 </div>
+                                <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('diameter') !== -1 || spoolDialog.invalidNumberFields().indexOf('diameterTolerance') !== -1">Please enter a valid number</span>
                             </div>
                         </div>
                         <div class="control-group no-bottom-gap">
                             <label class="control-label">Flow Rate Compensation<sup>4</sup></label>
                             <div class="controls">
                                 <div class="input-append">
-                                    <input type="number" step="0.1" min="0" class="input-mini text-right" data-bind="value: spoolDialog.spoolItemForEditing.flowRateCompensation" />
+                                    <input type="number" step="1" min="0" class="input-mini text-right" data-bind="value: spoolDialog.spoolItemForEditing.flowRateCompensation,
+                                                              numberField: {invalidFields: spoolDialog.invalidNumberFields, key: 'flowRateCompensation', trackOnly: true}" />
                                     <span class="add-on">%</span>
                                 </div>
+                                <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('flowRateCompensation') !== -1">Please enter a valid number</span>
                             </div>
                         </div>
 
@@ -239,24 +246,29 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                             <label class="control-label">Tool/Bed<sup>4</sup></label>
                             <div class="row controls">
                                 <div class="input-append">
-                                    <input type="number" step="1" min="0" class="input-mini text-right" data-bind="value: spoolDialog.spoolItemForEditing.temperature" />
+                                    <input type="number" step="1" min="0" class="input-mini text-right" data-bind="value: spoolDialog.spoolItemForEditing.temperature,
+                                                              numberField: {invalidFields: spoolDialog.invalidNumberFields, key: 'temperature', trackOnly: true}" />
                                     <span class="add-on">°C</span>
 {#                                    </div>#}
 {##}
 {#                                    <span>&nbsp;Bed</span>#}
 {#                                    <div class="input-append">#}
-                                    <input type="number" step="1" min="0" class="input-mini text-right" data-bind="value: spoolDialog.spoolItemForEditing.bedTemperature" />
+                                    <input type="number" step="1" min="0" class="input-mini text-right" data-bind="value: spoolDialog.spoolItemForEditing.bedTemperature,
+                                                              numberField: {invalidFields: spoolDialog.invalidNumberFields, key: 'bedTemperature', trackOnly: true}" />
                                     <span class="add-on">°C</span>
                                 </div>
+                                <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('temperature') !== -1 || spoolDialog.invalidNumberFields().indexOf('bedTemperature') !== -1">Please enter a valid number</span>
                             </div>
                         </div>
                         <div class="control-group ">
                             <label class="control-label">Enclosure</label>
                             <div class="controls">
                                 <div class="input-append">
-                                    <input type="number" step="1" min="0" class="input-mini text-right" data-bind="value: spoolDialog.spoolItemForEditing.enclosureTemperature" />
+                                    <input type="number" step="1" min="0" class="input-mini text-right" data-bind="value: spoolDialog.spoolItemForEditing.enclosureTemperature,
+                                                              numberField: {invalidFields: spoolDialog.invalidNumberFields, key: 'enclosureTemperature', trackOnly: true}" />
                                     <span class="add-on">°C</span>
                                 </div>
+                                <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('enclosureTemperature') !== -1">Please enter a valid number</span>
                             </div>
                         </div>
 
@@ -264,24 +276,29 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                             <label class="control-label">Offset Tool/Bed<sup>5</sup></label>
                             <div class="row controls">
                                 <div class="input-append">
-                                    <input type="number" step="1" class="input-mini text-right" data-bind="value: spoolDialog.spoolItemForEditing.offsetTemperature" />
+                                    <input type="number" step="1" class="input-mini text-right" data-bind="value: spoolDialog.spoolItemForEditing.offsetTemperature,
+                                                              numberField: {invalidFields: spoolDialog.invalidNumberFields, key: 'offsetTemperature', trackOnly: true}" />
                                     <span class="add-on">°C</span>
 {#                                    </div>#}
 {##}
 {#                                    <span>&nbsp;Offset Bed<sup>5</sup></span>#}
 {#                                    <div class="input-append">#}
-                                    <input type="number" step="1" class="input-mini text-right" data-bind="value: spoolDialog.spoolItemForEditing.offsetBedTemperature" />
+                                    <input type="number" step="1" class="input-mini text-right" data-bind="value: spoolDialog.spoolItemForEditing.offsetBedTemperature,
+                                                              numberField: {invalidFields: spoolDialog.invalidNumberFields, key: 'offsetBedTemperature', trackOnly: true}" />
                                     <span class="add-on">°C</span>
                                 </div>
+                                <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('offsetTemperature') !== -1 || spoolDialog.invalidNumberFields().indexOf('offsetBedTemperature') !== -1">Please enter a valid number</span>
                             </div>
                         </div>
                         <div class="control-group ">
                             <label class="control-label">Offset Enclosure<sup>5</sup></label>
                             <div class="controls">
                                 <div class="input-append">
-                                    <input type="number" step="1" class="input-mini text-right" data-bind="value: spoolDialog.spoolItemForEditing.offsetEnclosureTemperature" />
+                                    <input type="number" step="1" class="input-mini text-right" data-bind="value: spoolDialog.spoolItemForEditing.offsetEnclosureTemperature,
+                                                              numberField: {invalidFields: spoolDialog.invalidNumberFields, key: 'offsetEnclosureTemperature', trackOnly: true}" />
                                     <span class="add-on">°C</span>
                                 </div>
+                                <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('offsetEnclosureTemperature') !== -1">Please enter a valid number</span>
                             </div>
                         </div>
 
@@ -412,9 +429,11 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                     <label class="control-label">Cost</label>
                                     <div class="controls">
                                         <div class="input-append">
-                                            <input type="number" step="0.01" min="0" class="input-small text-right" data-bind="value: spoolDialog.spoolItemForEditing.cost"/>
+                                            <input type="number" step="0.01" min="0" class="input-small text-right" data-bind="value: spoolDialog.spoolItemForEditing.cost,
+                                                              numberField: {invalidFields: spoolDialog.invalidNumberFields, key: 'cost', trackOnly: true}"/>
                                             <span class="add-on" data-bind="text: pluginSettings.currencySymbol" >€</span>
                                         </div>
+                                        <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('cost') !== -1">Please enter a valid number</span>
                                     </div>
                                 </div>
                             </div>
@@ -456,16 +475,19 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                             <input id="total-weight" type="number" step="any" min="0"
                                                    class="input-mini text-right"
                                                    data-bind="value: spoolDialog.totalWeightDisplay,
+                                                              numberField: {invalidFields: spoolDialog.invalidNumberFields, key: 'totalWeight', trackOnly: true},
                                                               disable: spoolDialog.spoolItemForEditing.drivenScope() === spoolDialog.scopeValues.FILAMENT"/>
                                             <span class="add-on" data-bind="text: spoolDialog.weightUnitText">g</span>
                                         </div>
                                          <div class="input-append">
                                             <input type="number" step="any" min="0" class="input-small text-right"
                                                    data-bind="value: spoolDialog.totalLengthDisplay,
+                                                              numberField: {invalidFields: spoolDialog.invalidNumberFields, key: 'totalLength', trackOnly: true},
                                                               disable: spoolDialog.spoolItemForEditing.drivenScope() === spoolDialog.scopeValues.FILAMENT"/>
                                             <span class="add-on" data-bind="text: spoolDialog.lengthUnitText">mm</span>
                                         </div>
                                     </div>
+                                    <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('totalWeight') !== -1 || spoolDialog.invalidNumberFields().indexOf('totalLength') !== -1">Please enter a valid number</span>
                                 </div>
                                 <div class="control-group no-bottom-gap">
                                     <label for="usedWeight" class="control-label">Used <small
@@ -476,16 +498,19 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                             <input id="usedWeight" type="number" step="any" min="0"
                                                    class="input-mini text-right"
                                                    data-bind="value: spoolDialog.usedWeightDisplay,
+                                                              numberField: {invalidFields: spoolDialog.invalidNumberFields, key: 'usedWeight', trackOnly: true},
                                                               disable: spoolDialog.spoolItemForEditing.drivenScope() === spoolDialog.scopeValues.FILAMENT"/>
                                             <span class="add-on" data-bind="text: spoolDialog.weightUnitText">g</span>
                                         </div>
                                         <span class="input-append">
                                             <input type="number" step="any" min="0" class="input-small text-right"
                                                    data-bind="value: spoolDialog.usedLengthDisplay,
+                                                              numberField: {invalidFields: spoolDialog.invalidNumberFields, key: 'usedLength', trackOnly: true},
                                                               disable: spoolDialog.spoolItemForEditing.drivenScope() === spoolDialog.scopeValues.FILAMENT"/>
                                             <span class="add-on" data-bind="text: spoolDialog.lengthUnitText">mm</span>
                                         </span>
                                     </div>
+                                    <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('usedWeight') !== -1 || spoolDialog.invalidNumberFields().indexOf('usedLength') !== -1">Please enter a valid number</span>
                                 </div>
                                 <div class="control-group">
                                     <label for="remainingWeight" class="control-label">Remaining <small
@@ -521,10 +546,12 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                             <input id="spool-weight" type="number" step="any" min="0"
                                                    class="input-mini text-right"
                                                    data-bind="value: spoolDialog.spoolWeightDisplay,
+                                                              numberField: {invalidFields: spoolDialog.invalidNumberFields, key: 'spoolWeight', trackOnly: true},
                                                               disable: spoolDialog.spoolItemForEditing.drivenScope() === spoolDialog.scopeValues.SPOOL"/>
                                             <span class="add-on" data-bind="text: spoolDialog.weightUnitText">g</span>
                                         </div>
                                     </div>
+                                    <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('spoolWeight') !== -1">Please enter a valid number</span>
                                 </div>
                             </div>
 
@@ -536,11 +563,13 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                         <span class="input-append">
                                             <input type="number" step="any" min="0" class="input-mini text-right"
                                                    data-bind="value: spoolDialog.totalCombinedWeightDisplay,
+                                                              numberField: {invalidFields: spoolDialog.invalidNumberFields, key: 'totalCombinedWeight', trackOnly: true},
                                                               disable: spoolDialog.spoolItemForEditing.drivenScope() === spoolDialog.scopeValues.COMBINED"
                                             />
                                             <span class="add-on" data-bind="text: spoolDialog.weightUnitText">g</span>
                                         </span>
                                     </div>
+                                    <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('totalCombinedWeight') !== -1">Please enter a valid number</span>
                                 </div>
                                 <div class="control-group">
                                     <label class="control-label">Remaining</label>
@@ -548,11 +577,13 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                         <span class="input-append">
                                             <input type="number" step="any" min="0" class="input-mini text-right"
                                                     data-bind="value: spoolDialog.remainingCombinedWeightDisplay,
+                                                              numberField: {invalidFields: spoolDialog.invalidNumberFields, key: 'remainingCombinedWeight', trackOnly: true},
                                                               disable: spoolDialog.spoolItemForEditing.drivenScope() !== spoolDialog.scopeValues.FILAMENT"
                                             />
                                             <span class="add-on" data-bind="text: spoolDialog.weightUnitText">g</span>
                                         </span>
                                     </div>
+                                    <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('remainingCombinedWeight') !== -1">Please enter a valid number</span>
                                 </div>
                             </div>
 
@@ -614,6 +645,8 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                 </span>
                 <span class="span4 text-right">
 <!--                        data-bind="click: spoolDialog.closeSpoolItemDialog"-->
+                    <span class="spm-save-blocked-hint" data-bind="visible: spoolDialog.invalidNumberFields().length > 0,
+                                                                    attr: {title: 'Invalid value in: ' + spoolDialog.invalidNumberFieldsLabel()}">Invalid number entered</span>
                     <button class="btn "  data-dismiss="modal"  style="text-align:right">Close</button>
                     <button class="btn btn-primary" data-bind="enable: spoolDialog.isFormValidForSubmit(), click: spoolDialog.saveSpoolItem" style="text-align:right">Save</button>
                 </span>
