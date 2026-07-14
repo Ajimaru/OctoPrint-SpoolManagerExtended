@@ -1036,6 +1036,12 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
         materials = self._addAdditionalMaterials(materials)
 
+        # sort catalogs alphabetically (case-insensitive) for the filter/edit dropdowns, see issue #23
+        vendors = sorted(vendors, key=lambda item: item.lower())
+        materials = sorted(materials, key=lambda item: item.lower())
+        labels = sorted(labels, key=lambda item: item.lower())
+        colors = sorted(colors, key=lambda item: item["colorName"].lower())
+
         tempateSpoolAsDict = None
         allTemplateSpools = self._databaseManager.loadSpoolTemplates()
         allTemplateSpoolsAsDict = Transformer.transformAllSpoolModelsToDict(allTemplateSpools)
