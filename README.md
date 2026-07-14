@@ -156,3 +156,9 @@ select2 https://select2.org/
 
 * WYSIWYG - Editor
 quill https://quilljs.com/
+
+### Data sources
+* Material list and density values derived from SpoolmanDB-Community
+https://github.com/Icezaza2543/SpoolmanDB-Community (maintained fork of
+https://github.com/Donkie/SpoolmanDB) — Copyright (c) 2024 Donkie, MIT License.
+Values are provided without warranty; always verify against the manufacturer's datasheet.
