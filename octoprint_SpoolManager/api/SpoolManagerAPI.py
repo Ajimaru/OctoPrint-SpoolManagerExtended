@@ -68,6 +68,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         spoolModel.usedLength = self._toIntFromJSONOrNone("usedLength", jsonData)
         spoolModel.usedWeight = self._toFloatFromJSONOrNone("usedWeight", jsonData)
         spoolModel.code = self._getValueFromJSONOrNone("code", jsonData)
+        spoolModel.batchNumber = self._getValueFromJSONOrNone("batchNumber", jsonData)
 
         # spoolModel.firstUse = StringUtils.transformToDateTimeOrNone(self._getValueFromJSONOrNone("firstUse", jsonData))
         # spoolModel.lastUse = StringUtils.transformToDateTimeOrNone(self._getValueFromJSONOrNone("lastUse", jsonData))
@@ -909,6 +910,28 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             "metadata": metaDataResult
         })
 
+    #######################################################################################   UPGRADE DATABASE SCHEME
+    @octoprint.plugin.BlueprintPlugin.route("/upgradeDatabaseScheme", methods=["PUT"])
+    def upgradeDatabaseScheme(self):
+
+        jsonData = request.json if request.is_json else {}
+        # the frontend downloads the backup dump via /exportDatabaseDump before triggering the upgrade;
+        # without that flag a backup file is written to the plugin data folder instead
+        backupDownloaded = self._getValueFromJSONOrNone("backupDownloaded", jsonData) == True
+
+        upgradeResult = self._databaseManager.upgradeExternalDatabaseScheme(createBackupFile=(backupDownloaded == False))
+        # fresh metadata so the frontend can update the scheme version badges
+        metaDataResult = self._databaseManager.loadDatabaseMetaInformations(None)
+
+        if (upgradeResult["success"] == True):
+            # refresh spool table and sidebar in all connected clients of this instance
+            self._sendDataToClient(dict(action="reloadTable and sidebarSpools"))
+
+        return flask.jsonify({
+            "result": upgradeResult,
+            "metadata": metaDataResult
+        })
+
     #######################################################################################   TEST DATABASE CONNECTION
     @octoprint.plugin.BlueprintPlugin.route("/testDatabaseConnection", methods=["PUT"])
     def testDatabaseConnection(self):
@@ -1022,6 +1045,30 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
         tableQuery = flask.request.values
 
+        try:
+            return self._loadAllSpoolsByQueryResponse(tableQuery)
+        except Exception:
+            # e.g. outdated database scheme: the model expects columns the database doesn't have yet.
+            # Return a valid (empty) response instead of a 500, so the frontend can show the
+            # scheme-upgrade hint (schemeUpgradeNeeded) in the tab and sidebar.
+            self._logger.exception("loadSpoolsByQuery failed")
+            schemeUpgradeNeeded = self._databaseManager.recheckSchemeUpgradeNeeded()
+            return flask.jsonify({
+                                    "databaseConnectionProblem": schemeUpgradeNeeded == False,
+                                    "templateSpools": [],
+                                    "catalogs": {
+                                        "vendors": [],
+                                        "materials": [],
+                                        "colors": [],
+                                        "labels": []
+                                    },
+                                    "totalItemCount": 0,
+                                    "allSpools": [],
+                                    "selectedSpools": [],
+                                    "schemeUpgradeNeeded": schemeUpgradeNeeded
+                                })
+
+    def _loadAllSpoolsByQueryResponse(self, tableQuery):
         allSpools = self._databaseManager.loadAllSpoolsByQuery(tableQuery)
         totalItemCount = self._databaseManager.countSpoolsByQuery()
 
@@ -1067,13 +1114,20 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             for selectedSpool in self.loadSelectedSpools()
         ]
 
+        schemeUpgradeNeeded = self._databaseManager.isSchemeUpgradeNeeded()
+        if (schemeUpgradeNeeded == True):
+            # queries succeed again, so another OctoPrint instance sharing the database
+            # may have performed the upgrade in the meantime - re-evaluate the stale flag
+            schemeUpgradeNeeded = self._databaseManager.recheckSchemeUpgradeNeeded()
+
         return flask.jsonify({
                                 # "databaseConnectionProblem": self._databaseManager.isConnected() == False,
                                 "templateSpools": allTemplateSpoolsAsDict,
                                 "catalogs": catalogs,
                                 "totalItemCount": totalItemCount,
                                 "allSpools": allSpoolsAsDict,
-                                "selectedSpools": selectedSpoolsAsDicts
+                                "selectedSpools": selectedSpoolsAsDicts,
+                                "schemeUpgradeNeeded": schemeUpgradeNeeded
                             })
 
     def _addAdditionalMaterials(self, databaseMaterials):
@@ -1103,6 +1157,42 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         return databaseMaterials
 
 
+    ##################################################################################################   NEXT SPOOL ID
+    @octoprint.plugin.BlueprintPlugin.route("/nextSpoolId", methods=["GET"])
+    def loadNextSpoolId(self):
+        # prospective databaseId of the next created spool, used for the {id} display name variable preview
+        maxDatabaseId = self._databaseManager.getMaxSpoolDatabaseId()
+        nextSpoolId = 1 if maxDatabaseId is None else maxDatabaseId + 1
+        return flask.jsonify({
+                                "nextSpoolId": nextSpoolId
+                            })
+
+    def _resolveDisplayNameVariables(self, spoolModel):
+        # replaces variables like {material}-{color}-{id} in the display name with the spool's field values,
+        # see https://github.com/WildRikku/OctoPrint-SpoolManager/issues/49
+        displayName = spoolModel.displayName
+        if (StringUtils.isEmpty(displayName) or ("{" in displayName) == False):
+            return False
+
+        def asText(value):
+            return "" if value is None else str(value)
+
+        replacements = {
+            "{id}": asText(spoolModel.databaseId),
+            "{material}": asText(spoolModel.material),
+            "{color}": asText(spoolModel.colorName),
+            "{vendor}": asText(spoolModel.vendor),
+            "{diameter}": asText(spoolModel.diameter),
+            "{weight}": StringUtils.formatInt(spoolModel.totalWeight),
+            "{code}": asText(spoolModel.code),
+            "{batch}": asText(spoolModel.batchNumber),
+        }
+        newDisplayName = StringUtils.multiple_replace(displayName, replacements)
+        if (newDisplayName != displayName):
+            spoolModel.displayName = newDisplayName
+            return True
+        return False
+
     #######################################################################################################   SAVE SPOOL
     @octoprint.plugin.BlueprintPlugin.route("/saveSpool", methods=["PUT"])
     def saveSpool(self):
@@ -1124,6 +1214,12 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             self._updateSpoolModelFromJSONData(spoolModel, jsonData)
 
         newDatabaseId = self._databaseManager.saveSpool(spoolModel, withReusedConnection=True)
+
+        # resolve display name variables ({id} is only known after the initial save), but never inside templates
+        if (databaseId == None and spoolModel.isTemplate != True):
+            if (self._resolveDisplayNameVariables(spoolModel)):
+                self._databaseManager.saveSpool(spoolModel, withReusedConnection=True)
+
         self._databaseManager.closeDatabase()
 
         if (databaseId == None):

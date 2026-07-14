@@ -265,6 +265,9 @@ FPE;	2.16
                             <input type="checkbox" data-bind="checked: checkExcludedFromTemplateCopy('code')" > Serialnumber<br/>
                         </label>
                         <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: checkExcludedFromTemplateCopy('batchNumber')" > Batchnumber<br/>
+                        </label>
+                        <label class="checkbox">
                             <input type="checkbox" data-bind="checked: checkExcludedFromTemplateCopy('purchasedFrom')" > Purchased from<br/>
                         </label>
                         <label class="checkbox">
@@ -593,11 +596,28 @@ FPE;	2.16
                     </div>
                 </div>
 
-                <!-- TODO add
-                <div class="help-block" data-bind="visible: showUpdateSchemeMessage">
-                    <font color="orange"><b>Database scheme doesn't match with required scheme version. Please perform an update!</b></font>
+                <!-- External database scheme upgrade -->
+                <div class="control-group" data-bind="visible: isExternalSchemeUpgradeAvailable">
+                    <div class="controls">
+                        <div class="help-block">
+                            <font color="orange"><b>The database scheme doesn't match the required scheme version. Please perform an upgrade!</b></font>
+                        </div>
+                        <button class="btn btn-warning"
+                                data-bind="disable: schemeUpgradeInProgress, click: upgradeDatabaseSchemeAction">
+                            <i class="fa fa-spinner fa-spin" data-bind="visible: schemeUpgradeInProgress"></i> Upgrade database scheme
+                        </button>
+                        <span class="help-inline">A SQL dump backup is downloaded first.</span>
+                    </div>
                 </div>
-                -->
+                <div class="control-group">
+                    <div class="controls">
+                        <div class="help-block" data-bind="visible: schemeUpgradeResultText().length > 0">
+                            <div class="alert alert-success">
+                                <font color="green"><b><span data-bind="text: schemeUpgradeResultText"></span></b></font>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- DEBUGGING - TAB -->
