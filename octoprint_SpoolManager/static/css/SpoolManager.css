@@ -276,3 +276,22 @@
     background-color: transparent !important;
     color: #999 !important;
 }
+
+/* Invalid number input (see ko.bindingHandlers.numberField) - red border + warning message.
+   Fall A: the browser turns non-numeric input into an empty string, so we flag it here. */
+input.spm-number-invalid {
+    border-color: #b94a48 !important;
+    box-shadow: 0 0 4px rgba(185, 74, 72, 0.6) !important;
+    background-color: #fdf2f2;
+}
+/* visibility is toggled via knockout `visible:` binding, not CSS siblings */
+.spm-number-invalid-hint {
+    color: #b94a48;
+    font-size: 11px;
+    margin-top: 2px;
+}
+.spm-save-blocked-hint {
+    color: #b94a48;
+    font-size: 11px;
+    margin-right: 10px;
+}

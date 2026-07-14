@@ -1,7 +1,122 @@
+// Custom binding for <input type="number"> fields.
+// Problem: a native number input reports an empty string via its `.value` when the
+// user types garbage (e.g. "12abc") or pastes non-numeric text, so the plain knockout
+// `value:` binding cannot tell "empty" apart from "invalid" - the bad value silently
+// vanishes (Fall A). This binding reads the DOM `validity` object directly (badInput /
+// rangeUnderflow / rangeOverflow / stepMismatch) AND intercepts paste of non-numeric
+// text (which some browsers drop to an empty value without setting badInput), marks the
+// field invalid (red border + message) and registers it in a shared set so the Save
+// button can be blocked while anything is invalid.
+ko.bindingHandlers.numberField = {
+    init: function(element, valueAccessor, allBindings, viewModel, bindingContext){
+        var options = valueAccessor();
+        var observable = options.value;              // optional: only written in standalone mode
+        var invalidFields = options.invalidFields;   // ko.observableArray of field keys
+        var fieldKey = options.key;
+        // trackOnly mode: another binding (e.g. the unit-conversion `value:` binding) owns the value,
+        // so we only observe validity for the red border + Save block and never touch the observable.
+        var trackOnly = options.trackOnly === true;
+
+        // sticky flag set when a paste of non-numeric text is detected; cleared on the next
+        // real edit. Guards against browsers that silently drop a bad paste to "" without badInput.
+        var pasteRejected = false;
+        // accepts optional sign, digits, one decimal separator (. or ,) and scientific notation
+        var numericPattern = /^[-+]?(\d+([.,]\d*)?|[.,]\d+)([eE][-+]?\d+)?$/;
+
+        var setInvalidFlag = function(isInvalid){
+            $(element).toggleClass("spm-number-invalid", isInvalid);
+            var current = invalidFields();
+            var idx = current.indexOf(fieldKey);
+            if (isInvalid && idx === -1){
+                invalidFields.push(fieldKey);
+            } else if (!isInvalid && idx !== -1){
+                invalidFields.splice(idx, 1);
+            }
+        };
+
+        var updateValidity = function(){
+            // element.validity.valid is false for badInput, rangeUnderflow, stepMismatch, ...
+            var isInvalid = pasteRejected || (element.validity && element.validity.valid === false);
+            setInvalidFlag(isInvalid);
+
+            // standalone mode: only push a real (parseable) value, never a half-typed garbage state
+            if (!trackOnly && !isInvalid && observable){
+                var raw = element.value;
+                observable(raw === "" ? null : raw);
+            }
+        };
+
+        var subscription = null;
+        if (!trackOnly && observable){
+            // keep the input's displayed text in sync when the observable changes programmatically
+            subscription = observable.subscribe(function(newValue){
+                if (!pasteRejected && element.validity && element.validity.valid !== false){
+                    var display = (newValue === null || newValue === undefined) ? "" : ("" + newValue);
+                    if (element.value !== display){
+                        element.value = display;
+                    }
+                }
+            });
+            var initial = ko.unwrap(observable);
+            element.value = (initial === null || initial === undefined) ? "" : ("" + initial);
+        }
+
+        // intercept non-numeric paste before the browser can silently discard it
+        $(element).on("paste.numberField", function(e){
+            var clip = (e.originalEvent || e).clipboardData || window.clipboardData;
+            if (!clip){ return; }
+            var text = clip.getData("text");
+            if (text != null && text.trim().length > 0 && numericPattern.test(text.trim()) === false){
+                e.preventDefault();
+                pasteRejected = true;
+                setInvalidFlag(true);
+            }
+        });
+        // any real edit (typing, arrows, deleting) clears a previous paste rejection
+        $(element).on("keydown.numberField", function(){
+            if (pasteRejected){
+                pasteRejected = false;
+            }
+        });
+
+        $(element).on("input.numberField change.numberField blur.numberField", updateValidity);
+        // run once so a value that arrives invalid (e.g. loaded then edited) is caught immediately
+        updateValidity();
+
+        ko.utils.domNodeDisposal.addDisposeCallback(element, function(){
+            $(element).off(".numberField");
+            if (subscription){
+                subscription.dispose();
+            }
+            // drop this field from the invalid set when the node goes away (dialog close/reopen)
+            var current = invalidFields();
+            var idx = current.indexOf(fieldKey);
+            if (idx !== -1){
+                invalidFields.splice(idx, 1);
+            }
+        });
+    }
+};
+
 // Dialog functionality
 function SpoolManagerEditSpoolDialog(){
 
     var self = this;
+
+    // keys of number inputs currently holding an invalid value (see ko.bindingHandlers.numberField)
+    self.invalidNumberFields = ko.observableArray([]);
+    // human readable labels for the Save-blocked hint, keyed by the field key used in the template
+    self.numberFieldLabels = {
+        density: "Density", diameter: "Diameter", diameterTolerance: "Diameter tolerance",
+        flowRateCompensation: "Flow rate compensation", temperature: "Tool temperature",
+        bedTemperature: "Bed temperature", enclosureTemperature: "Enclosure temperature",
+        offsetTemperature: "Offset tool temperature", offsetBedTemperature: "Offset bed temperature",
+        offsetEnclosureTemperature: "Offset enclosure temperature", cost: "Cost",
+        totalWeight: "Filament amount (initial)", spoolWeight: "Empty spool weight",
+        usedWeight: "Filament amount (used)", totalLength: "Filament length (initial)",
+        usedLength: "Filament length (used)",
+        totalCombinedWeight: "Combined weight (initial)", remainingCombinedWeight: "Combined weight (remaining)"
+    };
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////////// CONSTANTS
     var DEFAULT_COLOR = "#ff0000";
@@ -546,8 +661,19 @@ function SpoolManagerEditSpoolDialog(){
         if (self._checkDateTimeFormats() == false){
             return false;
         }
+        // block submit while any number field holds an invalid value (Fall A)
+        if (self.invalidNumberFields().length > 0){
+            return false;
+        }
 
         return true;
+    });
+
+    // comma-separated list of invalid number field labels, for the hint next to the Save button
+    self.invalidNumberFieldsLabel = ko.pureComputed(function () {
+        return self.invalidNumberFields().map(function(key){
+            return self.numberFieldLabels[key] || key;
+        }).join(", ");
     });
 
     self._checkMandatoryFields = function(){
@@ -1277,7 +1403,16 @@ function SpoolManagerEditSpoolDialog(){
 //        self.printJobItemForEdit.noteDeltaFormat(noteDeltaFormat);
 //        self.printJobItemForEdit.noteHtml(noteHtml);
 //
-        self.apiClient.callSaveSpool(self.spoolItemForEditing, function(allPrintJobsResponse){
+        self.apiClient.callSaveSpool(self.spoolItemForEditing, function(success, validationErrors){
+            if (success === false){
+                // server rejected the save - keep the dialog open and tell the user why
+                var message = "Spool could not be saved.";
+                if (validationErrors && validationErrors.length > 0){
+                    message += "\n\n- " + validationErrors.join("\n- ");
+                }
+                alert(message);
+                return;
+            }
             self.spoolItemForEditing.isSpoolVisible(false);
             self.spoolDialog.modal('hide');
             if (self.spoolItemForEditing.selectedForTool() != undefined && self.printerStateViewModel.isPrinting()) {
