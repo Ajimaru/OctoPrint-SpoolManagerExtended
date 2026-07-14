@@ -1392,58 +1392,7 @@ class DatabaseManager(object):
                 limit = int(tableQuery["to"])
                 myQuery = SpoolModel.select().offset(offset).limit(limit)
 
-            if ("materialFilter" in tableQuery):
-                materialFilter = tableQuery["materialFilter"]
-                vendorFilter = tableQuery["vendorFilter"]
-                colorFilter = tableQuery["colorFilter"]
-
-                # materialFilter
-                # u'ABS,PLA'
-                # u''
-                # u'all'
-                materialFilter = StringUtils.to_native_str(materialFilter)
-                if (materialFilter != "all"):
-                    if (StringUtils.isEmpty(colorFilter)):
-                        myQuery = myQuery.where( (SpoolModel.material == '') )
-                    else:
-                        allMaterials = materialFilter.split(",")
-                        myQuery = myQuery.where(SpoolModel.material.in_(allMaterials))
-                    # for material in allMaterials:
-                    # 	myQuery = myQuery.orwhere((SpoolModel.material == material))
-                # vendorFilter
-                # u'MatterMost,TheFactory'
-                # u''
-                # u'all'
-                vendorFilter = StringUtils.to_native_str(vendorFilter)
-                if (vendorFilter != "all"):
-                    if (StringUtils.isEmpty(vendorFilter)):
-                        myQuery = myQuery.where( (SpoolModel.vendor == '') )
-                    else:
-                        allVendors = vendorFilter.split(",")
-                        myQuery = myQuery.where(SpoolModel.vendor.in_(allVendors))
-                    # for vendor in allVendors:
-                    # 	myQuery = myQuery.orwhere((SpoolModel.vendor == vendor))
-                # colorFilter
-                # u'#ff0000;red,#ff0000;keinRot,#ff0000;deinRot,#ff0000;meinRot,#ffff00;yellow'
-                # u''
-                # u'all'
-                colorFilter = StringUtils.to_native_str(colorFilter)
-                if (colorFilter != "all" and StringUtils.isNotEmpty(colorFilter)):
-                    allColorObjects = colorFilter.split(",")
-                    allColors = []
-                    allColorNames = []
-                    for colorObject in allColorObjects:
-                        colorCodeColorName = colorObject.split(";")
-                        color = colorCodeColorName[0]
-                        colorName = colorCodeColorName[1]
-                        allColors.append(color)
-                        allColorNames.append(colorName)
-                    myQuery = myQuery.where(SpoolModel.color.in_(allColors))
-                    myQuery = myQuery.where(SpoolModel.colorName.in_(allColorNames))
-
-                #
-                # 	myQuery = myQuery.orwhere(  (SpoolModel.color == color) & (SpoolModel.colorName == colorName) )
-                pass
+            myQuery = self._applyTableQueryFilters(myQuery, tableQuery)
 
             # mySqlText = myQuery.sql()
 
@@ -1487,6 +1436,83 @@ class DatabaseManager(object):
             return myQuery
 
         return self._handleReusableConnection(databaseCallMethode, withReusedConnection, "loadAllSpoolsByQuery")
+
+    def _applyTableQueryFilters(self, myQuery, tableQuery):
+        if (tableQuery == None):
+            return myQuery
+
+        filterName = StringUtils.to_native_str(tableQuery.get("filterName", ""))
+
+        if ("materialFilter" in tableQuery):
+            materialFilter = tableQuery["materialFilter"]
+            vendorFilter = tableQuery["vendorFilter"]
+            colorFilter = tableQuery["colorFilter"]
+
+            # materialFilter
+            # u'ABS,PLA'
+            # u''
+            # u'all'
+            materialFilter = StringUtils.to_native_str(materialFilter)
+            if (materialFilter != "all"):
+                if (StringUtils.isEmpty(colorFilter)):
+                    myQuery = myQuery.where( (SpoolModel.material == '') )
+                else:
+                    allMaterials = materialFilter.split(",")
+                    myQuery = myQuery.where(SpoolModel.material.in_(allMaterials))
+
+            # vendorFilter
+            # u'MatterMost,TheFactory'
+            # u''
+            # u'all'
+            vendorFilter = StringUtils.to_native_str(vendorFilter)
+            if (vendorFilter != "all"):
+                if (StringUtils.isEmpty(vendorFilter)):
+                    myQuery = myQuery.where( (SpoolModel.vendor == '') )
+                else:
+                    allVendors = vendorFilter.split(",")
+                    myQuery = myQuery.where(SpoolModel.vendor.in_(allVendors))
+
+            # colorFilter
+            # u'#ff0000;red,#ff0000;keinRot,#ff0000;deinRot,#ff0000;meinRot,#ffff00;yellow'
+            # u''
+            # u'all'
+            colorFilter = StringUtils.to_native_str(colorFilter)
+            if (colorFilter != "all" and StringUtils.isNotEmpty(colorFilter)):
+                allColorObjects = colorFilter.split(",")
+                allColors = []
+                allColorNames = []
+                for colorObject in allColorObjects:
+                    colorCodeColorName = colorObject.split(";")
+                    color = colorCodeColorName[0]
+                    colorName = colorCodeColorName[1]
+                    allColors.append(color)
+                    allColorNames.append(colorName)
+                myQuery = myQuery.where(SpoolModel.color.in_(allColors))
+                myQuery = myQuery.where(SpoolModel.colorName.in_(allColorNames))
+
+        # Text search (issue #22 / #44 preparation): case-insensitive match across
+        # the same user-facing fields as sidebar select plus optional note text.
+        textFilter = StringUtils.to_native_str(tableQuery.get("textFilter", "")).strip().lower()
+        if (StringUtils.isNotEmpty(textFilter)):
+            myQuery = myQuery.where(
+                (fn.Lower(SpoolModel.material).contains(textFilter)) |
+                (fn.Lower(SpoolModel.vendor).contains(textFilter)) |
+                (fn.Lower(SpoolModel.displayName).contains(textFilter)) |
+                (fn.Lower(SpoolModel.colorName).contains(textFilter)) |
+                (fn.Lower(SpoolModel.noteText).contains(textFilter))
+            )
+
+        if ("onlyTemplates" in filterName):
+            myQuery = myQuery.where( (SpoolModel.isTemplate == True) )
+        else:
+            if ("noTemplates" in filterName):
+                myQuery = myQuery.where( (SpoolModel.isTemplate == False) | (SpoolModel.isTemplate == None) )
+            if ("hideEmptySpools" in filterName):
+                myQuery = myQuery.where( (SpoolModel.remainingWeight > 0) | (SpoolModel.remainingWeight == None))
+            if ("hideInactiveSpools" in filterName):
+                myQuery = myQuery.where( (SpoolModel.isActive == True) )
+
+        return myQuery
 
     def saveSpool(self, spoolModel, withReusedConnection=False):
 
@@ -1561,9 +1587,10 @@ class DatabaseManager(object):
 
         return self._handleReusableConnection(databaseCallMethode, withReusedConnection, "saveSpool")
 
-    def countSpoolsByQuery(self, withReusedConnection=False):
+    def countSpoolsByQuery(self, tableQuery=None, withReusedConnection=False):
         def databaseCallMethode():
             myQuery = SpoolModel.select()
+            myQuery = self._applyTableQueryFilters(myQuery, tableQuery)
             return myQuery.count()
 
         return self._handleReusableConnection(databaseCallMethode, withReusedConnection, "countSpoolsByQuery")

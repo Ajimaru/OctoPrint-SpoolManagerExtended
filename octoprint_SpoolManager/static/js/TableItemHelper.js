@@ -38,8 +38,11 @@ function TableItemHelper(loadItemsFunction, defaultPageSize, defaultSortColumn, 
     self.allColors = ko.observableArray([]);
     self.showAllColorsForFilter = ko.observable(true);
     self.selectedColorsForFilter = ko.observableArray();
+    // Text search filter (server-side for spool tab)
+    self.filterTextQuery = ko.observable("");
 
     self.isInitialLoadDone = false;
+    self._filterTextReloadTimer = null;
     // ############################################################################################### private functions
 
 
@@ -80,7 +83,8 @@ function TableItemHelper(loadItemsFunction, defaultPageSize, defaultSortColumn, 
             "filterName": selectedFilterNamesString,
             "materialFilter": materialFilter,
             "vendorFilter": vendorFilter,
-            "colorFilter": colorFilter
+            "colorFilter": colorFilter,
+            "textFilter": self.filterTextQuery()
         };
         self.loadItemsFunction( tableQuery, self.items, self.totalItemCount );
     }
@@ -147,6 +151,10 @@ function TableItemHelper(loadItemsFunction, defaultPageSize, defaultSortColumn, 
     // ################################################################################################ public functions
     self.reloadItems = function(){
         self._loadItems();
+    }
+
+    self.clearFilterTextQuery = function(){
+        self.filterTextQuery("");
     }
 
     self.updateCatalogs = function(catalogs){
@@ -230,6 +238,16 @@ function TableItemHelper(loadItemsFunction, defaultPageSize, defaultSortColumn, 
         // return self.selectedFilterName() == filterName;
         return self.selectedFilterNameArrayKO().includes(filterName);
     };
+
+    self.filterTextQuery.subscribe(function(newValue) {
+        if (self._filterTextReloadTimer != null){
+            clearTimeout(self._filterTextReloadTimer);
+        }
+        self._filterTextReloadTimer = setTimeout(function(){
+            self.currentPage(0);
+            self._loadItems();
+        }, 180);
+    });
 
     self.doFilterSelectAll = function(data, catalogName){
         let checked;
