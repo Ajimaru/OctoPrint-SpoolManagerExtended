@@ -163,8 +163,15 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
             contentType: "application/json; charset=UTF-8",
             data: jsonPayload,
             type: "PUT"
-        }).always(function( data ){
-            responseHandler();
+        }).done(function( data ){
+            responseHandler(true);
+        }).fail(function( jqXHR ){
+            // server rejected the save (e.g. HTTP 400 with validation errors) - surface it instead of swallowing it
+            var validationErrors = null;
+            if (jqXHR && jqXHR.responseJSON && jqXHR.responseJSON.validationErrors){
+                validationErrors = jqXHR.responseJSON.validationErrors;
+            }
+            responseHandler(false, validationErrors);
         });
     }
 
