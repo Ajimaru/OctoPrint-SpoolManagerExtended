@@ -295,3 +295,10 @@ input.spm-number-invalid {
     font-size: 11px;
     margin-right: 10px;
 }
+
+/* "translucent" swatch in the basic colors tab of the color picker:
+   checkerboard instead of the plain white hex the entry technically carries
+   (!important overrides the inline background-color set by pick-a-color) */
+.color-preview.translucent {
+    background: repeating-conic-gradient(#c8c8c8 0% 25%, #ffffff 0% 50%) 50% / 8px 8px !important;
+}

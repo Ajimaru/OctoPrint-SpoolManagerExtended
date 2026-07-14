@@ -85,6 +85,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         spoolModel.diameterTolerance = self._toFloatFromJSONOrNone("diameterTolerance", jsonData, validationErrors, minValue=0)
         spoolModel.colorName = self._getValueFromJSONOrNone("colorName", jsonData)
         spoolModel.color = self._getValueFromJSONOrNone("color", jsonData)
+        spoolModel.finish = self._getValueFromJSONOrNone("finish", jsonData)
         spoolModel.flowRateCompensation = self._toIntFromJSONOrNone("flowRateCompensation", jsonData, validationErrors, minValue=0)
         spoolModel.temperature = self._toIntFromJSONOrNone("temperature", jsonData, validationErrors, minValue=0)
         spoolModel.bedTemperature = self._toIntFromJSONOrNone("bedTemperature", jsonData, validationErrors, minValue=0)
@@ -676,10 +677,26 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         colorValue = str(colorValue).strip()
         if (colorValue.lower() == "rainbow"):
             return "linear-gradient(135deg, #ff2d2d 0%, #ff9a00 20%, #ffe600 40%, #16c172 60%, #2f7bff 80%, #a044ff 100%)"
+        checkerboard = "repeating-conic-gradient(#c8c8c8 0% 25%, #ffffff 0% 50%) 50% / 8px 8px"
+        if (colorValue.lower() == "transparent"):
+            return checkerboard
+        transparent = False
+        if (colorValue.lower().startswith("transparent:")):
+            transparent = True
+            colorValue = colorValue[len("transparent:"):]
         # only accept hex colors, the value ends up in a style-attribute
         if (re.match(r"^#[0-9a-fA-F]{3,8}(;#[0-9a-fA-F]{3,8}){0,2}$", colorValue) is None):
             return ""
         colors = colorValue.split(";")
+        if (transparent):
+            # semi-opaque tint layered over the checkerboard (8-digit hex alpha)
+            stops = []
+            step = 100.0 / len(colors)
+            for i, color in enumerate(colors):
+                tinted = color + "8c" if (len(color) == 7) else color
+                stops.append("%s %.1f%%" % (tinted, i * step))
+                stops.append("%s %.1f%%" % (tinted, (i + 1) * step))
+            return "linear-gradient(135deg, %s), %s" % (", ".join(stops), checkerboard)
         if (len(colors) == 1):
             return colorValue
         stops = []
@@ -706,10 +723,16 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 colorHtml = "<h3>Spoolcolor: <span title='" + colorName + "' style=\"display:inline-block;" \
                             "width:0.9em;height:0.9em;border:1px solid #808080;border-radius:3px;" \
                             "vertical-align:baseline;background:" + colorCss + "\"></span> " + colorName + "</h3>"
+            finishHtml = ""
+            if (spoolModel.finish):
+                # value ends up in html
+                safeFinish = re.sub(r"[^\w\s#,()-]", "", str(spoolModel.finish))
+                finishHtml = "<h3>Spoolfinish: " + safeFinish + "</h3>"
             htmlContent = \
                         "<h3>Database Id: " + str(spoolModel.databaseId) + "</h3>" \
                         "<h3>Spoolname: " + spoolModel.displayName + "</h3>" \
-                        + colorHtml + \
+                        + colorHtml \
+                        + finishHtml + \
                         "<img loading='lazy' src='" + qrCodeImageUrl + "' />"
         else:
             htmlContent = "<h3>Spool with database Id not found</h3>"

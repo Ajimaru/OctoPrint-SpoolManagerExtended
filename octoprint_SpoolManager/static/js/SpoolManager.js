@@ -46,8 +46,10 @@ $("#colorFilter").select2({
 
 // Builds a CSS background value for a spool color field.
 // Supported values: single hex ("#ff0000"), multi-color ("#ff0000;#0000ff",
-// up to three colors, rendered as a diagonally split box) and the keyword
-// "rainbow" (rendered as a rainbow gradient). See upstream issue #19.
+// up to three colors, rendered as a diagonally split box), the keyword
+// "rainbow" (rendered as a rainbow gradient, see upstream issue #19) and
+// "transparent"/"transparent:#hex" (rendered as a checkerboard, optionally
+// tinted with the base color).
 // Attached to window because OctoPrint wraps packed plugin JS in a closure,
 // but the knockout bindings in the templates need global access.
 window.spmSpoolColorCss = function(color) {
@@ -59,17 +61,40 @@ window.spmSpoolColorCss = function(color) {
     if (colorValue.toLowerCase() === "rainbow") {
         return "linear-gradient(135deg, #ff2d2d 0%, #ff9a00 20%, #ffe600 40%, #16c172 60%, #2f7bff 80%, #a044ff 100%)";
     }
+    var checkerboard = "repeating-conic-gradient(#c8c8c8 0% 25%, #ffffff 0% 50%) 50% / 8px 8px";
+    if (colorValue.toLowerCase() === "transparent") {
+        return checkerboard;
+    }
+    var transparentTint = null;
+    if (colorValue.toLowerCase().indexOf("transparent:") === 0) {
+        transparentTint = colorValue.substr("transparent:".length);
+        colorValue = transparentTint;
+    }
     var colors = colorValue.split(";");
+    var singleOrGradient;
     if (colors.length === 1) {
-        return colorValue;
+        singleOrGradient = colorValue;
+    } else {
+        var stops = [];
+        var step = 100 / colors.length;
+        for (var i = 0; i < colors.length; i++) {
+            stops.push(colors[i] + " " + (i * step).toFixed(1) + "%");
+            stops.push(colors[i] + " " + ((i + 1) * step).toFixed(1) + "%");
+        }
+        singleOrGradient = "linear-gradient(135deg, " + stops.join(", ") + ")";
     }
-    var stops = [];
-    var step = 100 / colors.length;
-    for (var i = 0; i < colors.length; i++) {
-        stops.push(colors[i] + " " + (i * step).toFixed(1) + "%");
-        stops.push(colors[i] + " " + ((i + 1) * step).toFixed(1) + "%");
+    if (transparentTint != null) {
+        // semi-opaque tint layered over the checkerboard
+        var tinted = [];
+        var tintStep = 100 / colors.length;
+        for (var j = 0; j < colors.length; j++) {
+            var rgb = tinycolor(colors[j]).setAlpha(0.55).toRgbString();
+            tinted.push(rgb + " " + (j * tintStep).toFixed(1) + "%");
+            tinted.push(rgb + " " + ((j + 1) * tintStep).toFixed(1) + "%");
+        }
+        return "linear-gradient(135deg, " + tinted.join(", ") + "), " + checkerboard;
     }
-    return "linear-gradient(135deg, " + stops.join(", ") + ")";
+    return singleOrGradient;
 };
 
 $(function() {
