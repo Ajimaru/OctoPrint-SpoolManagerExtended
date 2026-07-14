@@ -100,6 +100,7 @@ function SpoolManagerEditSpoolDialog(){
         this.usedWeight = ko.observable();
         this.usedPercentage = ko.observable();
         this.code = ko.observable();
+        this.batchNumber = ko.observable();
 //        this.labels = ko.observable();
 //            this.allLabels = ko.observable();
         this.noteText = ko.observable()
@@ -300,6 +301,7 @@ function SpoolManagerEditSpoolDialog(){
         this.remainingWeight(parseFloat(updateData.remainingWeight));
         this.remainingPercentage(updateData.remainingPercentage);
         this.code(updateData.code);
+        this.batchNumber(updateData.batchNumber);
         this.usedPercentage(updateData.usedPercentage);
 
         this.totalLength(updateData.totalLength);
@@ -410,6 +412,46 @@ function SpoolManagerEditSpoolDialog(){
     self.isTemplateComboAvailable = ko.pureComputed(function(){
         return self.isExistingSpool() == false && self.templateSpools().length > 0;
     });
+
+    // Display name variables (issue #49): prospective databaseId of the next created spool for the {id} preview
+    self.nextSpoolId = ko.observable(null);
+
+    self._refreshNextSpoolId = function(){
+        if (self.apiClient == null){
+            return;
+        }
+        self.apiClient.callLoadNextSpoolId(function(responseData){
+            if (responseData != null && responseData.nextSpoolId != null){
+                self.nextSpoolId(responseData.nextSpoolId);
+            }
+        });
+    };
+
+    // replaces all variables except {id} (only known server-side after saving) with the current field values
+    self._substituteDisplayNameVariables = function(displayName){
+        var spoolItem = self.spoolItemForEditing;
+        var asText = function(value){
+            if (value === null || value === undefined || (typeof value === "number" && isNaN(value))){
+                return "";
+            }
+            return "" + value;
+        };
+        var totalWeight = parseFloat(spoolItem.totalWeight());
+        var replacements = {
+            "{material}": asText(spoolItem.material()),
+            "{color}": asText(spoolItem.colorName()),
+            "{vendor}": asText(spoolItem.vendor()),
+            "{diameter}": asText(spoolItem.diameter()),
+            "{weight}": isNaN(totalWeight) ? "" : "" + Math.round(totalWeight),
+            "{code}": asText(spoolItem.code()),
+            "{batch}": asText(spoolItem.batchNumber()),
+        };
+        var result = displayName;
+        for (var token in replacements){
+            result = result.split(token).join(replacements[token]);
+        }
+        return result;
+    };
 
     self.noteEditor = null;
 
@@ -619,6 +661,21 @@ function SpoolManagerEditSpoolDialog(){
             }
             self.templateComboFilter(newValue || "");
             self.templateComboVisible(true);
+        });
+
+        // live preview of the final display name when it contains variables like {material}-{color}-{id} (issue #49);
+        // only shown for new spools (variables are resolved on save) and templates (resolved for spools created from them)
+        self.displayNamePreview = ko.pureComputed(function(){
+            var displayName = self.spoolItemForEditing.displayName();
+            if (!displayName || displayName.indexOf("{") === -1){
+                return "";
+            }
+            if (self.isExistingSpool() == true && self.spoolItemForEditing.isTemplate() != true){
+                return "";
+            }
+            var resolved = self._substituteDisplayNameVariables(displayName);
+            var nextId = self.nextSpoolId();
+            return resolved.split("{id}").join(nextId != null ? "" + nextId : "…");
         });
 
         self._reColorFilamentIcon(self.spoolItemForEditing.color());
@@ -989,6 +1046,9 @@ function SpoolManagerEditSpoolDialog(){
         // initial coloring
         self._reColorFilamentIcon(self.spoolItemForEditing.color());
 
+        // prospective id for the {id} display name variable preview (issue #49)
+        self._refreshNextSpoolId();
+
         if (spoolItem == null){
             // New Spool
             self.isExistingSpool(false);
@@ -1106,6 +1166,12 @@ function SpoolManagerEditSpoolDialog(){
         self.spoolItemForEditing.spoolWeight(0);
         self.spoolItemForEditing.spoolWeight(copiedWeight);
 
+        // resolve display name variables from the copied field values; {id} stays and is resolved on save (issue #49)
+        var copiedDisplayName = self.spoolItemForEditing.displayName();
+        if (copiedDisplayName && copiedDisplayName.indexOf("{") !== -1){
+            self.spoolItemForEditing.displayName(self._substituteDisplayNameVariables(copiedDisplayName));
+        }
+
         self._suppressTemplateCombo = false;
 
         // close dialog
@@ -1114,6 +1180,7 @@ function SpoolManagerEditSpoolDialog(){
 
     self._copySpoolItemForEditing = function (spoolItem) {
         self.isExistingSpool(false);
+        self._refreshNextSpoolId();
         let spoolItemCopy = ko.mapping.toJS(spoolItem);
         self.spoolItemForEditing.update(spoolItemCopy);
         self.spoolItemForEditing.isTemplate(false);

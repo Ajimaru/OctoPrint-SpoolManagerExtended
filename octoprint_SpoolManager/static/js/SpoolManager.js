@@ -191,6 +191,8 @@ $(function() {
 
         ///////////////////////////////////////////////////// START: SETTINGS
         self.pluginNotWorking = ko.observable(undefined);
+        // external database still on an old scheme, needs the upgrade button in the settings (Storage tab)
+        self.schemeUpgradeNeeded = ko.observable(false);
 
         self.downloadDatabaseUrl = ko.observable();
         self.databaseConnectionProblemDialog = new DatabaseConnectionProblemDialog();
@@ -221,6 +223,7 @@ $(function() {
             self.showUpdateSchemeMessage(false);
             self.externalDatabaseErrorMessage("");
             self.internalDatabaseErrorMessage("");
+            self.schemeUpgradeResultText("");
         }
 
         self.handleDatabaseMetaDataResponse = function(metaDataResponse){
@@ -314,6 +317,92 @@ $(function() {
                 });
 
             }
+        }
+
+        // - external database scheme upgrade (issue #30/#49 follow-up: scheme V8, auto-upgrade only runs for local SQLite)
+        self.isExternalSchemeUpgradeAvailable = ko.pureComputed(function(){
+            if (self.pluginSettings.useExternal() != true){
+                return false;
+            }
+            var externalVersion = Number(self.databaseMetaData.externalSchemeVersionFromDatabaseModel());
+            var pluginVersion = Number(self.databaseMetaData.schemeVersionFromPlugin());
+            return isNaN(externalVersion) == false && isNaN(pluginVersion) == false && externalVersion < pluginVersion;
+        });
+        self.schemeUpgradeInProgress = ko.observable(false);
+        self.schemeUpgradeResultText = ko.observable("");
+
+        self.upgradeDatabaseSchemeAction = function(){
+            var confirmed = confirm("Upgrade the external database scheme now?\n\n" +
+                                    "A SQL dump backup is downloaded first. " +
+                                    "If the backup download fails, the upgrade is aborted.");
+            if (confirmed != true){
+                return;
+            }
+            self.resetDatabaseMessages();
+            self.schemeUpgradeResultText("");
+            self.schemeUpgradeInProgress(true);
+
+            var handleUpgradeResponse = function(responseData){
+                self.schemeUpgradeInProgress(false);
+                var result = responseData != null ? responseData["result"] : null;
+                if (result != null && result["success"] == true){
+                    self.schemeUpgradeResultText("Database scheme upgraded to version " + result["toVersion"] +
+                                                 ". The backup dump was downloaded.");
+                    if (responseData["metadata"] != null){
+                        self.handleDatabaseMetaDataResponse(responseData);
+                    }
+                    // a full reload makes sure all cached viewmodels (sidebar, dialogs) pick up the repaired database
+                    if (confirm("Database scheme upgraded to version " + result["toVersion"] + ".\n\n" +
+                                "A page reload is recommended. Reload now?")){
+                        location.reload();
+                    }
+                    return;
+                } else {
+                    var errorMessage = (result != null && result["errorMessage"] != null)
+                                        ? result["errorMessage"]
+                                        : "Scheme upgrade failed. See octoprint.log for details.";
+                    self.showExternalDatabaseErrorMessage(true);
+                    self.externalDatabaseErrorMessage(errorMessage);
+                }
+                if (responseData != null && responseData["metadata"] != null){
+                    self.handleDatabaseMetaDataResponse(responseData);
+                }
+            };
+
+            // step 1: download the backup dump; the migration only starts after a successful download
+            fetch(self.apiClient.getDatabaseDumpExportUrl())
+                .then(function(response){
+                    if (response.ok == false){
+                        return response.text().then(function(text){
+                            throw new Error(text || ("Backup download failed (HTTP " + response.status + ")"));
+                        });
+                    }
+                    return response.blob();
+                })
+                .then(function(blob){
+                    if (blob == null || blob.size == 0){
+                        throw new Error("Backup download failed (empty dump), upgrade aborted.");
+                    }
+                    var now = new Date();
+                    var pad = function(value){ return (value < 10 ? "0" : "") + value; };
+                    var fileName = "SpoolManager-mysql-backup-" + now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) +
+                                   "-" + pad(now.getHours()) + pad(now.getMinutes()) + ".sql";
+                    var link = document.createElement("a");
+                    link.href = URL.createObjectURL(blob);
+                    link.download = fileName;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(link.href);
+
+                    // step 2: backup is on disk, run the migration
+                    self.apiClient.callUpgradeDatabaseScheme({backupDownloaded: true}, handleUpgradeResponse);
+                })
+                .catch(function(error){
+                    self.schemeUpgradeInProgress(false);
+                    self.showExternalDatabaseErrorMessage(true);
+                    self.externalDatabaseErrorMessage("" + ((error != null && error.message) ? error.message : error));
+                });
         }
 
         // - MySQL dump export/import (Storage tab, external database only)
@@ -793,6 +882,11 @@ $(function() {
         //////////////////////////////////////////////////////////////////////////////////////////////////// TABLE / TAB
 
         self.addNewSpool = function(){
+            if (self.schemeUpgradeNeeded() == true){
+                // saving would fail anyway, guide the user to the upgrade instead
+                alert("The database scheme is outdated. Open Plugin Settings -> SpoolManager -> Storage and press 'Upgrade database scheme' first!");
+                return;
+            }
             self.spoolDialog.showDialog(null, closeDialogHandler);
         }
 
@@ -851,6 +945,13 @@ $(function() {
                     self.pluginNotWorking(true);
                 } else {
                     self.pluginNotWorking(false);
+                }
+                var wasSchemeUpgradeNeeded = self.schemeUpgradeNeeded();
+                self.schemeUpgradeNeeded(responseData["schemeUpgradeNeeded"] == true);
+                if (wasSchemeUpgradeNeeded == true && self.schemeUpgradeNeeded() == false){
+                    // the database is usable again (scheme upgraded, possibly by another instance) -
+                    // the sidebar spools/selection were loaded while it was broken, so refresh them too
+                    self.loadSpoolsForSidebar();
                 }
 
                 totalItemCount = responseData["totalItemCount"];

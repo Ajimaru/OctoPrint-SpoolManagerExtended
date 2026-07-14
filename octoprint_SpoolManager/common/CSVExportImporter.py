@@ -19,6 +19,7 @@ COLUMN_COLOR_CODE = "Color Code [hex]"
 COLUMN_VENDOR = "Vendor"
 COLUMN_MATERIAL = "Material"
 COLUMN_SERIALNUMBER = "Serialnumber"
+COLUMN_BATCHNUMBER = "Batchnumber"
 COLUMN_DENSITY = "Density [g/cm3]"
 COLUMN_DIAMETER = "Diameter [mm]"
 COLUMN_DIAMETER_TOLERANCE = "Diameter Tolerance[mm]"
@@ -193,6 +194,7 @@ ALL_COLUMNS_SORTED = [
 	COLUMN_VENDOR,
 	COLUMN_MATERIAL,
 	COLUMN_SERIALNUMBER,
+	COLUMN_BATCHNUMBER,
 	COLUMN_DENSITY,
 	COLUMN_DIAMETER,
 	COLUMN_DIAMETER_TOLERANCE,
@@ -225,6 +227,7 @@ ALL_COLUMNS = {
 	COLUMN_VENDOR: CSVColumn("vendor", COLUMN_VENDOR, "", DefaultCSVFormattorParser()),
 	COLUMN_MATERIAL: CSVColumn("material", COLUMN_MATERIAL, "", DefaultCSVFormattorParser()),
 	COLUMN_SERIALNUMBER: CSVColumn("code", COLUMN_SERIALNUMBER, "", DefaultCSVFormattorParser()),
+	COLUMN_BATCHNUMBER: CSVColumn("batchNumber", COLUMN_BATCHNUMBER, "", DefaultCSVFormattorParser()),
 	COLUMN_DENSITY: CSVColumn("density", COLUMN_DENSITY, "", NumberCSVFormattorParser()),
 	COLUMN_DIAMETER: CSVColumn("diameter", COLUMN_DIAMETER, "", NumberCSVFormattorParser()),
 	COLUMN_DIAMETER_TOLERANCE: CSVColumn("diameterTolerance", COLUMN_DIAMETER_TOLERANCE, "", NumberCSVFormattorParser()),

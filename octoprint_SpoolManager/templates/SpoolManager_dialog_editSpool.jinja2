@@ -151,6 +151,15 @@
                                         <li class="spm-template-combo-empty" data-bind="visible: spoolDialog.filteredTemplateSpools().length == 0">No matching template</li>
                                     </ul>
                                 </div>
+                                <span class="help-inline" style="cursor: help;"
+                                      title="Template names can contain variables that are filled in when a spool is created from the template:
+{material}, {color}, {vendor}, {diameter}, {weight}, {code}, {batch} and {id}.
+{id} is replaced with the database id when the spool is saved.
+Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-circle"></i></span>
+                                <span class="help-block" style="margin-bottom: 0;"
+                                      data-bind="visible: spoolDialog.displayNamePreview().length > 0">
+                                    Resulting name: <strong data-bind="text: spoolDialog.displayNamePreview"></strong>
+                                </span>
                             </div>
                         </div>
                         <div class="control-group" data-bind="css: {error: !spoolDialog.isColorNamePresent()}">
@@ -309,6 +318,12 @@
                             <label class="control-label">Serialnumber</label>
                             <div class="controls">
                                 <input data-bind="textInput: spoolDialog.spoolItemForEditing.code"  type="text" class="input-large"  />
+                            </div>
+                        </div>
+                        <div class="control-group">
+                            <label class="control-label">Batchnumber</label>
+                            <div class="controls">
+                                <input title="Manufacturer batch/lot number, shared by spools of the same production batch" data-bind="textInput: spoolDialog.spoolItemForEditing.batchNumber"  type="text" class="input-large"  />
                             </div>
                         </div>
 
