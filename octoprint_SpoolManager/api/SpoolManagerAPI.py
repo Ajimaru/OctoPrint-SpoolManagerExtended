@@ -1132,24 +1132,40 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
     def _addAdditionalMaterials(self, databaseMaterials):
 
+        # Material list extended with entries derived from SpoolmanDB
+        # https://github.com/Donkie/SpoolmanDB - Copyright (c) 2024 Donkie, MIT License
+        # NOTE: the long-established short names (TPU, PC, PP, POM, FPE, PLA_plus, ...) are kept
+        # on purpose so spools created with older plugin versions keep matching the dropdown.
         allMeterials = [
             "PLA",
             "PLA_plus",
             "ABS",
+            "ABS+",
+            "ABS-T",
             "PETG",
+            "PCTG",
             "NYLON",
             "TPU",
+            "Flexible (TPE 32D)",
+            "Flexible (TPE 88A)",
+            "FPE",
             "PC",
+            "PC_ABS",
+            "PC/PBT",
             "Wood",
             "Carbon Fiber",
-            "PC_ABS",
             "HIPS",
             "PVA",
+            "PVB",
             "ASA",
             "PP",
             "POM",
             "PMMA",
-            "FPE"
+            "PVDF",
+            "PEI (Ultem)",
+            "PEKK",
+            "PEEK",
+            "PPSU"
         ]
         for currentMaterial in allMeterials:
             if ( (currentMaterial.upper() in databaseMaterials) == False and (currentMaterial.lower() in databaseMaterials) == False):

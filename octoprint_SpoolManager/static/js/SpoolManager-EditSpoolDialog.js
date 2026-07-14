@@ -5,24 +5,61 @@ function SpoolManagerEditSpoolDialog(){
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////////// CONSTANTS
     var DEFAULT_COLOR = "#ff0000";
+    // Density values (g/cm3) derived from SpoolmanDB
+    // https://github.com/Donkie/SpoolmanDB - Copyright (c) 2024 Donkie, MIT License
+    // Deviations from SpoolmanDB: NYLON 1.14 (instead of 1.52) and POLYCARBONATE_PC 1.20
+    // (instead of 1.30) - both corrected to physically plausible values.
+    // Keys are the normalized material names, see normalizeMaterialKey().
     var densityMap = {
         PLA:	1.24,
-        PLA_plus:	1.24,
+        PLA_PLUS:	1.24,
         ABS:	1.04,
+        ABS_PLUS:	1.06,
+        ABS_T:	1.08,
         PETG:	1.27,
-        NYLON:	1.52,
+        PCTG:	1.21,
+        NYLON:	1.14,
         TPU:	1.21,
-        PC:	    1.3,
-        Wood:	1.28,
-        Carbon:	1.3,
+        FLEXIBLE_TPE_32D:	1.10,
+        FLEXIBLE_TPE_88A:	0.89,
+        FPE:	2.16,
+        PC:	    1.20,
         PC_ABS:	1.19,
+        PC_PBT:	1.20,
+        WOOD:	1.28,
+        CARBON_FIBER:	1.30,
         HIPS:	1.03,
         PVA:	1.23,
+        PVB:	1.10,
         ASA:	1.05,
-        PP:	    0.9,
-        POM:	1.4,
+        PP:	    0.90,
+        POM:	1.40,
         PMMA:	1.18,
-        FPE:	2.16
+        PVDF:	1.78,
+        PEI_ULTEM:	1.27,
+        PEKK:	1.28,
+        PEEK:	1.32,
+        PPSU:	1.37,
+        // aliases for the long SpoolmanDB-style names (e.g. imported/typed manually)
+        FLEXIBLE_TPU:	1.21,
+        SEMI_FLEXIBLE_FPE:	2.16,
+        POLYCARBONATE_PC:	1.20,
+        POLYPROPYLENE_PP:	0.90,
+        ACETAL_POM:	1.40
+    };
+
+    // Normalizes a material display name to a densityMap key:
+    // "Flexible (TPU)" -> "FLEXIBLE_TPU", "PC/ABS" -> "PC_ABS", "PLA+" -> "PLA_PLUS"
+    var normalizeMaterialKey = function(materialName){
+        if (!materialName){
+            return "";
+        }
+        return materialName
+            .trim()
+            .toUpperCase()
+            .replace(/\+/g, "_PLUS")
+            .replace(/[^A-Z0-9]+/g, "_")
+            .replace(/^_+|_+$/g, "");
     };
 
     self.unitValues = {
@@ -135,7 +172,7 @@ function SpoolManagerEditSpoolDialog(){
                 if (self.spoolItemForEditing.isSpoolVisible() == true){
                     var mat = self.spoolItemForEditing.material();
                     if (mat){
-                        var density = densityMap[mat.toUpperCase()]
+                        var density = densityMap[normalizeMaterialKey(mat)]
                         if (density){
                            self.spoolItemForEditing.density(density);
                         }
