@@ -214,3 +214,65 @@
 .spool-remaining-bar.low-amount {
     background-color: #f44336;
 }
+
+/* Template-combobox on the displayname field (issue #48) */
+.spm-template-combo {
+    position: relative;
+    display: inline-block;
+}
+.spm-template-combo-caret {
+    position: absolute;
+    right: 8px;
+    top: 5px;
+    cursor: pointer;
+    color: #555;
+}
+.spm-template-combo-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 1060;
+    min-width: 100%;
+    max-height: 220px;
+    overflow-y: auto;
+    margin: 2px 0 0;
+    padding: 4px 0;
+    list-style: none;
+    background-color: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    -webkit-border-radius: 4px;
+    -moz-border-radius: 4px;
+    border-radius: 4px;
+    -webkit-box-shadow: 0 5px 10px rgba(0, 0, 0, 0.2);
+    -moz-box-shadow: 0 5px 10px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 5px 10px rgba(0, 0, 0, 0.2);
+}
+.spm-template-combo-list li {
+    padding: 4px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.spm-template-combo-list li:hover {
+    background-color: #0088cc;
+    color: #fff;
+}
+.spm-template-combo-list li .color-preview {
+    margin-bottom: -4px;
+    cursor: pointer;
+}
+.spm-template-combo-meta {
+    color: #999;
+    font-size: 11px;
+    margin-left: 6px;
+}
+.spm-template-combo-list li:hover .spm-template-combo-meta {
+    color: #eee;
+}
+.spm-template-combo-empty {
+    color: #999;
+    cursor: default !important;
+}
+.spm-template-combo-empty:hover {
+    background-color: transparent !important;
+    color: #999 !important;
+}

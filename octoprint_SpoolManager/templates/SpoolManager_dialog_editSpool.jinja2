@@ -133,7 +133,24 @@
                         <div class="control-group" data-bind="css: {error: !spoolDialog.isDisplayNamePresent()}">
                             <label class="control-label">Displayname <sup>1</sup></label>
                             <div class="controls">
-                                <input data-bind="textInput: spoolDialog.spoolItemForEditing.displayName"  type="text" class="input-large"  />
+                                <div class="spm-template-combo">
+                                    <input data-bind="textInput: spoolDialog.spoolItemForEditing.displayName,
+                                                      event: { focus: spoolDialog.onDisplayNameFocus, blur: spoolDialog.onDisplayNameBlur }"
+                                           type="text" class="input-large" autocomplete="off" />
+                                    <span class="spm-template-combo-caret" title="Select a template"
+                                          data-bind="visible: spoolDialog.isTemplateComboAvailable,
+                                                     event: { mousedown: spoolDialog.toggleTemplateCombo }"><i class="fas fa-caret-down"></i></span>
+                                    <ul class="spm-template-combo-list" data-bind="visible: spoolDialog.templateComboVisible">
+                                        <!-- ko foreach: spoolDialog.filteredTemplateSpools -->
+                                        <li data-bind="event: { mousedown: function(){ $parent.spoolDialog.selectTemplateFromCombo($data); return false; } }">
+                                            <span class="color-preview" data-bind="style: {'background': spmSpoolColorCss(color)}"></span>
+                                            <span data-bind="text: displayName"></span>
+                                            <span class="spm-template-combo-meta"><span data-bind="text: material"></span> <span data-bind="text: vendor"></span></span>
+                                        </li>
+                                        <!-- /ko -->
+                                        <li class="spm-template-combo-empty" data-bind="visible: spoolDialog.filteredTemplateSpools().length == 0">No matching template</li>
+                                    </ul>
+                                </div>
                             </div>
                         </div>
                         <div class="control-group" data-bind="css: {error: !spoolDialog.isColorNamePresent()}">

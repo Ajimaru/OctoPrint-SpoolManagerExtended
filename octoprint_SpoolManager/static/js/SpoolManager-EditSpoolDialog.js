@@ -390,6 +390,27 @@ function SpoolManagerEditSpoolDialog(){
     self.spoolItemForEditing = null;
     self.templateSpools = ko.observableArray([]);
 
+    // Template-combobox on the displayname field (issue #48)
+    self.templateComboVisible = ko.observable(false);
+    self.templateComboFilter = ko.observable("");
+    self._suppressTemplateCombo = false;
+    self.filteredTemplateSpools = ko.pureComputed(function(){
+        var filterText = ("" + (self.templateComboFilter() || "")).trim().toLowerCase();
+        var allTemplates = self.templateSpools();
+        if (filterText.length == 0){
+            return allTemplates;
+        }
+        return ko.utils.arrayFilter(allTemplates, function(spoolItem){
+            var haystack = (spoolItem.displayName() || "") + " " +
+                           (spoolItem.material() || "") + " " +
+                           (spoolItem.vendor() || "");
+            return haystack.toLowerCase().indexOf(filterText) !== -1;
+        });
+    });
+    self.isTemplateComboAvailable = ko.pureComputed(function(){
+        return self.isExistingSpool() == false && self.templateSpools().length > 0;
+    });
+
     self.noteEditor = null;
 
     // Do I need these viewModels?
@@ -584,6 +605,22 @@ function SpoolManagerEditSpoolDialog(){
 
         // initial coloring
         self._createSpoolItemForEditing();
+
+        // typing into the displayname field filters the template-combobox (issue #48)
+        self.spoolItemForEditing.displayName.subscribe(function(newValue){
+            if (self._suppressTemplateCombo == true){
+                return;
+            }
+            if (self.isTemplateComboAvailable() == false){
+                return;
+            }
+            if (self.spoolDialog == null || self.spoolDialog.is(":visible") == false){
+                return;
+            }
+            self.templateComboFilter(newValue || "");
+            self.templateComboVisible(true);
+        });
+
         self._reColorFilamentIcon(self.spoolItemForEditing.color());
         self.spoolItemForEditing.color.subscribe(function(newColor){
             self._reColorFilamentIcon(newColor);
@@ -1011,6 +1048,8 @@ function SpoolManagerEditSpoolDialog(){
     }
 
     self.copySpoolItemFromTemplate = function (spoolItem) {
+        // don't treat the programmatic displayName change as combobox typing
+        self._suppressTemplateCombo = true;
         // Copy everything
         self._copySpoolItemForEditing(spoolItem);
         // Reset values that shouldn't be copied
@@ -1045,6 +1084,10 @@ function SpoolManagerEditSpoolDialog(){
             ) {
                 if (defaultExcludedNumericFields.includes(fieldName)) {
                     self.spoolItemForEditing[fieldName]("0");
+                } else if (fieldName == "selectedForTool") {
+                    // "" would wrongly pass the "selectedForTool() != undefined" check on save
+                    // and trigger a selectSpool API call with an empty toolIndex (issue #48 follow-up)
+                    self.spoolItemForEditing[fieldName](undefined);
                 } else {
                     self.spoolItemForEditing[fieldName]("");
                 }
@@ -1062,6 +1105,8 @@ function SpoolManagerEditSpoolDialog(){
         var copiedWeight = self.spoolItemForEditing["spoolWeight"]();
         self.spoolItemForEditing.spoolWeight(0);
         self.spoolItemForEditing.spoolWeight(copiedWeight);
+
+        self._suppressTemplateCombo = false;
 
         // close dialog
         self.templateSpoolDialog.modal("hide");
@@ -1138,6 +1183,34 @@ function SpoolManagerEditSpoolDialog(){
         self.spoolItemForEditing.isSpoolVisible(false);
         self.spoolDialog.modal('hide');
         self.closeDialogHandler(false, "selectSpoolForPrinting", self.spoolItemForEditing);
+    }
+
+    // Template-combobox handlers (issue #48)
+    self.onDisplayNameFocus = function(){
+        if (self.isTemplateComboAvailable()){
+            self.templateComboFilter("");
+            self.templateComboVisible(true);
+        }
+        return true;
+    }
+
+    self.onDisplayNameBlur = function(){
+        self.templateComboVisible(false);
+        return true;
+    }
+
+    self.toggleTemplateCombo = function(data, event){
+        if (self.isTemplateComboAvailable()){
+            self.templateComboFilter("");
+            self.templateComboVisible(!self.templateComboVisible());
+        }
+        // prevent the input from losing focus
+        return false;
+    }
+
+    self.selectTemplateFromCombo = function(spoolItem){
+        self.templateComboVisible(false);
+        self.copySpoolItemFromTemplate(spoolItem);
     }
 
     self.selectAndCopyTemplateSpool = function(){
