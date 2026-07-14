@@ -265,6 +265,32 @@ function SpoolManagerEditSpoolDialog(){
         this.offsetEnclosureTemperature = ko.observable();
         this.colorName = ko.observable();
         this.color = ko.observable();
+        // "finish" is the persisted value; the dropdown works on finishSelection,
+        // free text (selection "custom") on finishCustomText
+        this.finishSelection = ko.observable();
+        this.finishCustomText = ko.observable();
+        this.finish = ko.computed({
+            read: function(){
+                if (this.finishSelection() === "custom"){
+                    return this.finishCustomText();
+                }
+                return this.finishSelection();
+            },
+            write: function(value){
+                var predefinedFinishes = ["silk", "matt", "marble", "metal", "glow"];
+                if (!value){
+                    this.finishSelection(undefined);
+                    this.finishCustomText(undefined);
+                } else if (predefinedFinishes.indexOf(value) !== -1){
+                    this.finishSelection(value);
+                    this.finishCustomText(undefined);
+                } else {
+                    this.finishSelection("custom");
+                    this.finishCustomText(value);
+                }
+            },
+            owner: this
+        });
         this.totalWeight = ko.observable();
         this.spoolWeight = ko.observable();
         this.remainingWeight = ko.observable();
@@ -327,9 +353,17 @@ function SpoolManagerEditSpoolDialog(){
             var spoolItemInstance = this;
             this.colorCount = ko.observable(1);
             this.isRainbow = ko.observable(false);
-            var colorViewModel = self.componentFactory.createColorPicker("filament-color-picker");
-            var colorViewModel2 = self.componentFactory.createColorPicker("filament-color-picker2");
-            var colorViewModel3 = self.componentFactory.createColorPicker("filament-color-picker3");
+            this.isTransparent = ko.observable(false);
+            var colorViewModel = self.componentFactory.createColorPicker("filament-color-picker", true);
+            var colorViewModel2 = self.componentFactory.createColorPicker("filament-color-picker2", true);
+            var colorViewModel3 = self.componentFactory.createColorPicker("filament-color-picker3", true);
+            // picking the "translucent" swatch activates the transparent flag
+            var activateTransparent = function(){
+                spoolItemInstance.isTransparent(true);
+            };
+            colorViewModel.onTranslucentSelected = activateTransparent;
+            colorViewModel2.onTranslucentSelected = activateTransparent;
+            colorViewModel3.onTranslucentSelected = activateTransparent;
             var pickerColors = [colorViewModel.selectedColor, colorViewModel2.selectedColor, colorViewModel3.selectedColor];
             var applyingColor = false;
             var composeColor = function(){
@@ -344,24 +378,53 @@ function SpoolManagerEditSpoolDialog(){
                 for (var i = 0; i < spoolItemInstance.colorCount(); i++){
                     colors.push(pickerColors[i]() || DEFAULT_COLOR);
                 }
-                spoolItemInstance.color(colors.join(";"));
+                var composedColor = colors.join(";");
+                if (spoolItemInstance.isTransparent() == true){
+                    composedColor = "transparent:" + composedColor;
+                }
+                spoolItemInstance.color(composedColor);
             };
             pickerColors[0].subscribe(composeColor);
             pickerColors[1].subscribe(composeColor);
             pickerColors[2].subscribe(composeColor);
             this.colorCount.subscribe(composeColor);
             this.isRainbow.subscribe(composeColor);
+            this.isTransparent.subscribe(composeColor);
+            // rainbow and transparent are mutually exclusive
+            this.isRainbow.subscribe(function(newValue){
+                if (newValue == true && spoolItemInstance.isTransparent() == true){
+                    spoolItemInstance.isTransparent(false);
+                }
+            });
+            this.isTransparent.subscribe(function(newValue){
+                if (newValue == true && spoolItemInstance.isRainbow() == true){
+                    spoolItemInstance.isRainbow(false);
+                }
+            });
             // pushes a stored color value into the picker widgets/flags
             this.applyColorToEditor = function(colorValue){
                 applyingColor = true;
                 try {
                     if (("" + colorValue).toLowerCase() === "rainbow"){
                         spoolItemInstance.isRainbow(true);
+                        spoolItemInstance.isTransparent(false);
                         spoolItemInstance.colorCount(1);
                         pickerColors[0](DEFAULT_COLOR);
                     } else {
-                        var colors = ("" + colorValue).split(";");
+                        var plainColorValue = "" + colorValue;
+                        var transparent = plainColorValue.toLowerCase().indexOf("transparent") === 0;
+                        if (transparent){
+                            plainColorValue = plainColorValue.substr("transparent".length);
+                            if (plainColorValue.indexOf(":") === 0){
+                                plainColorValue = plainColorValue.substr(1);
+                            }
+                            if (plainColorValue.length === 0){
+                                plainColorValue = DEFAULT_COLOR;
+                            }
+                        }
+                        var colors = plainColorValue.split(";");
                         spoolItemInstance.isRainbow(false);
+                        spoolItemInstance.isTransparent(transparent);
                         spoolItemInstance.colorCount(Math.min(colors.length, 3));
                         for (var i = 0; i < 3; i++){
                             if (i < colors.length && colors[i]){
@@ -445,6 +508,7 @@ function SpoolManagerEditSpoolDialog(){
         this.density(updateData.density);
         this.diameter(updateData.diameter);
         this.diameterTolerance(updateData.diameterTolerance);
+        this.finish(updateData.finish);
         // first update color code, and then update the color name
         var rawColor = updateData.color == null ? DEFAULT_COLOR : updateData.color;
         if (this.applyColorToEditor != null){
@@ -456,6 +520,10 @@ function SpoolManagerEditSpoolDialog(){
             var preDefinedColorName = false;
             if (("" + rawColor).toLowerCase() === "rainbow"){
                 preDefinedColorName = "Rainbow";
+            } else if (("" + rawColor).toLowerCase().indexOf("transparent") === 0){
+                var baseColor = ("" + rawColor).substr("transparent".length).replace(/^:/, "").split(";")[0];
+                var baseName = baseColor ? tinycolor(baseColor).toName() : false;
+                preDefinedColorName = baseName != false ? "Transparent " + baseName : "Transparent";
             } else {
                 preDefinedColorName = tinycolor(("" + rawColor).split(";")[0]).toName();
             }
@@ -568,6 +636,16 @@ function SpoolManagerEditSpoolDialog(){
     self.closeDialogHandler = null;
     self.spoolItemForEditing = null;
     self.templateSpools = ko.observableArray([]);
+
+    // static options for the "Finish" dropdown
+    self.finishOptions = [
+        { text: "Silk", value: "silk" },
+        { text: "Matt", value: "matt" },
+        { text: "Marble", value: "marble" },
+        { text: "Metal", value: "metal" },
+        { text: "Glow", value: "glow" },
+        { text: "Custom…", value: "custom" }
+    ];
 
     // Template-combobox on the displayname field (issue #48)
     self.templateComboVisible = ko.observable(false);
@@ -780,6 +858,12 @@ function SpoolManagerEditSpoolDialog(){
             rectColors = ["#ff2d2d", "#ff9a00", "#ffe600", "#16c172", "#2f7bff", "#a044ff"];
             strokeColor = rectColors[0];
         } else {
+            if (colorValue.toLowerCase().indexOf("transparent") === 0){
+                colorValue = colorValue.substr("transparent".length).replace(/^:/, "");
+                if (colorValue.length === 0){
+                    colorValue = "#e8e8e8";
+                }
+            }
             var colors = colorValue.split(";");
             if (colors.length === 1){
                 // single color: alternate with a slightly darkened shade
@@ -873,13 +957,25 @@ function SpoolManagerEditSpoolDialog(){
                 self.spoolItemForEditing.colorName("Rainbow");
                 return;
             }
-            if (("" + newColor).indexOf(";") !== -1){
+            var plainColor = "" + newColor;
+            var transparentPrefix = "";
+            if (plainColor.toLowerCase().indexOf("transparent") === 0){
+                transparentPrefix = "Transparent";
+                plainColor = plainColor.substr("transparent".length).replace(/^:/, "");
+                if (plainColor.length === 0){
+                    self.spoolItemForEditing.colorName(transparentPrefix);
+                    return;
+                }
+            }
+            if (plainColor.indexOf(";") !== -1){
                 // multi-color: keep the name the user typed
                 return;
             }
-            var colorName = tinycolor(newColor).toName();
+            var colorName = tinycolor(plainColor).toName();
             if (colorName != false){
-                self.spoolItemForEditing.colorName(colorName);
+                self.spoolItemForEditing.colorName(transparentPrefix ? transparentPrefix + " " + colorName : colorName);
+            } else if (transparentPrefix){
+                self.spoolItemForEditing.colorName(transparentPrefix);
             }
         });
         // ----------------- start: weight stuff

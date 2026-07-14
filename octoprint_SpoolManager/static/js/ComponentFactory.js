@@ -189,11 +189,13 @@ function ComponentFactory(pluginId) {
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////// COLOR - PICKER
-    this.createColorPicker = function(elementId){
+    this.createColorPicker = function(elementId, showTranslucent){
 
         // Widget Model
         var componentViewModel = {
             selectedColor: ko.observable(),
+            // called when the special "translucent" swatch is picked (only present if showTranslucent == true)
+            onTranslucentSelected: null
         }
 
         var elementSelector = "#" + elementId;
@@ -206,7 +208,7 @@ function ComponentFactory(pluginId) {
             showBasicColors       : true,
             showHexInput          : true,
             allowBlank            : false,
-            basicColors           : {
+            basicColors           : $.extend(showTranslucent == true ? { translucent: 'ffffff' } : {}, {
                   white     : 'ffffff',
                   black     : '000000',
                   red       : 'ff0000',
@@ -221,9 +223,37 @@ function ComponentFactory(pluginId) {
                   violet    : 'EE82EE',
                   pink      : 'FFC0CB',
                   brown     : 'A52A2A',
-                  burlyWood : 'DEB887'
-                }
+                  burlyWood : 'DEB887',
+                  cyan      : '00FFFF',
+                  magenta   : 'FF00FF',
+                  lime      : '00FF00',
+                  navy      : '000080',
+                  teal      : '008080',
+                  olive     : '808000',
+                  maroon    : '800000',
+                  gold      : 'FFD700',
+                  silver    : 'C0C0C0',
+                  bronze    : 'CD7F32',
+                  beige     : 'F5F5DC',
+                  coral     : 'FF7F50',
+                  turquoise : '40E0D0',
+                  indigo    : '4B0082',
+                  khaki     : 'F0E68C',
+                  salmon    : 'FA8072',
+                  lavender  : 'E6E6FA',
+                  mint      : '3EB489'
+                })
         });
+
+        if (showTranslucent == true){
+            // the swatch itself only carries white as hex value, the actual
+            // "transparent" semantic is applied via the callback (e.g. isTransparent-flag)
+            $(elementSelector).parent().find(".color-link.translucent").on("click", function(){
+                if (componentViewModel.onTranslucentSelected != null){
+                    componentViewModel.onTranslucentSelected();
+                }
+            });
+        }
 
         // sync: jquery -> observable
         pickColor.on("change", function () {

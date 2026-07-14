@@ -184,6 +184,9 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                 <label class="checkbox">
                                     <input type="checkbox" data-bind="checked: spoolDialog.spoolItemForEditing.isRainbow"> Rainbow / multi-color gradient
                                 </label>
+                                <label class="checkbox">
+                                    <input type="checkbox" data-bind="checked: spoolDialog.spoolItemForEditing.isTransparent"> Transparent / translucent
+                                </label>
                             </div>
                         </div>
                         <div class="control-group">
@@ -228,6 +231,19 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                     <span class="add-on">mm</span>
                                 </div>
                                 <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('diameter') !== -1 || spoolDialog.invalidNumberFields().indexOf('diameterTolerance') !== -1">Please enter a valid number</span>
+                            </div>
+                        </div>
+                        <div class="control-group">
+                            <label class="control-label">Finish</label>
+                            <div class="controls">
+                                <select class="input-medium" data-bind="options: spoolDialog.finishOptions,
+                                                                        optionsText: 'text', optionsValue: 'value',
+                                                                        optionsCaption: '',
+                                                                        value: spoolDialog.spoolItemForEditing.finishSelection">
+                                </select>
+                                <input type="text" class="input-medium" placeholder="Custom finish"
+                                       data-bind="visible: spoolDialog.spoolItemForEditing.finishSelection() === 'custom',
+                                                  textInput: spoolDialog.spoolItemForEditing.finishCustomText" />
                             </div>
                         </div>
                         <div class="control-group no-bottom-gap">
