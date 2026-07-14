@@ -901,7 +901,7 @@ $(function() {
 
             if (specialAction === "selectSpoolForPrinting"){
                 var toolIndex = currentSpoolItem.selectedForTool();
-                if (toolIndex === undefined){
+                if (toolIndex === undefined || toolIndex === null || toolIndex === ""){
                     // clear current selection
                     toolIndex = -1;
                 }
