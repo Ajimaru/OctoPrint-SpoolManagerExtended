@@ -1132,39 +1132,67 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
     def _addAdditionalMaterials(self, databaseMaterials):
 
-        # Material list extended with entries derived from SpoolmanDB
-        # https://github.com/Donkie/SpoolmanDB - Copyright (c) 2024 Donkie, MIT License
-        # NOTE: the long-established short names (TPU, PC, PP, POM, FPE, PLA_plus, ...) are kept
-        # on purpose so spools created with older plugin versions keep matching the dropdown.
+        # Material list and density values derived from SpoolmanDB-Community
+        # https://github.com/Icezaza2543/SpoolmanDB-Community (maintained fork of
+        # https://github.com/Donkie/SpoolmanDB) - Copyright (c) 2024 Donkie, MIT License
+        # Curated subset: common base polymers plus popular CF/GF variants and TPU shore
+        # grades; exotic brand materials and fine-grained fill variants are left out.
+        # NOTE: the long-established short names (TPU, PC, PP, POM, FPE, PLA_plus, PC_ABS)
+        # are kept on purpose so spools created with older plugin versions keep matching.
         allMeterials = [
             "PLA",
+            "PLA+",
             "PLA_plus",
+            "PLA-CF",
             "ABS",
             "ABS+",
             "ABS-T",
+            "ABS-CF",
+            "ASA",
+            "ASA-CF",
             "PETG",
+            "PETG-CF",
             "PCTG",
             "NYLON",
+            "PA6",
+            "PA11",
+            "PA12",
+            "PA-CF",
+            "PA6-CF",
+            "PA12-CF",
             "TPU",
+            "TPU-85A",
+            "TPU-90A",
+            "TPU-95A",
+            "TPE",
             "Flexible (TPE 32D)",
             "Flexible (TPE 88A)",
             "FPE",
             "PC",
             "PC_ABS",
             "PC/PBT",
+            "PC-CF",
             "Wood",
             "Carbon Fiber",
             "HIPS",
             "PVA",
             "PVB",
-            "ASA",
+            "BVOH",
             "PP",
+            "PP-CF",
+            "PP-GF",
             "POM",
             "PMMA",
+            "PET",
+            "PET-CF",
+            "PBT",
+            "PPS",
+            "PPS-CF",
             "PVDF",
             "PEI (Ultem)",
             "PEKK",
             "PEEK",
+            "PEEK-CF",
             "PPSU"
         ]
         for currentMaterial in allMeterials:

@@ -5,47 +5,72 @@ function SpoolManagerEditSpoolDialog(){
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////////// CONSTANTS
     var DEFAULT_COLOR = "#ff0000";
-    // Density values (g/cm3) derived from SpoolmanDB
-    // https://github.com/Donkie/SpoolmanDB - Copyright (c) 2024 Donkie, MIT License
-    // Deviations from SpoolmanDB: NYLON 1.14 (instead of 1.52) and POLYCARBONATE_PC 1.20
-    // (instead of 1.30) - both corrected to physically plausible values.
+    // Density values (g/cm3) derived from SpoolmanDB-Community
+    // https://github.com/Icezaza2543/SpoolmanDB-Community (maintained fork of
+    // https://github.com/Donkie/SpoolmanDB) - Copyright (c) 2024 Donkie, MIT License
     // Keys are the normalized material names, see normalizeMaterialKey().
     var densityMap = {
         PLA:	1.24,
-        PLA_PLUS:	1.24,
+        PLA_PLUS:	1.24,   // matches "PLA+" and legacy "PLA_plus"
+        PLA_CF:	1.24,
         ABS:	1.04,
         ABS_PLUS:	1.06,
         ABS_T:	1.08,
+        ABS_CF:	1.065,
+        ASA:	1.05,
+        ASA_CF:	1.12,
         PETG:	1.27,
+        PETG_CF:	1.27,
         PCTG:	1.21,
         NYLON:	1.14,
+        PA6:	1.13,
+        PA11:	1.03,
+        PA12:	1.01,
+        PA_CF:	1.20,
+        PA6_CF:	1.24,
+        PA12_CF:	1.15,
         TPU:	1.21,
+        TPU_85A:	1.12,
+        TPU_90A:	1.185,
+        TPU_95A:	1.21,
+        TPE:	1.15,
         FLEXIBLE_TPE_32D:	1.10,
         FLEXIBLE_TPE_88A:	0.89,
         FPE:	2.16,
         PC:	    1.20,
         PC_ABS:	1.19,
         PC_PBT:	1.20,
+        PC_CF:	1.24,
         WOOD:	1.28,
         CARBON_FIBER:	1.30,
         HIPS:	1.03,
         PVA:	1.23,
         PVB:	1.10,
-        ASA:	1.05,
+        BVOH:	1.25,
         PP:	    0.90,
+        PP_CF:	1.145,
+        PP_GF:	1.03,
         POM:	1.40,
         PMMA:	1.18,
+        PET:	1.38,
+        PET_CF:	1.29,
+        PBT:	1.31,
+        PPS:	1.35,
+        PPS_CF:	1.35,
         PVDF:	1.78,
         PEI_ULTEM:	1.27,
         PEKK:	1.28,
         PEEK:	1.32,
+        PEEK_CF:	1.35,
         PPSU:	1.37,
-        // aliases for the long SpoolmanDB-style names (e.g. imported/typed manually)
+        // aliases for alternative spellings (e.g. imported from Spoolman / typed manually)
         FLEXIBLE_TPU:	1.21,
         SEMI_FLEXIBLE_FPE:	2.16,
         POLYCARBONATE_PC:	1.20,
         POLYPROPYLENE_PP:	0.90,
-        ACETAL_POM:	1.40
+        ACETAL_POM:	1.40,
+        PEI:	1.27,
+        PA:	    1.14
     };
 
     // Normalizes a material display name to a densityMap key:
