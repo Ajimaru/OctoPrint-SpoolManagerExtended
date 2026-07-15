@@ -1,10 +1,15 @@
 # coding=utf-8
 
 import math
+import os
+import time
+import zipfile
+import xml.etree.ElementTree as ET
 from datetime import datetime
 import flask
 import octoprint.plugin
 from octoprint.events import Events
+from octoprint.filemanager.destinations import FileDestinations
 from octoprint.access.permissions import Permissions
 from octoprint_SpoolManager.DatabaseManager import DatabaseManager
 
@@ -28,6 +33,13 @@ class SpoolmanagerPlugin(
 
     def initialize(self):
         self._logger.info("Start initializing")
+
+        # cache for filament usage parsed from printer-storage 3mf files: (path, plate) -> (fingerprint, filament)
+        self._printer3mfFilamentCache = {}
+        # guards against booking the sliced usage twice (connectors may fire PRINT_DONE multiple times)
+        self._slicedUsageAlreadyBooked = False
+        # own wall clock per print job - connectors may report time=0.0 in the PRINT_DONE payload
+        self._printJobStartedTimestamp = None
 
         # DATABASE
         self.databaseConnectionProblemConfirmed = False
@@ -210,28 +222,187 @@ class SpoolmanagerPlugin(
 
         pass
 
+    def _getCurrentJobFileLocation(self):
+        # Classic job data dict, filled once a file is selected on serial printers
+        currentData = self._printer.get_current_data()
+        if "job" in currentData:
+            jobData = currentData["job"]
+            if "file" in jobData:
+                fileData = jobData["file"]
+                origin = fileData.get("origin")
+                path = fileData.get("path")
+                if origin is not None and path is not None:
+                    return origin, path
+
+        # OctoPrint >= 2.0 job model: connector plugins (e.g. bambu_connector) don't
+        # populate the classic job dict ("Cannot load job: printer doesn't support it")
+        currentJob = getattr(self._printer, "current_job", None)
+        if currentJob is not None:
+            origin = getattr(currentJob, "storage", None)
+            path = getattr(currentJob, "path", None)
+            if origin is not None and path is not None:
+                return origin, path
+
+        return None, None
+
+    def _parseFilamentLengthsFromBambu3mf(self, fileOrPath, plate=1):
+        # bambu-studio/orca .gcode.3mf containers carry the sliced filament usage in
+        # Metadata/slice_info.config: <plate><filament id="1" used_m="1.03" used_g="3.08"/></plate>
+        try:
+            with zipfile.ZipFile(fileOrPath) as zipFile:
+                sliceInfoName = None
+                for name in zipFile.namelist():
+                    if name.lower() == "metadata/slice_info.config":
+                        sliceInfoName = name
+                        break
+                if sliceInfoName is None:
+                    return None
+                root = ET.fromstring(zipFile.read(sliceInfoName))
+        except Exception as e:
+            self._logger.debug("could not parse 3mf '%s': %s" % (fileOrPath, e))
+            return None
+
+        try:
+            plate = int(plate)
+        except (TypeError, ValueError):
+            plate = 1
+
+        result = {}
+        for plateNode in root.iter("plate"):
+            plateIndex = None
+            for metaNode in plateNode.findall("metadata"):
+                if metaNode.get("key") == "index":
+                    try:
+                        plateIndex = int(metaNode.get("value"))
+                    except (TypeError, ValueError):
+                        pass
+            if plateIndex is not None and plateIndex != plate:
+                continue
+            for filamentNode in plateNode.findall("filament"):
+                try:
+                    toolIndex = int(filamentNode.get("id")) - 1
+                    usedMeters = float(filamentNode.get("used_m"))
+                except (TypeError, ValueError):
+                    continue
+                result["tool%d" % toolIndex] = {"length": usedMeters * 1000.0}
+            if result:
+                break
+        return result if result else None
+
+    def _getFilamentMetaData(self, origin, path, plate=1):
+        candidates = [(origin, path)]
+        if origin != FileDestinations.LOCAL and path is not None:
+            # gcode analysis results only exist in local storage; printer-storage jobs
+            # (e.g. bambu connector) reference a file that was uploaded from local
+            candidates.append((FileDestinations.LOCAL, path))
+            basename = path.rsplit("/", 1)[-1]
+            if basename != path:
+                candidates.append((FileDestinations.LOCAL, basename))
+            # bambu uploads may wrap gcode into a 3mf container ("X.gcode" -> "X.gcode.3mf")
+            if basename.endswith(".3mf"):
+                candidates.append((FileDestinations.LOCAL, basename[:-len(".3mf")]))
+
+        for candidateOrigin, candidatePath in candidates:
+            try:
+                metadata = self._file_manager.get_metadata(candidateOrigin, candidatePath)
+            except Exception:
+                metadata = None
+            if metadata is None:
+                self._logger.debug("no metadata found for '%s:%s'" % (candidateOrigin, candidatePath))
+                continue
+            if "analysis" in metadata and "filament" in metadata["analysis"]:
+                if (candidateOrigin, candidatePath) != (origin, path):
+                    self._logger.info(
+                        "filament metadata for job '%s:%s' resolved via fallback '%s:%s'"
+                        % (origin, path, candidateOrigin, candidatePath)
+                    )
+                return metadata["analysis"]["filament"]
+
+        # no analysis metadata anywhere: if a local copy is a 3mf container,
+        # extract the sliced filament usage directly from it
+        for candidateOrigin, candidatePath in candidates:
+            if candidateOrigin != FileDestinations.LOCAL or not candidatePath.endswith(".3mf"):
+                continue
+            try:
+                pathOnDisk = self._file_manager.path_on_disk(FileDestinations.LOCAL, candidatePath)
+            except Exception:
+                continue
+            if pathOnDisk is None or not os.path.exists(pathOnDisk):
+                continue
+            filament = self._parseFilamentLengthsFromBambu3mf(pathOnDisk, plate=plate)
+            if filament is not None:
+                self._logger.info(
+                    "filament usage for job '%s:%s' parsed from 3mf 'local:%s' (plate %s)"
+                    % (origin, path, candidatePath, plate)
+                )
+                return filament
+
+        # last resort: no local copy at all, fetch the 3mf from the printer storage
+        if origin == FileDestinations.PRINTER and path.endswith(".3mf"):
+            return self._getFilamentFromPrinter3mf(path, plate)
+        return None
+
+    def _getFilamentFromPrinter3mf(self, path, plate):
+        connection = getattr(self._printer, "_connection", None)
+        if connection is None or not hasattr(connection, "download_printer_file"):
+            return None
+
+        # downloading from the printer takes seconds, so cache by file fingerprint
+        fingerprint = None
+        try:
+            printerFile = connection.get_printer_file(path)
+            fingerprint = (getattr(printerFile, "size", None), getattr(printerFile, "date", None))
+        except Exception:
+            pass
+
+        cacheKey = (path, plate)
+        cached = self._printer3mfFilamentCache.get(cacheKey)
+        if cached is not None and cached[0] == fingerprint:
+            return cached[1]
+
+        self._sendDataToClient(dict(action="printerFileAnalysisStarted", path=path))
+        try:
+            try:
+                fileObject = connection.download_printer_file(path)
+            except Exception as e:
+                self._logger.warning("could not download 'printer:%s' for filament parsing: %s" % (path, e))
+                return None
+
+            filament = self._parseFilamentLengthsFromBambu3mf(fileObject, plate=plate)
+        finally:
+            self._sendDataToClient(dict(action="printerFileAnalysisFinished", path=path))
+        self._printer3mfFilamentCache[cacheKey] = (fingerprint, filament)
+        if filament is not None:
+            self._logger.info(
+                "filament usage for job 'printer:%s' parsed from downloaded 3mf (plate %s)" % (path, plate)
+            )
+        return filament
+
     def _readingFilamentMetaData(self):
         filamentLengthPresentInMeta = False
         self.metaDataFilamentLengths = []
-        if "job" in self._printer.get_current_data():
-            jobData = self._printer.get_current_data()["job"]
-            if "file" in jobData:
-                fileData = jobData["file"]
-                origin = fileData["origin"]
-                path = fileData["path"]
-                if origin is not None and path is not None:
-                    metadata = self._file_manager.get_metadata(origin, path)
-                    if "analysis" in metadata:
-                        if "filament" in metadata["analysis"]:
-                            for toolName, toolData in metadata["analysis"]["filament"].items():
-                                toolIndex = int(toolName[4:])
-                                self.metaDataFilamentLengths += [0.0] * (toolIndex + 1 - len(self.metaDataFilamentLengths))
-                                self.metaDataFilamentLengths[toolIndex] = toolData["length"]
-                                filamentLengthPresentInMeta = True
-                        else:
-                            self._logger.warning("calculating filament aborted because filament was missing from analysis metadata")
-                    else:
-                        self._logger.warning("calculating filament aborted because analysis metadata was missing")
+
+        origin, path = self._getCurrentJobFileLocation()
+        if origin is None or path is None:
+            self._logger.warning("calculating filament aborted because no current job file could be determined")
+            return False
+
+        currentJob = getattr(self._printer, "current_job", None)
+        plate = getattr(currentJob, "plate", 1) if currentJob is not None else 1
+
+        filamentMetaData = self._getFilamentMetaData(origin, path, plate=plate)
+        if filamentMetaData is None:
+            self._logger.warning(
+                "calculating filament aborted because filament analysis metadata was missing for '%s:%s'" % (origin, path)
+            )
+            return False
+
+        for toolName, toolData in filamentMetaData.items():
+            toolIndex = int(toolName[4:])
+            self.metaDataFilamentLengths += [0.0] * (toolIndex + 1 - len(self.metaDataFilamentLengths))
+            self.metaDataFilamentLengths[toolIndex] = toolData["length"]
+            filamentLengthPresentInMeta = True
+
         return filamentLengthPresentInMeta
 
     def _evaluateRequiredWeight(self, selectedSpools, forToolIndex=None, warnUser=False):
@@ -447,6 +618,8 @@ class SpoolmanagerPlugin(
 
         # self._filamentOdometer.reset()
         self.myFilamentOdometer.reset()
+        self._slicedUsageAlreadyBooked = False
+        self._printJobStartedTimestamp = time.time()
 
         reloadTable = False
         selectedSpools = self.loadSelectedSpools()
@@ -466,8 +639,17 @@ class SpoolmanagerPlugin(
                                         ))
     # assign the current extrusion to the current selected spools
 
-    def commitOdometerData(self):
+    # connectors can fire spurious PRINT_DONE events seconds after the job kickoff
+    # (state bounces); no real print finishes this quickly
+    MINIMUM_PRINT_DURATION_FOR_SLICED_USAGE = 60
+
+    def commitOdometerData(self, printStatus=None, printDuration=None):
         reload = False
+        slicedLengthsRead = False
+        slicedUsageBooked = False
+        slicedUsagePlausible = (
+            printDuration is None or printDuration >= self.MINIMUM_PRINT_DURATION_FOR_SLICED_USAGE
+        )
         selectedSpools = self.loadSelectedSpools()
         for toolIndex, spoolModel in enumerate(selectedSpools):
             if spoolModel is None:
@@ -482,6 +664,27 @@ class SpoolmanagerPlugin(
                 allExtrusions = self.myFilamentOdometer.getExtrusionAmount()
                 currentExtrusionLength = allExtrusions[toolIndex]
             except (KeyError, IndexError):
+                currentExtrusionLength = None
+
+            if ((currentExtrusionLength is None or currentExtrusionLength <= 0.0)
+                    and printStatus == "success"
+                    and self._slicedUsageAlreadyBooked == False
+                    and slicedUsagePlausible):
+                # nothing streamed through octoprint (e.g. printer-storage prints via a
+                # connector plugin), so book the sliced filament usage instead
+                if not slicedLengthsRead:
+                    self._readingFilamentMetaData()
+                    slicedLengthsRead = True
+                slicedLength = self.metaDataFilamentLengths[toolIndex] if toolIndex < len(self.metaDataFilamentLengths) else None
+                if slicedLength is not None and slicedLength > 0.0:
+                    currentExtrusionLength = slicedLength
+                    slicedUsageBooked = True
+                    self._logger.info(
+                        "Tool %d: no extrusion tracked by odometer, using sliced filament usage of %.1fmm instead"
+                        % (toolIndex, slicedLength)
+                    )
+
+            if currentExtrusionLength is None:
                 self._logger.info("Tool %d: No filament extruded" % toolIndex)
                 continue
             self._logger.info("Tool %d: Extruded filament length: %s" % (toolIndex, str(currentExtrusionLength)))
@@ -521,6 +724,9 @@ class SpoolmanagerPlugin(
 
         self.myFilamentOdometer.reset_extruded_length()
 
+        if slicedUsageBooked:
+            self._slicedUsageAlreadyBooked = True
+
         if reload:
             self._sendDataToClient(dict(
                 action="reloadTable and sidebarSpools"
@@ -528,7 +734,16 @@ class SpoolmanagerPlugin(
 
     #### print job finished
     def _on_printJobFinished(self, printStatus, payload):
-        self.commitOdometerData()
+        printDuration = payload.get("time") if payload else None
+        if (printDuration is None or printDuration <= 0.0) and self._printJobStartedTimestamp is not None:
+            # some connectors (e.g. bambu) always report time=0.0, so use our own clock
+            printDuration = time.time() - self._printJobStartedTimestamp
+        if printDuration is not None and printDuration < self.MINIMUM_PRINT_DURATION_FOR_SLICED_USAGE:
+            self._logger.info(
+                "print 'finished' after only %.1fs - sliced filament usage will not be booked (spurious event?)"
+                % printDuration
+            )
+        self.commitOdometerData(printStatus=printStatus, printDuration=printDuration)
 
         # update remaining data in selected spools after a print
         selectedSpools = self.loadSelectedSpools()
