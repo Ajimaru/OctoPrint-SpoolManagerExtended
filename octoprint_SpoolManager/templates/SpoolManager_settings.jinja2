@@ -313,6 +313,25 @@ FPE;	2.16
                         </span>
                     </div>
                 </div>
+                <!-- Internal SQLite: full .db file export -->
+                <div class="control-group" data-bind="hidden: pluginSettings.useExternal">
+                    <div class="controls">
+                        <span><b>Local SQLite Database</b>: Export the full database as
+                            <a class="btn btn-info btn-mini" href="#" data-bind="attr: {href: downloadDatabaseUrl}" target="_blank"><i class="icon-download"></i> Database file (.db)</a>
+                        </span>
+                    </div>
+                </div>
+                <!-- External MySQL: full .sql dump export (moved here from the Storage tab) -->
+                <div class="control-group" data-bind="visible: isExternalMySQL">
+                    <div class="controls">
+                        <span><b>External MySQL Database</b>: Export the full database as
+                            <a class="btn btn-info btn-mini" href="#" data-bind="attr: {href: getDatabaseDumpExportUrl()}"><i class="icon-download"></i> SQL-Dump (.sql)</a>
+                        </span>
+                        <div class="help-block" style="margin-top: 5px;">
+                            The .sql dump works on the <b>saved</b> connection settings (MySQL only). Save the storage settings first.
+                        </div>
+                    </div>
+                </div>
                 <div class="control-group" data-bind="visible: isFilamentManagerPluginAvailable">
                     <div class="controls">
                         <span><b>Legacy: Filament Manager Database</b>: Export all data as <a target="_newTab" href="#" data-bind="attr: {href: $root.apiClient.getExportUrl('legacyFilamentManager', 'internal'), css: {disabled: !$root.apiClient.getExportUrl('legacyFilamentManager', 'internal')}}">CSV-File</a></span>
@@ -322,9 +341,15 @@ FPE;	2.16
 
                 <h3>Import</h3>
 
+                <div class="alert alert-info" style="margin-bottom: 10px;">
+                    A safety backup of the current database is automatically created and downloaded
+                    <b>before</b> every import (append and replace). If the backup fails, the import is aborted.
+                </div>
                 <div class="alert" data-bind="visible: printerStateViewModel.isBusy()" style="">
                         Take note that import functionality is disabled while your printer is printing or paused.
                 </div>
+
+                <h4>CSV Import</h4>
                 <div class="control-group" data-bind="visible: !printerStateViewModel.isBusy()">
                     <div class="controls">
                         <div class="row">
@@ -359,6 +384,98 @@ FPE;	2.16
                                     <i class="fa fa-spinner fa-spin"
                                        data-bind="visible: csvImportInProgress"></i> Upload & import
                                 </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Internal SQLite: .db file restore (replace = whole-file swap, append = insert spools) -->
+                <div data-bind="hidden: pluginSettings.useExternal">
+                    <h4>Database File Restore (.db)</h4>
+                    <div class="control-group" data-bind="visible: !printerStateViewModel.isBusy()">
+                        <div class="controls">
+                            <div class="row">
+                                Restore the local SQLite database from a <b>.db</b> file. Replace swaps the whole database file; append inserts the spools from the file.
+                            </div>
+                            <br/>
+                            <div class="row">
+                                <div class="span6">
+                                    <label class="radio">
+                                        <input type="radio" name="dbRestoreMode" value="replace" data-bind="checked: dbRestoreMode"> Replace local database
+                                    </label>
+                                    <label class="radio">
+                                        <input type="radio" name="dbRestoreMode" value="append" data-bind="checked: dbRestoreMode"> Append spools to local database
+                                    </label>
+                                </div>
+                                <div class="span6">
+                                    <div class="input-prepend">
+                                        <span class="btn fileinput-button">
+                                            <span>Browse...</span>
+                                            <input id="settings-spool-importdb-upload"
+                                                   type="file"
+                                                   name="file"
+                                                   accept=".db"
+                                                   data-bind="event: {change: dbRestoreFileChanged}">
+                                        </span>
+                                        <span class="add-on" data-bind="text: dbRestoreFileName"></span>
+                                    </div>
+                                    <button class="btn btn-primary"
+                                            data-bind="disable: (dbRestoreInProgress() || dbRestoreFileName() == undefined), click: performDBRestoreFromUpload">
+                                        <i class="fa fa-spinner fa-spin"
+                                           data-bind="visible: dbRestoreInProgress"></i> Upload & restore
+                                    </button>
+                                    <div class="help-block" data-bind="visible: dbRestoreResultText">
+                                        <div class="alert alert-success">
+                                            <font color="green"><b><span data-bind="text: dbRestoreResultText"></span></b></font>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- External MySQL: .sql dump import (moved here from the Storage tab) -->
+                <div data-bind="visible: isExternalMySQL">
+                    <h4>SQL-Dump Import</h4>
+                    <div class="control-group" data-bind="visible: !printerStateViewModel.isBusy()">
+                        <div class="controls">
+                            <div class="row">
+                                Import a full <b>.sql</b> dump into the external MySQL database. Works on the <b>saved</b> connection settings.
+                            </div>
+                            <br/>
+                            <div class="row">
+                                <div class="span6">
+                                    <label class="radio">
+                                        <input type="radio" name="sqlImportMode" value="replace" data-bind="checked: sqlImportMode"> Replace external database
+                                    </label>
+                                    <label class="radio">
+                                        <input type="radio" name="sqlImportMode" value="append" data-bind="checked: sqlImportMode"> Append spools to external database
+                                    </label>
+                                </div>
+                                <div class="span6">
+                                    <div class="input-prepend">
+                                        <span class="btn fileinput-button">
+                                            <span>Browse...</span>
+                                            <input id="settings-spool-importsql-upload"
+                                                   type="file"
+                                                   name="file"
+                                                   accept=".sql"
+                                                   data-bind="event: {change: sqlDumpFileChanged}">
+                                        </span>
+                                        <span class="add-on" data-bind="text: sqlDumpFileName"></span>
+                                    </div>
+                                    <button class="btn btn-primary"
+                                            data-bind="disable: (sqlImportInProgress() || sqlDumpFileName() == undefined), click: performSQLImportFromUpload">
+                                        <i class="fa fa-spinner fa-spin"
+                                           data-bind="visible: sqlImportInProgress"></i> Upload & import
+                                    </button>
+                                    <div class="help-block" data-bind="visible: sqlImportResultText">
+                                        <div class="alert alert-success">
+                                            <font color="green"><b><span data-bind="text: sqlImportResultText"></span></b></font>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -548,46 +665,8 @@ FPE;	2.16
                     </div>
                 </div>
 
-                <!-- MySQL dump export/import, only available for external MySQL databases -->
-                <div class="control-group" data-bind="visible: isExternalMySQL">
-                    <div class="controls">
-                        <div class="alert alert-info" style="margin-bottom: 10px;">
-                            Export/Import works on the <b>saved</b> connection settings (MySQL only). Save the settings first.
-                        </div>
-                        <div style="margin-bottom: 10px;">
-                            <a class="btn btn-info" href="#" data-bind="attr: {href: getDatabaseDumpExportUrl()}">Export Database (.sql)</a>
-                        </div>
-                        <div>
-                            <label class="radio">
-                                <input type="radio" name="sqlImportMode" value="replace" data-bind="checked: sqlImportMode"> Replace external database
-                            </label>
-                            <label class="radio">
-                                <input type="radio" name="sqlImportMode" value="append" data-bind="checked: sqlImportMode"> Append spools to external database
-                            </label>
-                        </div>
-                        <div class="input-prepend" style="margin-top: 5px;">
-                            <span class="btn fileinput-button">
-                                <span>Browse...</span>
-                                <input id="settings-spool-importsql-upload"
-                                       type="file"
-                                       name="file"
-                                       accept=".sql"
-                                       data-bind="event: {change: sqlDumpFileChanged}">
-                            </span>
-                            <span class="add-on" data-bind="text: sqlDumpFileName"></span>
-                        </div>
-                        <button class="btn btn-primary"
-                                data-bind="disable: (sqlImportInProgress() || sqlDumpFileName() == undefined), click: performSQLImportFromUpload">
-                            <i class="fa fa-spinner fa-spin"
-                               data-bind="visible: sqlImportInProgress"></i> Upload & import
-                        </button>
-                        <div class="help-block" data-bind="visible: sqlImportResultText">
-                            <div class="alert alert-success">
-                                <font color="green"><b><span data-bind="text: sqlImportResultText"></span></b></font>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <!-- MySQL dump export/import moved to the Export/Import tab (external DB view).
+                     Only "Copy Spools from Internal DB" remains here for the external database. -->
 
                 <div class="control-group">
                     <div class="controls">
