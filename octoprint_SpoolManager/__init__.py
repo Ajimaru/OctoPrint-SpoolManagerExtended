@@ -5,6 +5,7 @@ from datetime import datetime
 import flask
 import octoprint.plugin
 from octoprint.events import Events
+from octoprint.filemanager.destinations import FileDestinations
 from octoprint.access.permissions import Permissions
 from octoprint_SpoolManager.DatabaseManager import DatabaseManager
 
@@ -210,28 +211,81 @@ class SpoolmanagerPlugin(
 
         pass
 
+    def _getCurrentJobFileLocation(self):
+        # Classic job data dict, filled once a file is selected on serial printers
+        currentData = self._printer.get_current_data()
+        if "job" in currentData:
+            jobData = currentData["job"]
+            if "file" in jobData:
+                fileData = jobData["file"]
+                origin = fileData.get("origin")
+                path = fileData.get("path")
+                if origin is not None and path is not None:
+                    return origin, path
+
+        # OctoPrint >= 2.0 job model: connector plugins (e.g. bambu_connector) don't
+        # populate the classic job dict ("Cannot load job: printer doesn't support it")
+        currentJob = getattr(self._printer, "current_job", None)
+        if currentJob is not None:
+            origin = getattr(currentJob, "storage", None)
+            path = getattr(currentJob, "path", None)
+            if origin is not None and path is not None:
+                return origin, path
+
+        return None, None
+
+    def _getFilamentMetaData(self, origin, path):
+        candidates = [(origin, path)]
+        if origin != FileDestinations.LOCAL and path is not None:
+            # gcode analysis results only exist in local storage; printer-storage jobs
+            # (e.g. bambu connector) reference a file that was uploaded from local
+            candidates.append((FileDestinations.LOCAL, path))
+            basename = path.rsplit("/", 1)[-1]
+            if basename != path:
+                candidates.append((FileDestinations.LOCAL, basename))
+            # bambu uploads may wrap gcode into a 3mf container ("X.gcode" -> "X.gcode.3mf")
+            if basename.endswith(".3mf"):
+                candidates.append((FileDestinations.LOCAL, basename[:-len(".3mf")]))
+
+        for candidateOrigin, candidatePath in candidates:
+            try:
+                metadata = self._file_manager.get_metadata(candidateOrigin, candidatePath)
+            except Exception:
+                metadata = None
+            if metadata is None:
+                self._logger.debug("no metadata found for '%s:%s'" % (candidateOrigin, candidatePath))
+                continue
+            if "analysis" in metadata and "filament" in metadata["analysis"]:
+                if (candidateOrigin, candidatePath) != (origin, path):
+                    self._logger.info(
+                        "filament metadata for job '%s:%s' resolved via fallback '%s:%s'"
+                        % (origin, path, candidateOrigin, candidatePath)
+                    )
+                return metadata["analysis"]["filament"]
+        return None
+
     def _readingFilamentMetaData(self):
         filamentLengthPresentInMeta = False
         self.metaDataFilamentLengths = []
-        if "job" in self._printer.get_current_data():
-            jobData = self._printer.get_current_data()["job"]
-            if "file" in jobData:
-                fileData = jobData["file"]
-                origin = fileData["origin"]
-                path = fileData["path"]
-                if origin is not None and path is not None:
-                    metadata = self._file_manager.get_metadata(origin, path)
-                    if "analysis" in metadata:
-                        if "filament" in metadata["analysis"]:
-                            for toolName, toolData in metadata["analysis"]["filament"].items():
-                                toolIndex = int(toolName[4:])
-                                self.metaDataFilamentLengths += [0.0] * (toolIndex + 1 - len(self.metaDataFilamentLengths))
-                                self.metaDataFilamentLengths[toolIndex] = toolData["length"]
-                                filamentLengthPresentInMeta = True
-                        else:
-                            self._logger.warning("calculating filament aborted because filament was missing from analysis metadata")
-                    else:
-                        self._logger.warning("calculating filament aborted because analysis metadata was missing")
+
+        origin, path = self._getCurrentJobFileLocation()
+        if origin is None or path is None:
+            self._logger.warning("calculating filament aborted because no current job file could be determined")
+            return False
+
+        filamentMetaData = self._getFilamentMetaData(origin, path)
+        if filamentMetaData is None:
+            self._logger.warning(
+                "calculating filament aborted because filament analysis metadata was missing for '%s:%s'" % (origin, path)
+            )
+            return False
+
+        for toolName, toolData in filamentMetaData.items():
+            toolIndex = int(toolName[4:])
+            self.metaDataFilamentLengths += [0.0] * (toolIndex + 1 - len(self.metaDataFilamentLengths))
+            self.metaDataFilamentLengths[toolIndex] = toolData["length"]
+            filamentLengthPresentInMeta = True
+
         return filamentLengthPresentInMeta
 
     def _evaluateRequiredWeight(self, selectedSpools, forToolIndex=None, warnUser=False):
