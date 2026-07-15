@@ -1,6 +1,9 @@
 # coding=utf-8
 
 import math
+import os
+import zipfile
+import xml.etree.ElementTree as ET
 from datetime import datetime
 import flask
 import octoprint.plugin
@@ -29,6 +32,9 @@ class SpoolmanagerPlugin(
 
     def initialize(self):
         self._logger.info("Start initializing")
+
+        # cache for filament usage parsed from printer-storage 3mf files: (path, plate) -> (fingerprint, filament)
+        self._printer3mfFilamentCache = {}
 
         # DATABASE
         self.databaseConnectionProblemConfirmed = False
@@ -234,7 +240,51 @@ class SpoolmanagerPlugin(
 
         return None, None
 
-    def _getFilamentMetaData(self, origin, path):
+    def _parseFilamentLengthsFromBambu3mf(self, fileOrPath, plate=1):
+        # bambu-studio/orca .gcode.3mf containers carry the sliced filament usage in
+        # Metadata/slice_info.config: <plate><filament id="1" used_m="1.03" used_g="3.08"/></plate>
+        try:
+            with zipfile.ZipFile(fileOrPath) as zipFile:
+                sliceInfoName = None
+                for name in zipFile.namelist():
+                    if name.lower() == "metadata/slice_info.config":
+                        sliceInfoName = name
+                        break
+                if sliceInfoName is None:
+                    return None
+                root = ET.fromstring(zipFile.read(sliceInfoName))
+        except Exception as e:
+            self._logger.debug("could not parse 3mf '%s': %s" % (fileOrPath, e))
+            return None
+
+        try:
+            plate = int(plate)
+        except (TypeError, ValueError):
+            plate = 1
+
+        result = {}
+        for plateNode in root.iter("plate"):
+            plateIndex = None
+            for metaNode in plateNode.findall("metadata"):
+                if metaNode.get("key") == "index":
+                    try:
+                        plateIndex = int(metaNode.get("value"))
+                    except (TypeError, ValueError):
+                        pass
+            if plateIndex is not None and plateIndex != plate:
+                continue
+            for filamentNode in plateNode.findall("filament"):
+                try:
+                    toolIndex = int(filamentNode.get("id")) - 1
+                    usedMeters = float(filamentNode.get("used_m"))
+                except (TypeError, ValueError):
+                    continue
+                result["tool%d" % toolIndex] = {"length": usedMeters * 1000.0}
+            if result:
+                break
+        return result if result else None
+
+    def _getFilamentMetaData(self, origin, path, plate=1):
         candidates = [(origin, path)]
         if origin != FileDestinations.LOCAL and path is not None:
             # gcode analysis results only exist in local storage; printer-storage jobs
@@ -262,7 +312,62 @@ class SpoolmanagerPlugin(
                         % (origin, path, candidateOrigin, candidatePath)
                     )
                 return metadata["analysis"]["filament"]
+
+        # no analysis metadata anywhere: if a local copy is a 3mf container,
+        # extract the sliced filament usage directly from it
+        for candidateOrigin, candidatePath in candidates:
+            if candidateOrigin != FileDestinations.LOCAL or not candidatePath.endswith(".3mf"):
+                continue
+            try:
+                pathOnDisk = self._file_manager.path_on_disk(FileDestinations.LOCAL, candidatePath)
+            except Exception:
+                continue
+            if pathOnDisk is None or not os.path.exists(pathOnDisk):
+                continue
+            filament = self._parseFilamentLengthsFromBambu3mf(pathOnDisk, plate=plate)
+            if filament is not None:
+                self._logger.info(
+                    "filament usage for job '%s:%s' parsed from 3mf 'local:%s' (plate %s)"
+                    % (origin, path, candidatePath, plate)
+                )
+                return filament
+
+        # last resort: no local copy at all, fetch the 3mf from the printer storage
+        if origin == FileDestinations.PRINTER and path.endswith(".3mf"):
+            return self._getFilamentFromPrinter3mf(path, plate)
         return None
+
+    def _getFilamentFromPrinter3mf(self, path, plate):
+        connection = getattr(self._printer, "_connection", None)
+        if connection is None or not hasattr(connection, "download_printer_file"):
+            return None
+
+        # downloading from the printer takes seconds, so cache by file fingerprint
+        fingerprint = None
+        try:
+            printerFile = connection.get_printer_file(path)
+            fingerprint = (getattr(printerFile, "size", None), getattr(printerFile, "date", None))
+        except Exception:
+            pass
+
+        cacheKey = (path, plate)
+        cached = self._printer3mfFilamentCache.get(cacheKey)
+        if cached is not None and cached[0] == fingerprint:
+            return cached[1]
+
+        try:
+            fileObject = connection.download_printer_file(path)
+        except Exception as e:
+            self._logger.warning("could not download 'printer:%s' for filament parsing: %s" % (path, e))
+            return None
+
+        filament = self._parseFilamentLengthsFromBambu3mf(fileObject, plate=plate)
+        self._printer3mfFilamentCache[cacheKey] = (fingerprint, filament)
+        if filament is not None:
+            self._logger.info(
+                "filament usage for job 'printer:%s' parsed from downloaded 3mf (plate %s)" % (path, plate)
+            )
+        return filament
 
     def _readingFilamentMetaData(self):
         filamentLengthPresentInMeta = False
@@ -273,7 +378,10 @@ class SpoolmanagerPlugin(
             self._logger.warning("calculating filament aborted because no current job file could be determined")
             return False
 
-        filamentMetaData = self._getFilamentMetaData(origin, path)
+        currentJob = getattr(self._printer, "current_job", None)
+        plate = getattr(currentJob, "plate", 1) if currentJob is not None else 1
+
+        filamentMetaData = self._getFilamentMetaData(origin, path, plate=plate)
         if filamentMetaData is None:
             self._logger.warning(
                 "calculating filament aborted because filament analysis metadata was missing for '%s:%s'" % (origin, path)
