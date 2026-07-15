@@ -72,6 +72,21 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
         return _addApiKeyIfNecessary("./plugin/" + this.pluginId + "/exportDatabaseDump");
     }
 
+    this.getDatabaseBackupDownloadUrl = function(backupFileName){
+        return _addApiKeyIfNecessary("./plugin/" + this.pluginId + "/downloadDatabaseBackup?fileName=" + encodeURIComponent(backupFileName));
+    }
+
+    this.callCreateDatabaseBackup = function (responseHandler){
+        $.ajax({
+            url: this.baseUrl + "plugin/" + this.pluginId + "/createDatabaseBackup",
+            dataType: "json",
+            contentType: "application/json; charset=UTF-8",
+            type: "PUT"
+        }).always(function( data ){
+            responseHandler(data);
+        });
+    }
+
     //////////////////////////////////////////////////////////////////////////////// IMPORT MYSQL DATABASE DUMP
     this.callImportDatabaseDump = function (file, importMode, responseHandler){
         var formData = new FormData();

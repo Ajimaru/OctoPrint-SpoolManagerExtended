@@ -353,13 +353,32 @@ $(function() {
             var pluginVersion = Number(self.databaseMetaData.schemeVersionFromPlugin());
             return isNaN(externalVersion) == false && isNaN(pluginVersion) == false && externalVersion < pluginVersion;
         });
+        // - local SQLite scheme upgrade: the auto-upgrade normally runs at startup, but if the local
+        //   database file was restored/replaced at an old scheme version the user needs a way to re-trigger it
+        self.isLocalSchemeUpgradeAvailable = ko.pureComputed(function(){
+            if (self.pluginSettings.useExternal() == true){
+                return false;
+            }
+            var localVersion = Number(self.databaseMetaData.localSchemeVersionFromDatabaseModel());
+            var pluginVersion = Number(self.databaseMetaData.schemeVersionFromPlugin());
+            return isNaN(localVersion) == false && isNaN(pluginVersion) == false && localVersion < pluginVersion;
+        });
+        self.isSchemeUpgradeAvailable = ko.pureComputed(function(){
+            return self.isExternalSchemeUpgradeAvailable() == true || self.isLocalSchemeUpgradeAvailable() == true;
+        });
         self.schemeUpgradeInProgress = ko.observable(false);
         self.schemeUpgradeResultText = ko.observable("");
 
         self.upgradeDatabaseSchemeAction = function(){
-            var confirmed = confirm("Upgrade the external database scheme now?\n\n" +
-                                    "A SQL dump backup is downloaded first. " +
-                                    "If the backup download fails, the upgrade is aborted.");
+            var isExternal = self.pluginSettings.useExternal() == true;
+            var confirmMessage = isExternal
+                ? "Upgrade the external database scheme now?\n\n" +
+                  "A SQL dump backup is downloaded first. " +
+                  "If the backup download fails, the upgrade is aborted."
+                : "Upgrade the local database scheme now?\n\n" +
+                  "A copy of the database file is downloaded first. " +
+                  "If the backup download fails, the upgrade is aborted.";
+            var confirmed = confirm(confirmMessage);
             if (confirmed != true){
                 return;
             }
@@ -372,7 +391,7 @@ $(function() {
                 var result = responseData != null ? responseData["result"] : null;
                 if (result != null && result["success"] == true){
                     self.schemeUpgradeResultText("Database scheme upgraded to version " + result["toVersion"] +
-                                                 ". The backup dump was downloaded.");
+                                                 ". The backup was downloaded.");
                     if (responseData["metadata"] != null){
                         self.handleDatabaseMetaDataResponse(responseData);
                     }
@@ -394,40 +413,67 @@ $(function() {
                 }
             };
 
-            // step 1: download the backup dump; the migration only starts after a successful download
-            fetch(self.apiClient.getDatabaseDumpExportUrl())
-                .then(function(response){
-                    if (response.ok == false){
-                        return response.text().then(function(text){
-                            throw new Error(text || ("Backup download failed (HTTP " + response.status + ")"));
-                        });
-                    }
-                    return response.blob();
-                })
-                .then(function(blob){
-                    if (blob == null || blob.size == 0){
-                        throw new Error("Backup download failed (empty dump), upgrade aborted.");
-                    }
-                    var now = new Date();
-                    var pad = function(value){ return (value < 10 ? "0" : "") + value; };
-                    var fileName = "SpoolManager-mysql-backup-" + now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) +
-                                   "-" + pad(now.getHours()) + pad(now.getMinutes()) + ".sql";
-                    var link = document.createElement("a");
-                    link.href = URL.createObjectURL(blob);
-                    link.download = fileName;
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                    URL.revokeObjectURL(link.href);
+            // helper: download a URL and resolve only when the browser received a non-empty file
+            var downloadBackupFile = function(url, downloadFileName){
+                return fetch(url)
+                    .then(function(response){
+                        if (response.ok == false){
+                            return response.text().then(function(text){
+                                throw new Error(text || ("Backup download failed (HTTP " + response.status + ")"));
+                            });
+                        }
+                        return response.blob();
+                    })
+                    .then(function(blob){
+                        if (blob == null || blob.size == 0){
+                            throw new Error("Backup download failed (empty file), upgrade aborted.");
+                        }
+                        var link = document.createElement("a");
+                        link.href = URL.createObjectURL(blob);
+                        link.download = downloadFileName;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        URL.revokeObjectURL(link.href);
+                    });
+            };
 
-                    // step 2: backup is on disk, run the migration
+            var handleDownloadError = function(error){
+                self.schemeUpgradeInProgress(false);
+                self.showExternalDatabaseErrorMessage(true);
+                self.externalDatabaseErrorMessage("" + ((error != null && error.message) ? error.message : error));
+            };
+
+            // local SQLite: create the .db backup on the server, download it, and only then migrate.
+            // If the backup creation or download fails, the migration is aborted (same guarantee as external).
+            if (isExternal == false){
+                self.apiClient.callCreateDatabaseBackup(function(backupResponse){
+                    var backupFileName = backupResponse != null ? backupResponse["backupFileName"] : null;
+                    if (backupFileName == null){
+                        handleDownloadError(new Error("Could not create the database backup, upgrade aborted."));
+                        return;
+                    }
+                    downloadBackupFile(self.apiClient.getDatabaseBackupDownloadUrl(backupFileName), backupFileName)
+                        .then(function(){
+                            // backup is on disk and downloaded, run the migration (no second backup)
+                            self.apiClient.callUpgradeDatabaseScheme({backupDownloaded: true}, handleUpgradeResponse);
+                        })
+                        .catch(handleDownloadError);
+                });
+                return;
+            }
+
+            // external: download the backup dump; the migration only starts after a successful download
+            var now = new Date();
+            var pad = function(value){ return (value < 10 ? "0" : "") + value; };
+            var dumpFileName = "SpoolManager-mysql-backup-" + now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) +
+                               "-" + pad(now.getHours()) + pad(now.getMinutes()) + ".sql";
+            downloadBackupFile(self.apiClient.getDatabaseDumpExportUrl(), dumpFileName)
+                .then(function(){
+                    // backup is on disk, run the migration
                     self.apiClient.callUpgradeDatabaseScheme({backupDownloaded: true}, handleUpgradeResponse);
                 })
-                .catch(function(error){
-                    self.schemeUpgradeInProgress(false);
-                    self.showExternalDatabaseErrorMessage(true);
-                    self.externalDatabaseErrorMessage("" + ((error != null && error.message) ? error.message : error));
-                });
+                .catch(handleDownloadError);
         }
 
         // - MySQL dump export/import (Storage tab, external database only)
