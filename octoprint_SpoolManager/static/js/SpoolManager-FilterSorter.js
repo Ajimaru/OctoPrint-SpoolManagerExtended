@@ -174,10 +174,15 @@ function SpoolsFilterSorter(filterSorterId, spoolsArrayKO) {
 
     // FILTER - Catalogs
     self.updateCatalogs = function(catalogs){
+        // Guard against a response without catalogs (e.g. a failed/partial load): otherwise
+        // accessing catalogs["materials"] throws and breaks the whole tab rendering.
+        if (catalogs == null){
+            catalogs = {"materials": [], "vendors": [], "colors": []};
+        }
         self.allCatalogs = catalogs;
-        var materialsCatalog = self.allCatalogs["materials"];
-        var vendorsCatalog = self.allCatalogs["vendors"];
-        var colorsCatalog = self.allCatalogs["colors"];
+        var materialsCatalog = self.allCatalogs["materials"] || [];
+        var vendorsCatalog = self.allCatalogs["vendors"] || [];
+        var colorsCatalog = self.allCatalogs["colors"] || [];
 
         self.allMaterials(materialsCatalog);
         self.allVendors(vendorsCatalog);
