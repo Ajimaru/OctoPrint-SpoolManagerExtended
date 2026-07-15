@@ -99,6 +99,14 @@
             </div>
 -->
             <div class="myspan3">
+                <button type="button" class="btn btn-mini spm-simplemode-toggle" style="margin-bottom: 6px;"
+                        data-bind="click: spoolDialog.toggleSimpleMode,
+                                   css: {'btn-info': spoolDialog.simpleMode},
+                                   attr: {title: spoolDialog.simpleMode() ? 'Simple view: only basic fields are shown. Click for the full view.' : 'Full view: all fields are shown. Click for the simple view.'}">
+                    <i class="fas" data-bind="css: {'fa-toggle-on': spoolDialog.simpleMode, 'fa-toggle-off': !spoolDialog.simpleMode()}"></i>
+                    <span data-bind="text: spoolDialog.simpleMode() ? 'Simple view' : 'Full view'">Full view</span>
+                </button>
+                <br/>
 {#                <label class="checkbox">#}
 {#                    <input type="checkbox" data-bind="checked: spoolDialog.spoolItemForEditing.isActive" > Active&nbsp;&nbsp;&nbsp;#}
 {#                </label>#}
@@ -246,7 +254,7 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                                   textInput: spoolDialog.spoolItemForEditing.finishCustomText" />
                             </div>
                         </div>
-                        <div class="control-group no-bottom-gap">
+                        <div class="control-group no-bottom-gap" data-bind="visible: !spoolDialog.simpleMode()">
                             <label class="control-label">Flow Rate Compensation<sup>4</sup></label>
                             <div class="controls">
                                 <div class="input-append">
@@ -258,7 +266,7 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                             </div>
                         </div>
 
-                        <div class="control-group no-bottom-gap">
+                        <div class="control-group no-bottom-gap" data-bind="visible: !spoolDialog.simpleMode()">
                             <label class="control-label">Tool/Bed<sup>4</sup></label>
                             <div class="row controls">
                                 <div class="input-append">
@@ -276,7 +284,7 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                 <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('temperature') !== -1 || spoolDialog.invalidNumberFields().indexOf('bedTemperature') !== -1">Please enter a valid number</span>
                             </div>
                         </div>
-                        <div class="control-group ">
+                        <div class="control-group " data-bind="visible: !spoolDialog.simpleMode()">
                             <label class="control-label">Enclosure</label>
                             <div class="controls">
                                 <div class="input-append">
@@ -288,7 +296,7 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                             </div>
                         </div>
 
-                        <div class="control-group no-bottom-gap">
+                        <div class="control-group no-bottom-gap" data-bind="visible: !spoolDialog.simpleMode()">
                             <label class="control-label">Offset Tool/Bed<sup>5</sup></label>
                             <div class="row controls">
                                 <div class="input-append">
@@ -306,7 +314,7 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                 <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('offsetTemperature') !== -1 || spoolDialog.invalidNumberFields().indexOf('offsetBedTemperature') !== -1">Please enter a valid number</span>
                             </div>
                         </div>
-                        <div class="control-group ">
+                        <div class="control-group " data-bind="visible: !spoolDialog.simpleMode()">
                             <label class="control-label">Offset Enclosure<sup>5</sup></label>
                             <div class="controls">
                                 <div class="input-append">
@@ -319,8 +327,8 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                         </div>
 
                         {# QR-CODE STUFF #}
-                        <!-- ko if: spoolDialog.isExistingSpool() && pluginSettings.qrCodeEnabled() -->
-                        <div class="control-group no-bottom-gap" data-bind="visible: spoolDialog.isExistingSpool() && pluginSettings.qrCodeEnabled()">
+                        <!-- ko if: spoolDialog.isExistingSpool() && pluginSettings.qrCodeEnabled() && !spoolDialog.simpleMode() -->
+                        <div class="control-group no-bottom-gap" data-bind="visible: spoolDialog.isExistingSpool() && pluginSettings.qrCodeEnabled() && !spoolDialog.simpleMode()">
                             <div class="row-fluid">
                                 <div class="span8">
                                     <label class="control-label">QR Code</label>
@@ -347,13 +355,13 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                             </div>
                         </div>
                         <!-- /ko -->
-                        <div class="control-group">
+                        <div class="control-group" data-bind="visible: !spoolDialog.simpleMode()">
                             <label class="control-label">Serialnumber</label>
                             <div class="controls">
                                 <input data-bind="textInput: spoolDialog.spoolItemForEditing.code"  type="text" class="input-large"  />
                             </div>
                         </div>
-                        <div class="control-group">
+                        <div class="control-group" data-bind="visible: !spoolDialog.simpleMode()">
                             <label class="control-label">Batchnumber</label>
                             <div class="controls">
                                 <input title="Manufacturer batch/lot number, shared by spools of the same production batch" data-bind="textInput: spoolDialog.spoolItemForEditing.batchNumber"  type="text" class="input-large"  />
@@ -377,8 +385,8 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                 <div><sup>1</sup><small>Mandatory field</small></div>
                                 <div><sup>2</sup><small>Needed for filament usage prediction</small></div>
                                 <div><sup>3</sup><small>See <a href="https://icezaza2543.github.io/SpoolmanDB-Community/" target="newTab">https://icezaza2543.github.io/SpoolmanDB-Community/ (without warranty)</a></small></div>
-                                <div><sup>4</sup><small>Not send to the printer</small></div>
-                                <div><sup>5</sup><small>Temperature offset enabled via Plugin Settings -> temperature tab</small></div>
+                                <div data-bind="visible: !spoolDialog.simpleMode()"><sup>4</sup><small>Not send to the printer</small></div>
+                                <div data-bind="visible: !spoolDialog.simpleMode()"><sup>5</sup><small>Temperature offset enabled via Plugin Settings -> temperature tab</small></div>
                              </label>
                         </div>
 
@@ -386,7 +394,7 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
 <!-- RIGHT COLUMN -->
                     <div class="span6" >
                         <div class="">
-                            <div class="row">
+                            <div class="row" data-bind="visible: !spoolDialog.simpleMode()">
                                 <div class="control-group  no-bottom-gap">
                                     <label class="control-label">Last use</label>
                                     <div class="controls" >
@@ -463,9 +471,9 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                             -->
 
 
-                            <div class="custom-divider"></div>
+                            <div class="custom-divider" data-bind="visible: !spoolDialog.simpleMode()"></div>
                             <div>
-                                <div class="control-group no-bottom-gap">
+                                <div class="control-group no-bottom-gap" data-bind="visible: !spoolDialog.simpleMode()">
                                     <label for="driven-scope" class="control-label"><h5>Auto calculation for:</h5></label>
                                     <div class="controls">
                                         <select id="driven-scope" class="input-large"
@@ -484,7 +492,7 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                 <p data-bind="visible: !spoolDialog.areDensityAndDiameterValid()"><small class="text-error">
                                     For automatic g to mm conversions, please enter <b>Density</b> and <b>Diameter</b>!
                                 </small></p>
-                                <div class="control-group no-bottom-gap" >
+                                <div class="control-group no-bottom-gap" data-bind="visible: !spoolDialog.hideDetailedWeights()">
                                     <label for="total-weight" class="control-label">Initial <sup>2</sup></label>
                                     <div class="controls">
                                         <div class="input-append">
@@ -505,7 +513,7 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                     </div>
                                     <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('totalWeight') !== -1 || spoolDialog.invalidNumberFields().indexOf('totalLength') !== -1">Please enter a valid number</span>
                                 </div>
-                                <div class="control-group no-bottom-gap">
+                                <div class="control-group no-bottom-gap" data-bind="visible: !spoolDialog.hideDetailedWeights()">
                                     <label for="usedWeight" class="control-label">Used <small
                                             data-bind="visible: !isNaN(spoolDialog.spoolItemForEditing.usedPercentage())">(<span
                                             data-bind="text: spoolDialog.spoolItemForEditing.usedPercentage"></span>%)</small></label>
@@ -553,7 +561,7 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                 </div>
                             </div>
 
-                            <div>
+                            <div data-bind="visible: !spoolDialog.hideDetailedWeights()">
                                 <h5>Spool Weight <small>(Without Filament)</small></h5>
                                 <div class="control-group no-bottom-gap">
                                     <label for="spool-weight" class="control-label">Empty Spool Weight</label>
@@ -571,7 +579,7 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                 </div>
                             </div>
 
-                            <div>
+                            <div data-bind="visible: !spoolDialog.hideDetailedWeights()">
                                 <h5>Combined Weight <small>(Spool + Filament)</small></h5>
                                 <div class="control-group no-bottom-gap" data-bind="css: {error: !spoolDialog.isTotalCombinedWeightPresent()}">
                                     <label class="control-label">Initial total <sup>1</sup></label>
@@ -690,6 +698,25 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
     </div>
     <div class="modal-footer">
         <a href="#" class="btn" data-dismiss="modal" aria-hidden="true">Close</a>
+    </div>
+</div>
+
+<!--###############################################################  Simple-View warning: id="dialog_simplemode_warning" -->
+<div id="dialog_simplemode_warning" class="modal hide fade-in">
+    <div class="modal-header">
+        <a href="#" class="close" data-dismiss="modal" aria-hidden="true">&times;</a>
+        <h3><i class="fas fa-exclamation-triangle" style="color:#e0a049;"></i>&nbsp; Hidden fields in Simple view</h3>
+    </div>
+    <div class="modal-body">
+        <p>This template contains data in fields that are <strong>not shown</strong> in the Simple view:</p>
+        <ul data-bind="foreach: spoolDialog.simpleModeHiddenFieldsWithData">
+            <li data-bind="text: $data"></li>
+        </ul>
+        <p><small class="text-info">The data is kept and saved either way &mdash; switching to the Full view only makes these fields visible so you can review or edit them.</small></p>
+    </div>
+    <div class="modal-footer">
+        <a href="#" class="btn" data-bind="click: spoolDialog.stayInSimpleViewFromWarning">Stay in Simple view</a>
+        <a href="#" class="btn btn-primary" data-bind="click: spoolDialog.switchToFullViewFromWarning">Switch to Full view</a>
     </div>
 </div>
 

@@ -761,6 +761,139 @@ function SpoolManagerEditSpoolDialog(){
     this.isExistingSpool = ko.observable(false);
     this.spoolSelectedByQRCode = ko.observable(false);
 
+    // Simple view mode (issue #1): strips the dialog down to basic filament tracking.
+    // Hides temperatures, flow-rate, QR/DB-id, serial/batch, dates, purchase & cost and the
+    // spool/combined-weight blocks. The per-browser choice is persisted in localStorage; when no
+    // choice has been stored yet the plugin setting "Default view mode" decides (default: simple).
+    var SIMPLE_MODE_STORAGE_KEY = "spoolManager.editDialog.simpleMode";
+    var storedSimpleModeRaw = null;
+    try {
+        storedSimpleModeRaw = localStorage.getItem(SIMPLE_MODE_STORAGE_KEY);
+    } catch (e) { /* localStorage unavailable (private mode) */ }
+    // start from the stored choice if present, otherwise simple (the plugin-setting default is
+    // applied in initBinding once pluginSettings is available).
+    this.simpleMode = ko.observable(storedSimpleModeRaw === null ? true : storedSimpleModeRaw === "true");
+    // when true, changing simpleMode does not pin the choice to localStorage (used while applying
+    // the configured default, which must not count as a user decision).
+    this._suppressSimpleModePersist = false;
+    this.simpleMode.subscribe(function(newValue){
+        if (self._suppressSimpleModePersist){
+            return;
+        }
+        try {
+            localStorage.setItem(SIMPLE_MODE_STORAGE_KEY, newValue ? "true" : "false");
+        } catch (e) { /* ignore persistence errors */ }
+    });
+    // Applied once pluginSettings is available (see initBinding): honour the configured default
+    // only when the user has not yet made a per-browser choice in this browser.
+    this._applyDefaultViewMode = function(){
+        if (storedSimpleModeRaw !== null){
+            return; // user already toggled in this browser -> keep their choice
+        }
+        if (self.pluginSettings && self.pluginSettings.defaultViewModeSimple){
+            self._suppressSimpleModePersist = true;
+            self.simpleMode(self.pluginSettings.defaultViewModeSimple() == true);
+            self._suppressSimpleModePersist = false;
+        }
+    };
+    this.toggleSimpleMode = function(){
+        self.simpleMode(!self.simpleMode());
+    };
+
+    // Fields that are hidden in simple view, mapped to a human-readable label. Used to warn the
+    // user when a template carries data in fields the simple view would hide (issue #1).
+    // (firstUse/lastUse/combined weights are intentionally omitted: the template-copy flow resets
+    // them, so they can never carry copied data at the point the warning is shown.)
+    this._simpleModeHiddenFields = [
+        {field: "flowRateCompensation", label: "Flow rate compensation"},
+        {field: "temperature", label: "Tool temperature"},
+        {field: "bedTemperature", label: "Bed temperature"},
+        {field: "enclosureTemperature", label: "Enclosure temperature"},
+        {field: "offsetTemperature", label: "Tool temperature offset"},
+        {field: "offsetBedTemperature", label: "Bed temperature offset"},
+        {field: "offsetEnclosureTemperature", label: "Enclosure temperature offset"},
+        {field: "code", label: "Serial number"},
+        {field: "batchNumber", label: "Batch number"},
+        {field: "purchasedOnKO", label: "Purchased on"},
+        {field: "purchasedFrom", label: "Purchased from"},
+        {field: "cost", label: "Cost"}
+    ];
+
+    // observableArray of labels for hidden fields that currently hold data (drives the warning list)
+    this.simpleModeHiddenFieldsWithData = ko.observableArray([]);
+
+    this._hasValue = function(rawValue){
+        if (rawValue === null || rawValue === undefined){
+            return false;
+        }
+        var asString = ("" + rawValue).trim();
+        if (asString.length === 0){
+            return false;
+        }
+        // numeric fields default to "0" / 0 -> treat as "no meaningful data"
+        var asNumber = parseFloat(asString);
+        if (!isNaN(asNumber) && asNumber === 0){
+            return false;
+        }
+        return true;
+    };
+
+    // Returns the labels of hidden fields that hold data on the currently edited spool.
+    this._collectHiddenFieldsWithData = function(){
+        var result = [];
+        if (self.spoolItemForEditing == null){
+            return result;
+        }
+        self._simpleModeHiddenFields.forEach(function(entry){
+            var observable = self.spoolItemForEditing[entry.field];
+            if (typeof observable === "function" && self._hasValue(observable())){
+                result.push(entry.label);
+            }
+        });
+        return result;
+    };
+
+    // Called after a template copy while in simple view: if the copied data lands in hidden
+    // fields, populate the warning list and open the warning dialog.
+    this._warnIfTemplateHasSimpleHiddenData = function(){
+        if (!self.simpleMode()){
+            return;
+        }
+        var hiddenWithData = self._collectHiddenFieldsWithData();
+        if (hiddenWithData.length === 0){
+            return;
+        }
+        self.simpleModeHiddenFieldsWithData(hiddenWithData);
+        // defer so the (possibly still closing) template-selection modal has released its backdrop
+        // before we stack the warning dialog on top (Bootstrap 2 modal stacking quirk)
+        setTimeout(function(){
+            $("#dialog_simplemode_warning").modal("show");
+        }, 300);
+    };
+
+    // Warning-dialog actions
+    this.switchToFullViewFromWarning = function(){
+        // an explicit switch here IS a user choice -> persist it
+        self.simpleMode(false);
+        $("#dialog_simplemode_warning").modal("hide");
+    };
+    this.stayInSimpleViewFromWarning = function(){
+        $("#dialog_simplemode_warning").modal("hide");
+    };
+    // In simple mode the detailed weight inputs (initial / used) are hidden once a spool is in
+    // use, leaving only the remaining amount. Fresh spools still show the initial weight so they
+    // can be set up.
+    this.isSpoolInUse = ko.pureComputed(function(){
+        if (self.spoolItemForEditing == null){
+            return false;
+        }
+        var used = parseFloat(self.spoolItemForEditing.usedWeight());
+        return !isNaN(used) && used > 0;
+    });
+    this.hideDetailedWeights = ko.pureComputed(function(){
+        return self.simpleMode() && self.isSpoolInUse();
+    });
+
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////// HELPER
 
@@ -984,6 +1117,9 @@ function SpoolManagerEditSpoolDialog(){
         self.pluginSettings = pluginSettings;
         self.printerProfilesViewModel = printerProfilesViewModel;
         self.printerStateViewModel = printerStateViewModel;
+
+        // apply configured "Default view mode" when no per-browser choice was stored yet (issue #1)
+        self._applyDefaultViewMode();
 
         self.spoolDialog = $("#dialog_spool_edit");
         self.templateSpoolDialog = $("#dialog_template_spool_selection");
@@ -1547,6 +1683,10 @@ function SpoolManagerEditSpoolDialog(){
 
         // close dialog
         self.templateSpoolDialog.modal("hide");
+
+        // simple view: if the template brought data into fields the simple view hides, warn the user
+        // and offer to switch to the full view (issue #1)
+        self._warnIfTemplateHasSimpleHiddenData();
     };
 
     self._copySpoolItemForEditing = function (spoolItem) {
