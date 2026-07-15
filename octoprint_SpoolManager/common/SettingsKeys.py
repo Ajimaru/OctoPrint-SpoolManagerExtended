@@ -8,6 +8,9 @@ class SettingsKeys():
 	SETTINGS_KEY_WARN_IF_SPOOL_NOT_SELECTED = "warnIfSpoolNotSelected"
 	SETTINGS_KEY_WARN_IF_FILAMENT_NOT_ENOUGH = "warnIfFilamentNotEnough"
 
+	## Edit dialog: simple view mode (issue #1) - default view when no per-browser choice is stored
+	SETTINGS_KEY_DEFAULT_VIEW_MODE_SIMPLE = "defaultViewModeSimple"
+
 	SETTINGS_KEY_CURRENCY_SYMBOL = "currencySymbol"
 
 	SETTINGS_KEY_SAFETY_LENGTH = "safetyLength" # in mm e.g. ptfe-tube
