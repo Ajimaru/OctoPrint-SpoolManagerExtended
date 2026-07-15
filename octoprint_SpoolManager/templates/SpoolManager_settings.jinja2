@@ -609,8 +609,8 @@ FPE;	2.16
                     </div>
                 </div>
 
-                <!-- External database scheme upgrade -->
-                <div class="control-group" data-bind="visible: isExternalSchemeUpgradeAvailable">
+                <!-- Database scheme upgrade (local SQLite and external database) -->
+                <div class="control-group" data-bind="visible: isSchemeUpgradeAvailable">
                     <div class="controls">
                         <div class="help-block">
                             <font color="orange"><b>The database scheme doesn't match the required scheme version. Please perform an upgrade!</b></font>
@@ -619,7 +619,8 @@ FPE;	2.16
                                 data-bind="disable: schemeUpgradeInProgress, click: upgradeDatabaseSchemeAction">
                             <i class="fa fa-spinner fa-spin" data-bind="visible: schemeUpgradeInProgress"></i> Upgrade database scheme
                         </button>
-                        <span class="help-inline">A SQL dump backup is downloaded first.</span>
+                        <span class="help-inline" data-bind="visible: isExternalSchemeUpgradeAvailable">A SQL dump backup is downloaded first.</span>
+                        <span class="help-inline" data-bind="visible: isLocalSchemeUpgradeAvailable">A backup of the database file is downloaded.</span>
                     </div>
                 </div>
                 <div class="control-group">
