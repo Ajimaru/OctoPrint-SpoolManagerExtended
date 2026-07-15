@@ -369,6 +369,82 @@ $(function() {
         self.schemeUpgradeInProgress = ko.observable(false);
         self.schemeUpgradeResultText = ko.observable("");
 
+        // Downloads a URL and resolves only when the browser received a non-empty file.
+        // Rejects (so callers can abort) on HTTP error or an empty response body.
+        // Shared by the scheme-upgrade flow and the pre-import backup flow.
+        self.downloadBackupFile = function(url, downloadFileName){
+            return fetch(url)
+                .then(function(response){
+                    if (response.ok == false){
+                        return response.text().then(function(text){
+                            throw new Error(text || ("Backup download failed (HTTP " + response.status + ")"));
+                        });
+                    }
+                    return response.blob();
+                })
+                .then(function(blob){
+                    if (blob == null || blob.size == 0){
+                        throw new Error("Backup download failed (empty file), operation aborted.");
+                    }
+                    var link = document.createElement("a");
+                    link.href = URL.createObjectURL(blob);
+                    link.download = downloadFileName;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(link.href);
+                });
+        };
+
+        // Creates the pre-import safety backup of the ACTIVE database and downloads it, then calls
+        // onReady(). The MANDATORY backup (.db/.sql) must download successfully or the import is
+        // aborted via onError(message). OPTIONAL backups (.csv) are best-effort: a failed optional
+        // download is logged but does NOT block the import (browsers can throttle multiple
+        // auto-downloads). See the createImportBackup route.
+        self.runPreImportBackupThenImport = function(onReady, onError){
+            self.apiClient.callCreateImportBackup(function(success, data){
+                if (success != true){
+                    var msg = "Backup before import failed.";
+                    if (data != null && data.responseText != null && data.responseText != ""){
+                        msg = data.responseText;
+                    }
+                    onError(msg);
+                    return;
+                }
+                var mandatoryFile = data != null ? data["mandatoryBackupFile"] : null;
+                var optionalFiles = (data != null && data["optionalBackupFiles"]) ? data["optionalBackupFiles"] : [];
+                if (mandatoryFile == null || mandatoryFile == ""){
+                    onError("No backup was created, import aborted.");
+                    return;
+                }
+
+                // 1) download the mandatory backup - failure aborts the import
+                self.downloadBackupFile(self.apiClient.getDatabaseBackupDownloadUrl(mandatoryFile), mandatoryFile)
+                    .then(function(){
+                        // 2) best-effort: download optional backups, ignoring their failures.
+                        // Chained sequentially with a small gap so browsers don't drop the second download.
+                        var chain = Promise.resolve();
+                        optionalFiles.forEach(function(fileName){
+                            chain = chain.then(function(){
+                                return new Promise(function(resolve){ setTimeout(resolve, 300); });
+                            }).then(function(){
+                                return self.downloadBackupFile(self.apiClient.getDatabaseBackupDownloadUrl(fileName), fileName);
+                            }).catch(function(optError){
+                                if (window.console){ console.warn("Optional backup download failed (import continues):", fileName, optError); }
+                            });
+                        });
+                        return chain;
+                    })
+                    .then(function(){
+                        onReady();
+                    })
+                    .catch(function(error){
+                        // only the mandatory download reaches here (optional errors are swallowed above)
+                        onError("" + ((error != null && error.message) ? error.message : error));
+                    });
+            });
+        };
+
         self.upgradeDatabaseSchemeAction = function(){
             var isExternal = self.pluginSettings.useExternal() == true;
             var confirmMessage = isExternal
@@ -413,30 +489,8 @@ $(function() {
                 }
             };
 
-            // helper: download a URL and resolve only when the browser received a non-empty file
-            var downloadBackupFile = function(url, downloadFileName){
-                return fetch(url)
-                    .then(function(response){
-                        if (response.ok == false){
-                            return response.text().then(function(text){
-                                throw new Error(text || ("Backup download failed (HTTP " + response.status + ")"));
-                            });
-                        }
-                        return response.blob();
-                    })
-                    .then(function(blob){
-                        if (blob == null || blob.size == 0){
-                            throw new Error("Backup download failed (empty file), upgrade aborted.");
-                        }
-                        var link = document.createElement("a");
-                        link.href = URL.createObjectURL(blob);
-                        link.download = downloadFileName;
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                        URL.revokeObjectURL(link.href);
-                    });
-            };
+            // shared helper (self.downloadBackupFile): downloads a URL, rejects on empty/failed download
+            var downloadBackupFile = self.downloadBackupFile;
 
             var handleDownloadError = function(error){
                 self.schemeUpgradeInProgress(false);
@@ -501,12 +555,77 @@ $(function() {
             self.sqlDumpFile = files[0];
         }
 
+        // - local SQLite .db restore (internal database only)
+        self.dbRestoreMode = ko.observable("append");
+        self.dbRestoreFileName = ko.observable();
+        self.dbRestoreInProgress = ko.observable(false);
+        self.dbRestoreResultText = ko.observable();
+        self.dbRestoreFile = undefined;
+
+        self.dbRestoreFileChanged = function(data, event){
+            var files = event.target.files;
+            if (files == null || files.length == 0){
+                self.dbRestoreFileName(undefined);
+                self.dbRestoreFile = undefined;
+                return;
+            }
+            self.dbRestoreFileName(files[0].name);
+            self.dbRestoreFile = files[0];
+        }
+
+        self.performDBRestoreFromUpload = function(){
+            if (self.dbRestoreFile === undefined) return;
+
+            if (self.confirmReplaceIfNeeded(self.dbRestoreMode()) != true){
+                return;
+            }
+
+            self.resetDatabaseMessages();
+            self.dbRestoreResultText(undefined);
+            self.dbRestoreInProgress(true);
+            self.showLocalBusyIndicator(true);
+
+            var runDbRestore = function(){
+                self.apiClient.callImportDatabaseFile(self.dbRestoreFile, self.dbRestoreMode(), function(success, data){
+                    self.dbRestoreInProgress(false);
+                    self.showLocalBusyIndicator(false);
+
+                    if (success == true && data != null && data.success == true){
+                        self.handleDatabaseMetaDataResponse(data);
+                        self.showInternalSuccessMessage(false);
+                        self.dbRestoreResultText("Database file restore successful: " + data.importedSpoolCount + " spool(s) (" + self.dbRestoreMode() + ").");
+                        self.spoolItemTableHelper.reloadItems();
+                        // a replace swaps the whole db file - a reload makes cached viewmodels pick it up
+                        if (self.dbRestoreMode() == "replace" && confirm("Database file restored. A page reload is recommended. Reload now?")){
+                            location.reload();
+                        }
+                    } else {
+                        var errorMessage = "Database file restore failed.";
+                        if (data != null && data.errorMessage != null){
+                            errorMessage = data.errorMessage;
+                        } else if (data != null && data.responseText != null && data.responseText != ""){
+                            errorMessage = data.responseText;
+                        }
+                        self.showInternalDatabaseErrorMessage(true);
+                        self.internalDatabaseErrorMessage(errorMessage);
+                    }
+                });
+            };
+
+            // create + download the pre-import backup first; only restore after it succeeded
+            self.runPreImportBackupThenImport(runDbRestore, function(errorMessage){
+                self.dbRestoreInProgress(false);
+                self.showLocalBusyIndicator(false);
+                self.showInternalDatabaseErrorMessage(true);
+                self.internalDatabaseErrorMessage("Restore aborted - " + errorMessage);
+            });
+        }
+
         self.performSQLImportFromUpload = function(){
             if (self.sqlDumpFile === undefined) return;
 
-            if (self.sqlImportMode() == "replace"){
-                var result = confirm("Do you really want to REPLACE all SpoolManager data in the external database with the uploaded dump? A manual backup is recommended.");
-                if (result == false) return;
+            if (self.confirmReplaceIfNeeded(self.sqlImportMode()) != true){
+                return;
             }
 
             self.resetDatabaseMessages();
@@ -514,26 +633,36 @@ $(function() {
             self.sqlImportInProgress(true);
             self.showExternalBusyIndicator(true);
 
-            self.apiClient.callImportDatabaseDump(self.sqlDumpFile, self.sqlImportMode(), function(responseData){
+            var runSqlImport = function(){
+                self.apiClient.callImportDatabaseDump(self.sqlDumpFile, self.sqlImportMode(), function(responseData){
+                    self.sqlImportInProgress(false);
+                    self.showExternalBusyIndicator(false);
+
+                    if (responseData != null && responseData.success == true){
+                        self.handleDatabaseMetaDataResponse(responseData);
+                        // show a dedicated import result instead of the generic connection message
+                        self.showExternalSuccessMessage(false);
+                        self.sqlImportResultText("Database dump import successful: " + responseData.importedSpoolCount + " spools imported (" + self.sqlImportMode() + ").");
+                        self.spoolItemTableHelper.reloadItems();
+                    } else {
+                        var errorMessage = "Database dump import failed.";
+                        if (responseData != null && responseData.errorMessage != null){
+                            errorMessage = responseData.errorMessage;
+                        } else if (responseData != null && responseData.responseText != null){
+                            errorMessage = responseData.responseText;
+                        }
+                        self.showExternalDatabaseErrorMessage(true);
+                        self.externalDatabaseErrorMessage(errorMessage);
+                    }
+                });
+            };
+
+            // create + download the pre-import backup first; only import after it succeeded
+            self.runPreImportBackupThenImport(runSqlImport, function(errorMessage){
                 self.sqlImportInProgress(false);
                 self.showExternalBusyIndicator(false);
-
-                if (responseData != null && responseData.success == true){
-                    self.handleDatabaseMetaDataResponse(responseData);
-                    // show a dedicated import result instead of the generic connection message
-                    self.showExternalSuccessMessage(false);
-                    self.sqlImportResultText("Database dump import successful: " + responseData.importedSpoolCount + " spools imported (" + self.sqlImportMode() + ").");
-                    self.spoolItemTableHelper.reloadItems();
-                } else {
-                    var errorMessage = "Database dump import failed.";
-                    if (responseData != null && responseData.errorMessage != null){
-                        errorMessage = responseData.errorMessage;
-                    } else if (responseData != null && responseData.responseText != null){
-                        errorMessage = responseData.responseText;
-                    }
-                    self.showExternalDatabaseErrorMessage(true);
-                    self.externalDatabaseErrorMessage(errorMessage);
-                }
+                self.showExternalDatabaseErrorMessage(true);
+                self.externalDatabaseErrorMessage("Import aborted - " + errorMessage);
             });
         }
 
@@ -599,18 +728,51 @@ $(function() {
                 responseText = response.responseText; // e.g. Invalid request
             }
         });
+        // Spool count of the CURRENTLY ACTIVE database (for the replace-confirm dialog).
+        self.activeDatabaseSpoolCount = function(){
+            var count = self.pluginSettings.useExternal() == true
+                ? self.databaseMetaData.externalSpoolItemCount()
+                : self.databaseMetaData.localSpoolItemCount();
+            return (count == null || count == "") ? "?" : count;
+        };
+
+        // Confirms a replace import (shows how many spools will be deleted). Returns true to proceed.
+        self.confirmReplaceIfNeeded = function(importMode){
+            if (importMode != "replace"){
+                return true;
+            }
+            var dbName = self.databaseInUse().toLowerCase();
+            return confirm("REPLACE import: this will DELETE all " + self.activeDatabaseSpoolCount() +
+                           " spool(s) in the " + dbName + " database and replace them with the uploaded file.\n\n" +
+                           "A backup is created and downloaded first. Continue?");
+        };
+
         self.performCSVImportFromUpload = function() {
             if (self.csvImportUploadData === undefined) return;
 
+            var importMode = self.pluginSettings.importCSVMode();
+            if (self.confirmReplaceIfNeeded(importMode) != true){
+                return;
+            }
+
             self.csvImportInProgress(true);
-            self.csvImportDialog.showDialog(function(shouldTableReload){
-                    //
-                    if (shouldTableReload == true){
-                        self.spoolItemTableHelper.reloadItems();
+
+            // create + download the pre-import backup first; only import after it succeeded
+            self.runPreImportBackupThenImport(function(){
+                self.csvImportDialog.showDialog(function(shouldTableReload){
+                        if (shouldTableReload == true){
+                            self.spoolItemTableHelper.reloadItems();
+                        }
                     }
-                }
-            );
-            self.csvImportUploadData.submit();
+                );
+                self.csvImportUploadData.submit();
+            }, function(errorMessage){
+                self.csvImportInProgress(false);
+                self.showExternalDatabaseErrorMessage(true);
+                self.externalDatabaseErrorMessage("Import aborted - " + errorMessage);
+                self.showInternalDatabaseErrorMessage(self.pluginSettings.useExternal() != true);
+                self.internalDatabaseErrorMessage("Import aborted - " + errorMessage);
+            });
         };
 
         // template stuff
