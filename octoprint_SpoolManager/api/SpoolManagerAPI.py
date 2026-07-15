@@ -1225,6 +1225,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                                         "labels": []
                                     },
                                     "totalItemCount": 0,
+                                    "databaseItemCount": 0,
                                     "allSpools": [],
                                     "selectedSpools": [],
                                     "schemeUpgradeNeeded": schemeUpgradeNeeded
@@ -1233,6 +1234,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     def _loadAllSpoolsByQueryResponse(self, tableQuery):
         allSpools = self._databaseManager.loadAllSpoolsByQuery(tableQuery)
         totalItemCount = self._databaseManager.countSpoolsByQuery(tableQuery)
+        databaseItemCount = self._databaseManager.countAllSpools()
 
         # allSpoolsAsDict = self._transformAllSpoolModelsToDict(allSpools)
         allSpoolsAsDict = Transformer.transformAllSpoolModelsToDict(allSpools)
@@ -1287,6 +1289,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                                 "templateSpools": allTemplateSpoolsAsDict,
                                 "catalogs": catalogs,
                                 "totalItemCount": totalItemCount,
+                                "databaseItemCount": databaseItemCount,
                                 "allSpools": allSpoolsAsDict,
                                 "selectedSpools": selectedSpoolsAsDicts,
                                 "schemeUpgradeNeeded": schemeUpgradeNeeded
