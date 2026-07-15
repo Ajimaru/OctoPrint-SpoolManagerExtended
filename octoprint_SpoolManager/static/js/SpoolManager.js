@@ -650,16 +650,16 @@ $(function() {
         self.printerStateViewModel.formatSpoolsWithWeight = function formatSpoolsWithWeightInSidebar(filament) {
             if (!filament) return '-';
 
-            // length in m
-            var result = (filament.requiredLength / 1000).toFixed(2) + 'm';
+            // length in the configured display unit
+            var result = self.formatLengthForDisplay(filament.requiredLength);
             // try to get the weight
             if (filament.requiredWeight) {
-                result += ' / ' + filament.requiredWeight.toFixed(2) + 'g';
+                result += ' / ' + self.formatWeightForDisplay(filament.requiredWeight);
             }
             if (filament.spoolSelected && filament.spoolSelected == true){
                 if (filament.notEnough) {
                     if (filament.notEnough == true){
-                        result += ' (<span style="color:red">'+filament.remainingWeight.toFixed(2) +'g</span>)';
+                        result += ' (<span style="color:red">'+ self.formatWeightForDisplay(filament.remainingWeight) +'</span>)';
                     }
                 }
             } else {
@@ -775,6 +775,50 @@ $(function() {
             });
         }
 
+        // ----------------- start: display units (table / sidebar / tooltips)
+        // base values are always stored in mm/g, these helpers only convert for display
+        var LENGTH_UNIT_FACTORS = { "mm": 1, "cm": 10, "m": 1000 };
+        var WEIGHT_UNIT_FACTORS = { "g": 1, "kg": 1000 };
+        var UNIT_DISPLAY_DECIMALS = { "mm": 1, "cm": 2, "m": 3, "g": 1, "kg": 3 };
+
+        self.selectedLengthUnit = function(){
+            var unit = (self.pluginSettings && self.pluginSettings.lengthUnit) ? self.pluginSettings.lengthUnit() : "mm";
+            return LENGTH_UNIT_FACTORS[unit] ? unit : "mm";
+        };
+        self.selectedWeightUnit = function(){
+            var unit = (self.pluginSettings && self.pluginSettings.weightUnit) ? self.pluginSettings.weightUnit() : "g";
+            return WEIGHT_UNIT_FACTORS[unit] ? unit : "g";
+        };
+
+        // convert a raw value (mm resp. g) to the configured display unit; returns a number
+        self.convertLengthForDisplay = function(rawMillimeter){
+            var unit = self.selectedLengthUnit();
+            var value = parseFloat(rawMillimeter);
+            if (isNaN(value)) return rawMillimeter;
+            return parseFloat((value / LENGTH_UNIT_FACTORS[unit]).toFixed(UNIT_DISPLAY_DECIMALS[unit]));
+        };
+        self.convertWeightForDisplay = function(rawGram){
+            var unit = self.selectedWeightUnit();
+            var value = parseFloat(rawGram);
+            if (isNaN(value)) return rawGram;
+            return parseFloat((value / WEIGHT_UNIT_FACTORS[unit]).toFixed(UNIT_DISPLAY_DECIMALS[unit]));
+        };
+
+        // full "<value><unit>" strings for direct display
+        self.formatLengthForDisplay = function(rawMillimeter){
+            if (rawMillimeter == null || rawMillimeter === "") return "";
+            var value = self.convertLengthForDisplay(rawMillimeter);
+            if (value === rawMillimeter && isNaN(parseFloat(rawMillimeter))) return "" + rawMillimeter;
+            return value + self.selectedLengthUnit();
+        };
+        self.formatWeightForDisplay = function(rawGram){
+            if (rawGram == null || rawGram === "") return "";
+            var value = self.convertWeightForDisplay(rawGram);
+            if (value === rawGram && isNaN(parseFloat(rawGram))) return "" + rawGram;
+            return value + self.selectedWeightUnit();
+        };
+        // ----------------- end: display units
+
         _buildRemainingText = function(spoolItem){
             var remainingInfo = "";
             // if (  spoolItem.remainingWeight() != null && spoolItem.remainingWeight().length != 0
@@ -783,31 +827,50 @@ $(function() {
             // }
             if (  spoolItem.remainingWeight() != null && spoolItem.remainingWeight().length != 0){
                 // remainingInfo = "(R: "+spoolItem.remainingWeight()+"g)";
-                remainingInfo = ""+spoolItem.remainingWeight()+"g";
+                remainingInfo = self.formatWeightForDisplay(spoolItem.remainingWeight());
             }
             return remainingInfo
         }
 
         self.remainingText = function(spoolItem){
             var remainingWeight = _buildRemainingText(spoolItem);
-            var remainingLength = (Number(self.buildTooltipForSpoolItem(spoolItem, '', 'remainingLength'))/1000).toFixed(2);
-            var remainingInfo = "(" + remainingWeight + ", " + remainingLength + "m)";
+            var remainingLength = self.formatLengthForDisplay(spoolItem.remainingLength());
+            var remainingInfo = "(" + remainingWeight + ", " + remainingLength + ")";
             return remainingInfo;
         }
 
+        // attribute-name -> value/unit conversion for tooltips (values are stored in mm/g)
+        var _isLengthAttribute = function(attribute){
+            return typeof attribute === "string" && attribute.toLowerCase().indexOf("length") !== -1;
+        };
+        var _isWeightAttribute = function(attribute){
+            return typeof attribute === "string" && attribute.toLowerCase().indexOf("weight") !== -1;
+        };
+        // format a single attribute value honoring the configured display units;
+        // falls back to the raw value plus the passed-in unit for non-length/weight attributes
+        var _formatTooltipAttribute = function(rawValue, attribute, fallbackUnit){
+            if (_isLengthAttribute(attribute)){
+                return self.formatLengthForDisplay(rawValue);
+            }
+            if (_isWeightAttribute(attribute)){
+                return self.formatWeightForDisplay(rawValue);
+            }
+            return rawValue + (fallbackUnit || "");
+        };
+
         self.buildTooltipForSpoolItem = function(spoolItem, textPrefix, attribute, unit, textPrefix2, attribute2, unit2){
             var tooltip = "";
-            
-            // İlk özellik için tooltip
+
+            // first attribute
             if (spoolItem[attribute]() != null){
-                tooltip = textPrefix + spoolItem[attribute]() + (unit || "");
+                tooltip = textPrefix + _formatTooltipAttribute(spoolItem[attribute](), attribute, unit);
             }
-            
-            // İkinci özellik varsa ekle
+
+            // optional second attribute
             if (attribute2 && spoolItem[attribute2]() != null){
-                tooltip += (tooltip ? ", " : "") + textPrefix2 + spoolItem[attribute2]() + (unit2 || "");
+                tooltip += (tooltip ? ", " : "") + textPrefix2 + _formatTooltipAttribute(spoolItem[attribute2](), attribute2, unit2);
             }
-            
+
             return tooltip;
         }
 
@@ -1088,7 +1151,7 @@ $(function() {
                         var label =  item.toolIndex+": '" + item.material + " - " + item.spoolName;
 
                         if (item.remainingWeight != null && typeof item.remainingWeight === 'number'){
-                            label = label + " ("+item.remainingWeight.toFixed(2)  +"g)";
+                            label = label + " ("+ self.formatWeightForDisplay(item.remainingWeight) +")";
                         }
                         label = label + "'";
                         return label;
