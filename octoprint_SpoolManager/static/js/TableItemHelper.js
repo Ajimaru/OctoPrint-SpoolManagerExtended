@@ -4,7 +4,7 @@
  * defaultSortColumn,
  * defaultFilterName
  */
-function TableItemHelper(loadItemsFunction, defaultPageSize, defaultSortColumn, defaultFilterName){
+function TableItemHelper(loadItemsFunction, defaultPageSize, defaultSortColumn, defaultFilterName, storageKeyPrefix){
 
     var self = this;
 
@@ -24,7 +24,18 @@ function TableItemHelper(loadItemsFunction, defaultPageSize, defaultSortColumn, 
     self.filterOptions = ["all", "onlySuccess", "onlyFailed"];
     self.selectedFilterName = ko.observable(defaultFilterName);
 
-    self.selectedFilterNameArrayKO = ko.observableArray([]);
+    var defaultFilterNames = ["hideEmptySpools", "hideInactiveSpools"];
+    if (storageKeyPrefix != null && Modernizr.localstorage && localStorage[storageKeyPrefix + "selectedFilterNames"] != null){
+        var storedValue = localStorage[storageKeyPrefix + "selectedFilterNames"];
+        defaultFilterNames = storedValue == "" ? [] : storedValue.split(",");
+    }
+    self.selectedFilterNameArrayKO = ko.observableArray(defaultFilterNames);
+
+    if (storageKeyPrefix != null && Modernizr.localstorage){
+        self.selectedFilterNameArrayKO.subscribe(function(newValues){
+            localStorage[storageKeyPrefix + "selectedFilterNames"] = newValues.join();
+        });
+    }
 
     // Filtering - Material
     self.allMaterials = ko.observableArray([]);

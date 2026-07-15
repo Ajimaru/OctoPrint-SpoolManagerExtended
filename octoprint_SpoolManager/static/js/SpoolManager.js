@@ -1004,7 +1004,8 @@ $(function() {
             },
             10,
             "displayName",
-            "all"
+            "all",
+            "spoolmanager.spooltable."
         );
 
         self.showSpoolDialogAction = function(selectedSpoolItem) {
