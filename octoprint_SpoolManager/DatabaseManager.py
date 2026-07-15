@@ -1656,6 +1656,14 @@ class DatabaseManager(object):
 
         return self._handleReusableConnection(databaseCallMethode, withReusedConnection, "countSpoolsByQuery")
 
+    def countAllSpools(self, withReusedConnection=False):
+        # Grand total of every row in the table - spools, inactive spools and templates -
+        # with no filters applied. Used for the "(N Spools in Database)" display.
+        def databaseCallMethode():
+            return SpoolModel.select().count()
+
+        return self._handleReusableConnection(databaseCallMethode, withReusedConnection, "countAllSpools")
+
     def loadCatalogVendors(self, withReusedConnection=False):
         def databaseCallMethode():
             result = set()
