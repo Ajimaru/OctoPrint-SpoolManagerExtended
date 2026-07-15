@@ -87,6 +87,22 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
         });
     }
 
+    // Creates a safety backup of the active database before an import (.db/.sql + best-effort .csv),
+    // stored in the plugin data folder. Response: { mandatoryBackupFile, optionalBackupFiles: [...] }.
+    // Download each via getDatabaseBackupDownloadUrl(name).
+    this.callCreateImportBackup = function (responseHandler){
+        $.ajax({
+            url: this.baseUrl + "plugin/" + this.pluginId + "/createImportBackup",
+            dataType: "json",
+            contentType: "application/json; charset=UTF-8",
+            type: "PUT"
+        }).done(function(data){
+            responseHandler(true, data);
+        }).fail(function(jqXHR){
+            responseHandler(false, jqXHR);
+        });
+    }
+
     //////////////////////////////////////////////////////////////////////////////// IMPORT MYSQL DATABASE DUMP
     this.callImportDatabaseDump = function (file, importMode, responseHandler){
         var formData = new FormData();
@@ -102,6 +118,26 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
             headers: OctoPrint.getRequestHeaders()
         }).always(function( data ){
             responseHandler(data);
+        });
+    }
+
+    //////////////////////////////////////////////////////////////////////////////// RESTORE LOCAL .db FILE
+    this.callImportDatabaseFile = function (file, importMode, responseHandler){
+        var formData = new FormData();
+        formData.append("file", file);
+        formData.append("importMode", importMode);
+
+        $.ajax({
+            url: this.baseUrl + "plugin/" + this.pluginId + "/importDatabaseFile",
+            type: "POST",
+            data: formData,
+            processData: false,
+            contentType: false,
+            headers: OctoPrint.getRequestHeaders()
+        }).done(function(data){
+            responseHandler(true, data);
+        }).fail(function(jqXHR){
+            responseHandler(false, jqXHR);
         });
     }
 

@@ -913,6 +913,100 @@ class DatabaseManager(object):
             "copySpoolCount": copySpoolCount
         }
 
+    ######################################################################################### SQLITE .db RESTORE / IMPORT
+    def _validateUploadedSQLiteFile(self, uploadedDbPath):
+        # Returns (isValid, errorMessage). A valid file is a readable SQLite database that contains
+        # the spo_spoolmodel table (i.e. actually a SpoolManager database, not some random .db).
+        try:
+            connection = sqlite3.connect(uploadedDbPath)
+            try:
+                cursor = connection.cursor()
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='spo_spoolmodel';")
+                if (cursor.fetchone() == None):
+                    return (False, "The uploaded .db file is not a SpoolManager database (table 'spo_spoolmodel' is missing).")
+            finally:
+                connection.close()
+        except Exception as e:
+            return (False, "The uploaded file is not a valid SQLite database: " + str(e))
+        return (True, None)
+
+    def _readSpoolDictsFromSQLiteFile(self, uploadedDbPath):
+        # Reads all spool rows from an uploaded SpoolManager .db as a list of dicts (column -> value),
+        # using a raw sqlite3 connection so we don't have to rebind peewee models to a foreign file.
+        connection = sqlite3.connect(uploadedDbPath)
+        try:
+            connection.row_factory = sqlite3.Row
+            cursor = connection.cursor()
+            cursor.execute("SELECT * FROM spo_spoolmodel;")
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            connection.close()
+
+    # Restores the active LOCAL SQLite database from an uploaded .db file.
+    #   mode == replace : the uploaded file becomes the new database file (whole-file swap),
+    #                     then we reconnect and re-check the scheme version (auto-upgrade path).
+    #   mode == append  : spool rows from the uploaded file are inserted into the current database.
+    # Only valid for the internal SQLite database (never touches an external DB).
+    def restoreFromSQLiteFile(self, uploadedDbPath, mode):
+        result = {"success": False, "importedSpoolCount": 0, "errorMessage": None}
+
+        if (self._databaseSettings == None or self._databaseSettings.useExternal == True):
+            result["errorMessage"] = "A .db restore is only available for the local SQLite database."
+            return result
+
+        isValid, validationError = self._validateUploadedSQLiteFile(uploadedDbPath)
+        if (isValid == False):
+            result["errorMessage"] = validationError
+            return result
+
+        targetFileLocation = self._databaseSettings.fileLocation
+
+        try:
+            if (mode == "replace"):
+                # count the spools we are about to import (for the result message)
+                importedSpools = self._readSpoolDictsFromSQLiteFile(uploadedDbPath)
+                # whole-file swap: close the current connection, copy the uploaded file over it
+                self.closeDatabase()
+                shutil.copy(uploadedDbPath, targetFileLocation)
+                # reconnect and ACTUALLY run the local auto-upgrade: an older uploaded .db (e.g.
+                # scheme 7) must be migrated to the current scheme now, otherwise the UI shows the
+                # "outdated scheme" hint with no upgrade button available for the internal database.
+                # _createOrUpgradeSchemeIfNecessary performs the real migration for local SQLite
+                # (recheckSchemeUpgradeNeeded only sets a flag, it does NOT migrate).
+                self.connectoToDatabase(sendErrorPopUp=False)
+                self._createOrUpgradeSchemeIfNecessary()
+                self._schemeUpgradeNeeded = self.recheckSchemeUpgradeNeeded()
+                self.closeDatabase()
+                result["importedSpoolCount"] = len(importedSpools)
+                result["success"] = True
+            elif (mode == "append"):
+                importedSpools = self._readSpoolDictsFromSQLiteFile(uploadedDbPath)
+                self.connectoToDatabase(sendErrorPopUp=False)
+                try:
+                    insertedCount = 0
+                    with self._database.atomic():
+                        for spoolDict in importedSpools:
+                            # let the target database assign a fresh databaseId to avoid PK clashes
+                            spoolDict.pop("databaseId", None)
+                            SpoolModel.insert(spoolDict).execute()
+                            insertedCount = insertedCount + 1
+                    result["importedSpoolCount"] = insertedCount
+                    result["success"] = True
+                finally:
+                    self.closeDatabase()
+            else:
+                result["errorMessage"] = "Invalid restore mode: " + str(mode)
+        except Exception as e:
+            self._logger.exception("restoreFromSQLiteFile")
+            result["errorMessage"] = str(e)
+            try:
+                self.closeDatabase()
+            except Exception:
+                pass  # ignore close exception
+
+        return result
+
     ######################################################################################### MYSQL DUMP EXPORT / IMPORT
     # The dump format is self-generated and validated on import:
     # - first line is SQL_DUMP_MARKER

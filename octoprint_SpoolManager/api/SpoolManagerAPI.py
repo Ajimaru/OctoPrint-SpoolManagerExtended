@@ -932,6 +932,81 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                          as_attachment=True)
 
 
+    #######################################################################################   PRE-IMPORT BACKUP
+    # Creates a safety backup of the CURRENTLY ACTIVE database BEFORE an import runs and stores it
+    # in the plugin data folder. The frontend calls this first, downloads the file(s) via
+    # /downloadDatabaseBackup, and only triggers the actual import after a successful backup+download
+    # (mirrors the scheme-upgrade "backup first, abort on failure" guarantee).
+    #
+    # Backup formats:
+    #   - internal SQLite : .db (file copy) AND .csv (best-effort)
+    #   - external MySQL  : .sql (dump)     AND .csv (best-effort)
+    # The mandatory backup (.db / .sql) must succeed; the additional .csv is best-effort and does
+    # not block the import if it fails.
+    @octoprint.plugin.BlueprintPlugin.route("/createImportBackup", methods=["PUT"])
+    def createImportBackup(self):
+        databaseSettings = self._databaseManager.getDatabaseSettings()
+        if (databaseSettings == None):
+            return flask.make_response("No database settings available.", 400)
+
+        useExternal = databaseSettings.useExternal == True
+        baseFolder = databaseSettings.baseFolder
+        now = datetime.datetime.now()
+        currentDate = now.strftime("%Y%m%d-%H%M%S")
+
+        # The mandatory backup (.db / .sql) must be created and downloaded, otherwise the import is
+        # aborted. The optional .csv is best-effort: if its creation OR its download fails, the import
+        # still proceeds (a failed optional download must NOT block the import - browsers can also
+        # throttle multiple auto-downloads).
+        mandatoryBackupFile = None
+        optionalBackupFiles = []
+
+        try:
+            # --- mandatory backup ---
+            if (useExternal == False):
+                # internal SQLite: copy the .db file (backupDatabaseFile already stores it in baseFolder)
+                backupResult = self._databaseManager.createLocalDatabaseBackup()
+                if (backupResult["success"] == False):
+                    return flask.make_response("Database backup failed: " + str(backupResult["errorMessage"]), 400)
+                mandatoryBackupFile = os.path.basename(backupResult["backupFilePath"])
+            else:
+                # external database: a full .sql dump is only available for MySQL
+                if (self._isExternalMySQLConfigured() == False):
+                    return flask.make_response("A full backup before import is only available for external MySQL databases. Save the storage settings first.", 400)
+                dumpResult = self._databaseManager.exportMySQLDatabaseDump()
+                if (dumpResult["success"] == False):
+                    return flask.make_response("Database dump backup failed: " + str(dumpResult["errorMessage"]), 400)
+                sqlFileName = "SpoolManager-backup-external-" + currentDate + ".sql"
+                with open(os.path.join(baseFolder, sqlFileName), "w") as sqlFile:
+                    sqlFile.write(dumpResult["dump"])
+                mandatoryBackupFile = sqlFileName
+
+            # --- best-effort .csv backup (does not block the import if it fails) ---
+            # This can legitimately fail when the ACTIVE database still has an outdated scheme
+            # (e.g. "no such column: batchNumber" if a restored .db was not upgraded yet). The
+            # mandatory .db/.sql backup above already protects the data, so we only warn here and
+            # let the import proceed - no scary full traceback for an expected best-effort miss.
+            try:
+                allSpoolModels = list(self._databaseManager.loadAllSpoolsByQuery(None))
+                instanceName = "external" if useExternal else "internal"
+                csvFileName = "SpoolManager-backup-" + instanceName + "-" + currentDate + ".csv"
+                with open(os.path.join(baseFolder, csvFileName), "w") as csvFile:
+                    for csvline in CSVExportImporter.transform2CSV(allSpoolModels):
+                        csvFile.write(csvline)
+                optionalBackupFiles.append(csvFileName)
+            except Exception as csvError:
+                self._logger.warning("Best-effort CSV backup before import skipped (import still allowed, "
+                                     "mandatory backup was created): " + str(csvError))
+
+        except Exception as e:
+            self._logger.exception("createImportBackup")
+            return flask.make_response("Backup before import failed: " + str(e), 400)
+
+        return flask.jsonify({
+            "mandatoryBackupFile": mandatoryBackupFile,
+            "optionalBackupFiles": optionalBackupFiles
+        })
+
     ##############################################################################   EXPORT / IMPORT MYSQL DATABASE DUMP
     # both routes work on the SAVED storage settings and are only available for external MySQL databases
 
@@ -994,6 +1069,43 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             "errorMessage": importResult["errorMessage"],
             "executedStatementCount": importResult["executedStatementCount"],
             "importedSpoolCount": importResult["importedSpoolCount"],
+            "metadata": metaDataResult
+        })
+
+    #######################################################################################   RESTORE LOCAL .db FILE
+    # Restores the local SQLite database from an uploaded .db file (replace = whole-file swap,
+    # append = insert the uploaded spools). Only available for the internal SQLite database.
+    # The frontend creates+downloads the pre-import backup first (createImportBackup).
+    @octoprint.plugin.BlueprintPlugin.route("/importDatabaseFile", methods=["POST"])
+    def importDatabaseFile(self):
+
+        databaseSettings = self._databaseManager.getDatabaseSettings()
+        if (databaseSettings == None or databaseSettings.useExternal == True):
+            return flask.make_response("A .db restore is only available for the local SQLite database.", 400)
+
+        input_name = "file"
+        input_upload_path = input_name + "." + self._settings.global_get(["server", "uploads", "pathSuffix"])
+        if (input_upload_path not in flask.request.values):
+            return flask.make_response("Invalid request, no .db file provided", 400)
+
+        importMode = flask.request.form.get("importMode")
+        if (importMode not in (SettingsKeys.KEY_IMPORTCSV_MODE_REPLACE, SettingsKeys.KEY_IMPORTCSV_MODE_APPEND)):
+            return flask.make_response("Invalid import mode", 400)
+
+        sourceLocation = flask.request.values[input_upload_path]
+
+        restoreResult = self._databaseManager.restoreFromSQLiteFile(sourceLocation, importMode)
+
+        if (restoreResult["success"] == True and SettingsKeys.KEY_IMPORTCSV_MODE_REPLACE == importMode):
+            # same behaviour as the CSV/SQL replace-import
+            self._resetSelectedSpools()
+
+        metaDataResult = self._databaseManager.loadDatabaseMetaInformations(None)
+
+        return flask.jsonify({
+            "success": restoreResult["success"],
+            "errorMessage": restoreResult["errorMessage"],
+            "importedSpoolCount": restoreResult["importedSpoolCount"],
             "metadata": metaDataResult
         })
 
