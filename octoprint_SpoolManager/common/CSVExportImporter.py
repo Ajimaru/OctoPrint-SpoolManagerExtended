@@ -302,12 +302,15 @@ mandatoryFieldNames = [
 
 # mandatoryFieldAvaiable = list()
 
-columnOrderInFile = dict()
-
 def parseCSV(csvFile4Import, updateParsingStatus, errorCollection, logger, deleteAfterParsing=True):
 
 	result = list()	# List with printJobModels
 	lineNumber = 0
+	# Column order is derived per-import from the header row and MUST be local: a module-level
+	# dict leaked recognized columns between imports, so a second, incompatible file (e.g. the
+	# inventory report CSV, which has no "Spool Name") could be accepted using the previous
+	# import's column mapping. See CSV import validation fix.
+	columnOrderInFile = dict()
 	try:
 		with open(csvFile4Import) as csv_file:
 			csv_reader = csv.reader(csv_file, delimiter=',')
@@ -323,15 +326,26 @@ def parseCSV(csvFile4Import, updateParsingStatus, errorCollection, logger, delet
 					# createColumnOrderFromHeader(row)
 					# mandatoryFieldCount = 0
 					mandatoryFieldAvaiable = list()
+					recognizedColumns = list()
 					columnIndex = 0
 					for column in row:
 						column = column.strip()
 						if column in ALL_COLUMNS:
 							columnOrderInFile[columnIndex] = ALL_COLUMNS[column]
+							recognizedColumns.append(column)
 							if column in mandatoryFieldNames:
 								mandatoryFieldAvaiable.append(column)
 								# mandatoryFieldCount += 1
 						columnIndex += 1
+
+					# Reject files whose header does not look like a SpoolManager export at all:
+					# no recognized column means this is not a valid import file (e.g. the inventory
+					# report CSV). Without this, an almost-empty column mapping would silently import
+					# garbage / near-empty spools.
+					if len(recognizedColumns) == 0:
+						errorCollection.append("This CSV does not look like a SpoolManager export - no known columns found. Please use a file exported via SpoolManager (Settings -> Export/Import).")
+						break
+
 					if len(mandatoryFieldAvaiable) != len(mandatoryFieldNames):
 					# if mandatoryFieldCount != len(mandatoryFieldNames):
 						# identify missing files
