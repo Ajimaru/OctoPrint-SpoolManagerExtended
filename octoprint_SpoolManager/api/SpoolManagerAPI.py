@@ -1094,6 +1094,48 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             print("BOOOMM not supported type")
         pass
 
+    ###################################################################################   INVENTORY REPORT (PDF/CSV/XLSX)
+    @octoprint.plugin.BlueprintPlugin.route("/exportInventoryReport", methods=["GET"])
+    def exportInventoryReport(self):
+        from octoprint_SpoolManager.common import InventoryReport
+
+        reportFormat = flask.request.values.get("format", "pdf").lower()
+        if (reportFormat not in ("pdf", "csv", "xlsx")):
+            return flask.make_response("Unsupported report format: " + reportFormat, 400)
+
+        # Build a table query from the current tab filter/sort state (passed as query params).
+        # Force "all" so the report covers every filtered spool, not just the current page.
+        # Note: we run against the currently active database (like the normal tab load /
+        # loadSpoolsByQuery does) - we must NOT switch the database instance here, otherwise
+        # the connection is left pointing at the wrong (e.g. empty/outdated internal) database.
+        tableQuery = dict(flask.request.values)
+        tableQuery["selectedPageSize"] = "all"
+
+        # loadAllSpoolsByQuery returns a lazy peewee query; materialize it now, while the
+        # request/DB context is still valid, so the formatters get a plain list.
+        allSpoolModels = list(self._databaseManager.loadAllSpoolsByQuery(tableQuery))
+
+        now = datetime.datetime.now()
+        currentDate = now.strftime("%Y%m%d-%H%M")
+        baseName = "SpoolManager-Inventory-" + currentDate
+
+        if (reportFormat == "csv"):
+            payload = InventoryReport.build_inventory_report_csv(allSpoolModels)
+            mimetype = 'text/csv'
+            fileName = baseName + ".csv"
+        elif (reportFormat == "xlsx"):
+            payload = InventoryReport.build_inventory_report_xlsx(allSpoolModels).getvalue()
+            mimetype = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            fileName = baseName + ".xlsx"
+        else:
+            payload = InventoryReport.build_inventory_report_pdf(allSpoolModels).getvalue()
+            mimetype = 'application/pdf'
+            fileName = baseName + ".pdf"
+
+        return Response(payload,
+                        mimetype=mimetype,
+                        headers={'Content-Disposition': 'attachment; filename=' + fileName})
+
 
 
     ##################################################################################################   LOAD ALL SPOOLS
