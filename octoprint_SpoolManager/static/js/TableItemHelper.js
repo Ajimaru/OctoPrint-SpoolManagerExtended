@@ -11,6 +11,8 @@ function TableItemHelper(loadItemsFunction, defaultPageSize, defaultSortColumn, 
     self.loadItemsFunction = loadItemsFunction;
     self.items = ko.observableArray([]);
     self.totalItemCount = ko.observable(0);
+    // Grand total of every spool in the database (unfiltered) - shown as "(N Spools in Database)".
+    self.databaseItemCount = ko.observable(0);
 
     // paging
     self.pageSizeOptions = ko.observableArray([10, 25, 50, 100, "all"])
@@ -101,7 +103,7 @@ function TableItemHelper(loadItemsFunction, defaultPageSize, defaultSortColumn, 
 
     self._loadItems = function(){
         var tableQuery = self.buildTableQuery();
-        self.loadItemsFunction( tableQuery, self.items, self.totalItemCount );
+        self.loadItemsFunction( tableQuery, self.items, self.totalItemCount, self.databaseItemCount );
     }
 
     self.currentPage.subscribe(function(newPageIndex) {

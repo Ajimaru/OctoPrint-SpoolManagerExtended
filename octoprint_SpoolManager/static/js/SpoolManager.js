@@ -1078,7 +1078,7 @@ $(function() {
             e.stopPropagation();
         });
 
-        self.spoolItemTableHelper = new TableItemHelper(function(tableQuery, observableTableModel, observableTotalItemCount){
+        self.spoolItemTableHelper = new TableItemHelper(function(tableQuery, observableTableModel, observableTotalItemCount, observableDatabaseItemCount){
 
             // api-call
             self.apiClient.callLoadSpoolsByQuery(tableQuery, function(responseData){
@@ -1116,6 +1116,7 @@ $(function() {
                 });
 
                 observableTotalItemCount(totalItemCount);
+                observableDatabaseItemCount(responseData["databaseItemCount"]);
                 observableTableModel(dataRows);
             });
             },
