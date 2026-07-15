@@ -146,6 +146,26 @@ $(function() {
             });
         }
 
+        // Toast while the plugin downloads/analyzes a printer-storage file
+        self.printerFileAnalysisNotify = null;
+        self.showPrinterFileAnalysisStarted = function(path){
+            if (self.printerFileAnalysisNotify == null){
+                self.printerFileAnalysisNotify = new PNotify({
+                    title: "SPM: Analyzing print file",
+                    text: "Fetching '" + path + "' from printer storage to calculate the needed filament...",
+                    type: "info",
+                    icon: "fa fa-spinner fa-spin",
+                    hide: false
+                });
+            }
+        };
+        self.hidePrinterFileAnalysisToast = function(){
+            if (self.printerFileAnalysisNotify != null){
+                self.printerFileAnalysisNotify.remove();
+                self.printerFileAnalysisNotify = null;
+            }
+        };
+
         // Typs: error
         self.showPopUp = function(popupType, popupTitle, message, autoclose){
             var title = popupType.toUpperCase() + ": " + popupTitle;
@@ -1623,6 +1643,14 @@ $(function() {
             }
             if ("showPopUp" == data.action){
                 self.showPopUp(data.type, data.title, data.message, data.autoclose);
+                return;
+            }
+            if ("printerFileAnalysisStarted" == data.action){
+                self.showPrinterFileAnalysisStarted(data.path);
+                return;
+            }
+            if ("printerFileAnalysisFinished" == data.action){
+                self.hidePrinterFileAnalysisToast();
                 return;
             }
             if ("reloadTable" == data.action){

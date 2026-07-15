@@ -2,6 +2,7 @@
 
 import math
 import os
+import time
 import zipfile
 import xml.etree.ElementTree as ET
 from datetime import datetime
@@ -35,6 +36,10 @@ class SpoolmanagerPlugin(
 
         # cache for filament usage parsed from printer-storage 3mf files: (path, plate) -> (fingerprint, filament)
         self._printer3mfFilamentCache = {}
+        # guards against booking the sliced usage twice (connectors may fire PRINT_DONE multiple times)
+        self._slicedUsageAlreadyBooked = False
+        # own wall clock per print job - connectors may report time=0.0 in the PRINT_DONE payload
+        self._printJobStartedTimestamp = None
 
         # DATABASE
         self.databaseConnectionProblemConfirmed = False
@@ -355,13 +360,17 @@ class SpoolmanagerPlugin(
         if cached is not None and cached[0] == fingerprint:
             return cached[1]
 
+        self._sendDataToClient(dict(action="printerFileAnalysisStarted", path=path))
         try:
-            fileObject = connection.download_printer_file(path)
-        except Exception as e:
-            self._logger.warning("could not download 'printer:%s' for filament parsing: %s" % (path, e))
-            return None
+            try:
+                fileObject = connection.download_printer_file(path)
+            except Exception as e:
+                self._logger.warning("could not download 'printer:%s' for filament parsing: %s" % (path, e))
+                return None
 
-        filament = self._parseFilamentLengthsFromBambu3mf(fileObject, plate=plate)
+            filament = self._parseFilamentLengthsFromBambu3mf(fileObject, plate=plate)
+        finally:
+            self._sendDataToClient(dict(action="printerFileAnalysisFinished", path=path))
         self._printer3mfFilamentCache[cacheKey] = (fingerprint, filament)
         if filament is not None:
             self._logger.info(
@@ -609,6 +618,8 @@ class SpoolmanagerPlugin(
 
         # self._filamentOdometer.reset()
         self.myFilamentOdometer.reset()
+        self._slicedUsageAlreadyBooked = False
+        self._printJobStartedTimestamp = time.time()
 
         reloadTable = False
         selectedSpools = self.loadSelectedSpools()
@@ -628,8 +639,17 @@ class SpoolmanagerPlugin(
                                         ))
     # assign the current extrusion to the current selected spools
 
-    def commitOdometerData(self):
+    # connectors can fire spurious PRINT_DONE events seconds after the job kickoff
+    # (state bounces); no real print finishes this quickly
+    MINIMUM_PRINT_DURATION_FOR_SLICED_USAGE = 60
+
+    def commitOdometerData(self, printStatus=None, printDuration=None):
         reload = False
+        slicedLengthsRead = False
+        slicedUsageBooked = False
+        slicedUsagePlausible = (
+            printDuration is None or printDuration >= self.MINIMUM_PRINT_DURATION_FOR_SLICED_USAGE
+        )
         selectedSpools = self.loadSelectedSpools()
         for toolIndex, spoolModel in enumerate(selectedSpools):
             if spoolModel is None:
@@ -644,6 +664,27 @@ class SpoolmanagerPlugin(
                 allExtrusions = self.myFilamentOdometer.getExtrusionAmount()
                 currentExtrusionLength = allExtrusions[toolIndex]
             except (KeyError, IndexError):
+                currentExtrusionLength = None
+
+            if ((currentExtrusionLength is None or currentExtrusionLength <= 0.0)
+                    and printStatus == "success"
+                    and self._slicedUsageAlreadyBooked == False
+                    and slicedUsagePlausible):
+                # nothing streamed through octoprint (e.g. printer-storage prints via a
+                # connector plugin), so book the sliced filament usage instead
+                if not slicedLengthsRead:
+                    self._readingFilamentMetaData()
+                    slicedLengthsRead = True
+                slicedLength = self.metaDataFilamentLengths[toolIndex] if toolIndex < len(self.metaDataFilamentLengths) else None
+                if slicedLength is not None and slicedLength > 0.0:
+                    currentExtrusionLength = slicedLength
+                    slicedUsageBooked = True
+                    self._logger.info(
+                        "Tool %d: no extrusion tracked by odometer, using sliced filament usage of %.1fmm instead"
+                        % (toolIndex, slicedLength)
+                    )
+
+            if currentExtrusionLength is None:
                 self._logger.info("Tool %d: No filament extruded" % toolIndex)
                 continue
             self._logger.info("Tool %d: Extruded filament length: %s" % (toolIndex, str(currentExtrusionLength)))
@@ -683,6 +724,9 @@ class SpoolmanagerPlugin(
 
         self.myFilamentOdometer.reset_extruded_length()
 
+        if slicedUsageBooked:
+            self._slicedUsageAlreadyBooked = True
+
         if reload:
             self._sendDataToClient(dict(
                 action="reloadTable and sidebarSpools"
@@ -690,7 +734,16 @@ class SpoolmanagerPlugin(
 
     #### print job finished
     def _on_printJobFinished(self, printStatus, payload):
-        self.commitOdometerData()
+        printDuration = payload.get("time") if payload else None
+        if (printDuration is None or printDuration <= 0.0) and self._printJobStartedTimestamp is not None:
+            # some connectors (e.g. bambu) always report time=0.0, so use our own clock
+            printDuration = time.time() - self._printJobStartedTimestamp
+        if printDuration is not None and printDuration < self.MINIMUM_PRINT_DURATION_FOR_SLICED_USAGE:
+            self._logger.info(
+                "print 'finished' after only %.1fs - sliced filament usage will not be booked (spurious event?)"
+                % printDuration
+            )
+        self.commitOdometerData(printStatus=printStatus, printDuration=printDuration)
 
         # update remaining data in selected spools after a print
         selectedSpools = self.loadSelectedSpools()
