@@ -1,6 +1,7 @@
 # coding=utf-8
 
 import logging
+import os
 
 import octoprint.plugin
 import datetime
@@ -885,6 +886,41 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         return send_file(self._databaseManager.getDatabaseSettings().fileLocation,
                          mimetype='application/octet-stream',
                          download_name='spoolmanager.db',
+                         as_attachment=True)
+
+    #######################################################################################   CREATE LOCAL DB BACKUP
+    # creates a .db file copy of the local database WITHOUT migrating; the frontend calls this first,
+    # downloads the file via /downloadDatabaseBackup, and only then triggers the scheme upgrade
+    # (mirrors the external "download dump first, abort on failure" behaviour)
+    @octoprint.plugin.BlueprintPlugin.route("/createDatabaseBackup", methods=["PUT"])
+    def createDatabaseBackup(self):
+        backupResult = self._databaseManager.createLocalDatabaseBackup()
+        if (backupResult["success"] == False):
+            return flask.make_response("Database backup failed: " + str(backupResult["errorMessage"]), 400)
+        return flask.jsonify({
+            "backupFileName": os.path.basename(backupResult["backupFilePath"])
+        })
+
+    #######################################################################################   DOWNLOAD LOCAL DB BACKUP
+    # serves the .db backup file created by /createDatabaseBackup (in the plugin data folder)
+    @octoprint.plugin.BlueprintPlugin.route("/downloadDatabaseBackup", methods=["GET"])
+    def downloadDatabaseBackup(self):
+        backupFileName = flask.request.args.get("fileName")
+        if (backupFileName == None or backupFileName == ""):
+            return flask.make_response("No backup file name provided.", 400)
+
+        # only allow a plain file name inside the plugin data folder (no path traversal)
+        if (backupFileName != os.path.basename(backupFileName)):
+            return flask.make_response("Invalid backup file name.", 400)
+
+        baseFolder = self._databaseManager.getDatabaseSettings().baseFolder
+        backupFilePath = os.path.join(baseFolder, backupFileName)
+        if (os.path.isfile(backupFilePath) == False):
+            return flask.make_response("Backup file not found.", 404)
+
+        return send_file(backupFilePath,
+                         mimetype='application/octet-stream',
+                         download_name=backupFileName,
                          as_attachment=True)
 
 

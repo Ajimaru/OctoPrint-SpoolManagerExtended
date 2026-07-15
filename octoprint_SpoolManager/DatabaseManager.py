@@ -802,9 +802,11 @@ class DatabaseManager(object):
                     self._logger.info("Backup of spoolmanager database created '" + backupDatabaseFilePath + "'")
                 else:
                     self._logger.warning("Backup of spoolmanager database ('" + backupDatabaseFilePath + "') is already present. No backup created.")
-                    return backupDatabaseFilePath
+                return backupDatabaseFilePath
             else:
                 self._logger.info("No database backup needed, because there is no databasefile '"+str(self._databaseSettings.fileLocation)+"'")
+
+        return None
 
     def reCreateDatabase(self, databaseSettings = None):
         self._currentErrorMessageDict = None
@@ -1010,11 +1012,44 @@ class DatabaseManager(object):
         finally:
             self.closeDatabase()
 
+    def createLocalDatabaseBackup(self):
+        # creates a .db file copy of the local SQLite database WITHOUT migrating it.
+        # Used by the local scheme-upgrade flow so the frontend can download the backup
+        # BEFORE the migration runs (mirrors the external dump-download-first behaviour).
+        result = {
+            "success": False,
+            "backupFilePath": None,
+            "errorMessage": None
+        }
+        if (self._databaseSettings == None or self._databaseSettings.useExternal == True):
+            result["errorMessage"] = "A database file backup is only available for the local SQLite database."
+            return result
+        try:
+            # connect so backupDatabaseFile() can read the current scheme version for the file name
+            self.connectoToDatabase(sendErrorPopUp=False)
+            backupFilePath = self.backupDatabaseFile()
+            if (backupFilePath == None):
+                result["errorMessage"] = "Could not create the database file backup (no database file found)."
+                return result
+            result["backupFilePath"] = backupFilePath
+            result["success"] = True
+        except Exception as e:
+            self._logger.exception("createLocalDatabaseBackup")
+            result["errorMessage"] = str(e)
+        finally:
+            self.closeDatabase()
+        return result
+
     def upgradeExternalDatabaseScheme(self, createBackupFile=True):
-        # user-triggered scheme upgrade for external databases (Settings dialog);
-        # local SQLite databases are upgraded automatically during plugin startup.
-        # A dump backup is mandatory: either already downloaded by the frontend (createBackupFile=False)
-        # or written to the plugin data folder here - without one the upgrade is aborted.
+        # user-triggered scheme upgrade (Settings dialog).
+        # Local SQLite databases are normally upgraded automatically during plugin startup,
+        # but the auto-upgrade can be skipped (e.g. the database file was restored/replaced
+        # at an old scheme version). This button lets the user re-trigger the upgrade for both
+        # local SQLite and external databases.
+        #  - external: a dump backup is mandatory (already downloaded by the frontend when
+        #    createBackupFile=False, otherwise written to the plugin data folder here)
+        #  - local: a .db file copy is downloaded by the frontend first (createBackupFile=False);
+        #    createBackupFile=True only as a fallback writes the copy here
         result = {
             "success": False,
             "fromVersion": None,
@@ -1023,14 +1058,16 @@ class DatabaseManager(object):
             "errorMessage": None
         }
 
-        if (self._databaseSettings == None or self._databaseSettings.useExternal == False):
-            result["errorMessage"] = "Scheme upgrade via settings is only needed for external databases. Local databases are upgraded automatically."
+        if (self._databaseSettings == None):
+            result["errorMessage"] = "No database settings available."
             return result
+
+        useExternal = self._databaseSettings.useExternal == True
 
         try:
             connected = self.connectoToDatabase(sendErrorPopUp=False)
             if (connected == False):
-                errorMessage = "Could not connect to the external database."
+                errorMessage = "Could not connect to the external database." if useExternal else "Could not connect to the local database."
                 if (self._currentErrorMessageDict != None):
                     errorMessage = errorMessage + " " + str(self._currentErrorMessageDict.get("message", ""))
                 result["errorMessage"] = errorMessage
@@ -1053,37 +1090,52 @@ class DatabaseManager(object):
                                          " is newer than this plugin supports (" + str(CURRENT_DATABASE_SCHEME_VERSION) + \
                                          "). Please update the plugin instead."
                 return result
-            if (currentSchemeVersion < 7):
+            if (useExternal == True and currentSchemeVersion < 7):
                 # the legacy migrations (1..7) use SQLite-specific scripts and can't run against external databases
                 result["errorMessage"] = "Upgrades from scheme version " + str(currentSchemeVersion) + \
                                          " are not supported for external databases. Please migrate manually via SQL console."
                 return result
 
             # mandatory backup, the upgrade is aborted if it fails
-            if (self._isExternalMySQL() == False):
-                result["errorMessage"] = "No dump backup is available for this database type. " \
-                                         "Please create a backup manually (e.g. pg_dump) and migrate via SQL console."
-                return result
-            if (createBackupFile == True):
-                try:
-                    dumpText = self._generateMySQLDumpText()
-                    now = datetime.datetime.now()
-                    backupFileName = "spoolmanager_external_backup-V" + str(currentSchemeVersion) + "-" + now.strftime("%Y%m%d-%H%M") + ".sql"
-                    backupFilePath = os.path.join(self._databaseSettings.baseFolder, backupFileName)
-                    with open(backupFilePath, "w") as backupFile:
-                        backupFile.write(dumpText)
-                    result["backupFilePath"] = backupFilePath
-                    self._logger.info("Created external database backup dump '" + backupFilePath + "'")
-                except Exception as e:
-                    self._logger.exception("Could not create the backup dump, scheme upgrade aborted")
-                    result["errorMessage"] = "Could not create the backup dump, scheme upgrade aborted: " + str(e)
+            if (useExternal == True):
+                if (self._isExternalMySQL() == False):
+                    result["errorMessage"] = "No dump backup is available for this database type. " \
+                                             "Please create a backup manually (e.g. pg_dump) and migrate via SQL console."
                     return result
+                if (createBackupFile == True):
+                    try:
+                        dumpText = self._generateMySQLDumpText()
+                        now = datetime.datetime.now()
+                        backupFileName = "spoolmanager_external_backup-V" + str(currentSchemeVersion) + "-" + now.strftime("%Y%m%d-%H%M") + ".sql"
+                        backupFilePath = os.path.join(self._databaseSettings.baseFolder, backupFileName)
+                        with open(backupFilePath, "w") as backupFile:
+                            backupFile.write(dumpText)
+                        result["backupFilePath"] = backupFilePath
+                        self._logger.info("Created external database backup dump '" + backupFilePath + "'")
+                    except Exception as e:
+                        self._logger.exception("Could not create the backup dump, scheme upgrade aborted")
+                        result["errorMessage"] = "Could not create the backup dump, scheme upgrade aborted: " + str(e)
+                        return result
+                else:
+                    self._logger.info("Backup dump was already downloaded by the frontend, skipping backup file creation.")
             else:
-                self._logger.info("Backup dump was already downloaded by the frontend, skipping backup file creation.")
+                # local SQLite: the .db file backup is downloaded by the frontend BEFORE the upgrade
+                # (createBackupFile=False). Only create it here as a fallback when that did not happen.
+                if (createBackupFile == True):
+                    try:
+                        backupFilePath = self.backupDatabaseFile()
+                        result["backupFilePath"] = backupFilePath
+                    except Exception as e:
+                        self._logger.exception("Could not create the database file backup, scheme upgrade aborted")
+                        result["errorMessage"] = "Could not create the database file backup, scheme upgrade aborted: " + str(e)
+                        return result
+                else:
+                    self._logger.info("Database file backup was already downloaded by the frontend, skipping backup file creation.")
 
-            self._logger.info("Upgrading external database scheme from '" + str(currentSchemeVersion) + "' to '" + str(CURRENT_DATABASE_SCHEME_VERSION) + "'")
+            databaseKind = "external" if useExternal else "local"
+            self._logger.info("Upgrading " + databaseKind + " database scheme from '" + str(currentSchemeVersion) + "' to '" + str(CURRENT_DATABASE_SCHEME_VERSION) + "'")
             self._upgradeDatabase(currentSchemeVersion, CURRENT_DATABASE_SCHEME_VERSION)
-            self._logger.info("...external database scheme successfully upgraded.")
+            self._logger.info("..." + databaseKind + " database scheme successfully upgraded.")
             self._schemeUpgradeNeeded = False
             result["success"] = True
         except Exception as e:
