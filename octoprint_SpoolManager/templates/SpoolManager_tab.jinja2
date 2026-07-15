@@ -41,6 +41,20 @@
                     </div>
                 </div>
                 <div class="pull-left" style="margin-top: 8px;">
+                    <div class="btn-group">
+                        <button class="btn"
+                                data-bind="click: function(){ generateInventoryReport('pdf'); },
+                                           enable: schemeUpgradeNeeded() == false"
+                                title="Download inventory report (PDF)"><i class="fas fa-file-pdf"></i> Inventory Report</button>
+                        <button class="btn dropdown-toggle" data-toggle="dropdown"
+                                data-bind="enable: schemeUpgradeNeeded() == false"
+                                title="Choose report format"><b class="caret"></b></button>
+                        <ul class="dropdown-menu">
+                            <li><a href="#" data-bind="click: function(){ generateInventoryReport('pdf'); }"><i class="fas fa-file-pdf"></i> PDF</a></li>
+                            <li><a href="#" data-bind="click: function(){ generateInventoryReport('csv'); }"><i class="fas fa-file-csv"></i> CSV</a></li>
+                            <li><a href="#" data-bind="click: function(){ generateInventoryReport('xlsx'); }"><i class="fas fa-file-excel"></i> XLSX</a></li>
+                        </ul>
+                    </div>
                     <button class="btn"
                             data-bind="click: addNewSpool,
                                        enable: schemeUpgradeNeeded() == false,
