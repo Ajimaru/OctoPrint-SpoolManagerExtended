@@ -245,18 +245,36 @@ function ComponentFactory(pluginId) {
                 })
         });
 
+        // set while handling a click on the "translucent" swatch, so the
+        // change-handler below can ignore the bogus hex pick-a-color derives
+        // from the checkerboard swatch (its rendered background-color is
+        // transparent, which tinycolor turns into #000000 -> black)
+        var handlingTranslucentClick = false;
         if (showTranslucent == true){
-            // the swatch itself only carries white as hex value, the actual
-            // "transparent" semantic is applied via the callback (e.g. isTransparent-flag)
-            $(elementSelector).parent().find(".color-link.translucent").on("click", function(){
+            var $translucentLink = $(elementSelector).parent().find(".color-link.translucent");
+            // the swatch carries no real color: it only toggles the "transparent"
+            // semantic (isTransparent-flag) without setting a base hex color.
+            // The flag is armed already on mousedown/touchstart so it is set BEFORE
+            // pick-a-color's own click-based change-handler (which would otherwise
+            // write the bogus black hex derived from the checkerboard swatch).
+            $translucentLink.on("mousedown touchstart", function(){
+                handlingTranslucentClick = true;
+            });
+            $translucentLink.on("click", function(){
                 if (componentViewModel.onTranslucentSelected != null){
                     componentViewModel.onTranslucentSelected();
                 }
+                // reset once this click (and pick-a-color's bogus change) is done
+                setTimeout(function(){ handlingTranslucentClick = false; }, 0);
             });
         }
 
         // sync: jquery -> observable
         pickColor.on("change", function () {
+            if (handlingTranslucentClick == true){
+                // ignore the black hex derived from the checkerboard swatch
+                return;
+            }
             var newColor = ""+$(this).val();
             if (newColor.startsWith("#") == false){
                 newColor = "#" + $(this).val();

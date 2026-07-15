@@ -354,11 +354,15 @@ function SpoolManagerEditSpoolDialog(){
             this.colorCount = ko.observable(1);
             this.isRainbow = ko.observable(false);
             this.isTransparent = ko.observable(false);
+            // true = transparent without any base tint ("transparent"),
+            // false = transparent with a chosen base color ("transparent:#hex")
+            this.transparentUntinted = ko.observable(false);
             var colorViewModel = self.componentFactory.createColorPicker("filament-color-picker", true);
             var colorViewModel2 = self.componentFactory.createColorPicker("filament-color-picker2", true);
             var colorViewModel3 = self.componentFactory.createColorPicker("filament-color-picker3", true);
-            // picking the "translucent" swatch activates the transparent flag
+            // picking the "translucent" swatch enables transparent without a base tint
             var activateTransparent = function(){
+                spoolItemInstance.transparentUntinted(true);
                 spoolItemInstance.isTransparent(true);
             };
             colorViewModel.onTranslucentSelected = activateTransparent;
@@ -374,6 +378,11 @@ function SpoolManagerEditSpoolDialog(){
                     spoolItemInstance.color("rainbow");
                     return;
                 }
+                // transparent without a base tint: no hex value at all
+                if (spoolItemInstance.isTransparent() == true && spoolItemInstance.transparentUntinted() == true){
+                    spoolItemInstance.color("transparent");
+                    return;
+                }
                 var colors = [];
                 for (var i = 0; i < spoolItemInstance.colorCount(); i++){
                     colors.push(pickerColors[i]() || DEFAULT_COLOR);
@@ -384,12 +393,30 @@ function SpoolManagerEditSpoolDialog(){
                 }
                 spoolItemInstance.color(composedColor);
             };
-            pickerColors[0].subscribe(composeColor);
-            pickerColors[1].subscribe(composeColor);
-            pickerColors[2].subscribe(composeColor);
+            // picking a real base color after "translucent" turns it into a tinted transparent
+            var onBaseColorPicked = function(newValue){
+                if (applyingColor == true){
+                    // color is being loaded programmatically, keep the untinted flag as set
+                    return;
+                }
+                if (newValue && spoolItemInstance.transparentUntinted() == true){
+                    spoolItemInstance.transparentUntinted(false);
+                }
+                composeColor();
+            };
+            pickerColors[0].subscribe(onBaseColorPicked);
+            pickerColors[1].subscribe(onBaseColorPicked);
+            pickerColors[2].subscribe(onBaseColorPicked);
             this.colorCount.subscribe(composeColor);
             this.isRainbow.subscribe(composeColor);
             this.isTransparent.subscribe(composeColor);
+            this.transparentUntinted.subscribe(composeColor);
+            // unchecking the transparent checkbox also clears the untinted flag
+            this.isTransparent.subscribe(function(newValue){
+                if (newValue == false){
+                    spoolItemInstance.transparentUntinted(false);
+                }
+            });
             // rainbow and transparent are mutually exclusive
             this.isRainbow.subscribe(function(newValue){
                 if (newValue == true && spoolItemInstance.isTransparent() == true){
@@ -408,23 +435,28 @@ function SpoolManagerEditSpoolDialog(){
                     if (("" + colorValue).toLowerCase() === "rainbow"){
                         spoolItemInstance.isRainbow(true);
                         spoolItemInstance.isTransparent(false);
+                        spoolItemInstance.transparentUntinted(false);
                         spoolItemInstance.colorCount(1);
                         pickerColors[0](DEFAULT_COLOR);
                     } else {
                         var plainColorValue = "" + colorValue;
                         var transparent = plainColorValue.toLowerCase().indexOf("transparent") === 0;
+                        // "transparent" without a ":#hex" suffix = untinted
+                        var untinted = false;
                         if (transparent){
                             plainColorValue = plainColorValue.substr("transparent".length);
                             if (plainColorValue.indexOf(":") === 0){
                                 plainColorValue = plainColorValue.substr(1);
                             }
                             if (plainColorValue.length === 0){
+                                untinted = true;
                                 plainColorValue = DEFAULT_COLOR;
                             }
                         }
                         var colors = plainColorValue.split(";");
                         spoolItemInstance.isRainbow(false);
                         spoolItemInstance.isTransparent(transparent);
+                        spoolItemInstance.transparentUntinted(untinted);
                         spoolItemInstance.colorCount(Math.min(colors.length, 3));
                         for (var i = 0; i < 3; i++){
                             if (i < colors.length && colors[i]){
@@ -850,6 +882,55 @@ function SpoolManagerEditSpoolDialog(){
         return Math.round((x + Number.EPSILON) * increments) / increments;
     }
 
+    // builds (or refreshes) an SVG checkerboard <pattern> in the filament svg's
+    // <defs> and returns the url(#..) reference. tintColor (optional) is layered
+    // half-transparent over the checkerboard to render "tinted translucent".
+    this._ensureTranslucentPattern = function(tintColor){
+        var svgRoot = $("#svg-filament").closest("svg");
+        var svgNS = "http://www.w3.org/2000/svg";
+        var defs = svgRoot.children("defs");
+        if (defs.length === 0){
+            defs = $(document.createElementNS(svgNS, "defs"));
+            svgRoot.prepend(defs);
+        }
+        // rebuild the pattern each call so the tint stays in sync
+        defs.find("#translucentIconPattern").remove();
+        var cell = 24; // checker cell size in svg user units
+        var pattern = document.createElementNS(svgNS, "pattern");
+        pattern.setAttribute("id", "translucentIconPattern");
+        pattern.setAttribute("patternUnits", "userSpaceOnUse");
+        pattern.setAttribute("width", "" + (cell * 2));
+        pattern.setAttribute("height", "" + (cell * 2));
+        // light/dark checker squares
+        var squares = [
+            {x: 0,    y: 0,    c: "#ffffff"},
+            {x: cell, y: cell, c: "#ffffff"},
+            {x: cell, y: 0,    c: "#c8c8c8"},
+            {x: 0,    y: cell, c: "#c8c8c8"}
+        ];
+        squares.forEach(function(sq){
+            var r = document.createElementNS(svgNS, "rect");
+            r.setAttribute("x", "" + sq.x);
+            r.setAttribute("y", "" + sq.y);
+            r.setAttribute("width", "" + cell);
+            r.setAttribute("height", "" + cell);
+            r.setAttribute("fill", sq.c);
+            pattern.appendChild(r);
+        });
+        if (tintColor){
+            // half-transparent tint over the whole tile
+            var tint = document.createElementNS(svgNS, "rect");
+            tint.setAttribute("x", "0");
+            tint.setAttribute("y", "0");
+            tint.setAttribute("width", "" + (cell * 2));
+            tint.setAttribute("height", "" + (cell * 2));
+            tint.setAttribute("fill", tinycolor(tintColor).setAlpha(0.55).toRgbString());
+            pattern.appendChild(tint);
+        }
+        defs.append(pattern);
+        return "url(#translucentIconPattern)";
+    };
+
     this._reColorFilamentIcon = function(newColor){
         var colorValue = "" + newColor;
         var rectColors;
@@ -857,13 +938,19 @@ function SpoolManagerEditSpoolDialog(){
         if (colorValue.toLowerCase() === "rainbow"){
             rectColors = ["#ff2d2d", "#ff9a00", "#ffe600", "#16c172", "#2f7bff", "#a044ff"];
             strokeColor = rectColors[0];
+        } else if (colorValue.toLowerCase().indexOf("transparent") === 0){
+            // translucent: render the filament as a checkerboard, optionally tinted
+            var tint = colorValue.substr("transparent".length).replace(/^:/, "").split(";")[0];
+            var patternRef = self._ensureTranslucentPattern(tint || null);
+            var svgIconT = $("#svg-filament");
+            svgIconT.children("rect").each(function(){
+                $(this).attr("fill", patternRef);
+            });
+            svgIconT.children("path").each(function(){
+                $(this).attr("stroke", tint ? tint : "#c8c8c8");
+            });
+            return;
         } else {
-            if (colorValue.toLowerCase().indexOf("transparent") === 0){
-                colorValue = colorValue.substr("transparent".length).replace(/^:/, "");
-                if (colorValue.length === 0){
-                    colorValue = "#e8e8e8";
-                }
-            }
             var colors = colorValue.split(";");
             if (colors.length === 1){
                 // single color: alternate with a slightly darkened shade
