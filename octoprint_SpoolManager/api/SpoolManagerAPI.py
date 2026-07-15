@@ -762,15 +762,12 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
         if input_upload_path in flask.request.values:
 
-            databaseSettings = self._databaseManager.getDatabaseSettings()
-            backupDatabaseSettings = self._databaseManager.getDatabaseSettings()
-
-            if (flask.request.form["externalDatabaseGroup"] == "true"):
-                databaseSettings.useExternal = True
-            else:
-                databaseSettings.useExternal = False
-
-            self._databaseManager.assignNewDatabaseSettings(databaseSettings)
+            # Determine which database the import should run against. The actual database switch
+            # (and its restore) happens INSIDE the worker thread - not here - so the active
+            # settings stay switched for the whole import and are reliably restored afterwards.
+            # Doing it in the request thread would race: the restore would fire immediately while
+            # the worker is still importing against the (already restored) original database.
+            importUseExternal = (flask.request.form["externalDatabaseGroup"] == "true")
 
             importMode = flask.request.form["importCSVMode"]
             # file was uploaded
@@ -785,13 +782,12 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             thread = threading.Thread(target=self._processCSVUploadAsync,
                                       args=(sourceLocation,
                                             importMode,
+                                            importUseExternal,
                                             self._databaseManager,
                                             self._sendCSVUploadStatusToClient,
                                             self._logger))
             thread.daemon = True
             thread.start()
-
-            self._databaseManager.assignNewDatabaseSettings(backupDatabaseSettings)
 
             # targetLocation = self._cameraManager.buildSnapshotFilenameLocation(snapshotFilename, False)
             # os.rename(sourceLocation, targetLocation)
@@ -803,67 +799,79 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         return flask.jsonify(started=True)
 
 
-    def _processCSVUploadAsync(self, path, importCSVMode, databaseManager, sendCSVUploadStatusToClient, logger):
+    def _processCSVUploadAsync(self, path, importCSVMode, importUseExternal, databaseManager, sendCSVUploadStatusToClient, logger):
         errorCollection = list()
 
-        # - parsing
-        # - backup
-        # - append or replace
+        # Switch the active database to the requested instance for the whole duration of the
+        # import and restore the original settings in the finally block. getDatabaseSettings()
+        # returns a copy, so backupDatabaseSettings is an independent snapshot and the restore
+        # actually takes effect (see the alias trap fixed in DatabaseManager.getDatabaseSettings).
+        backupDatabaseSettings = databaseManager.getDatabaseSettings()
+        importDatabaseSettings = databaseManager.getDatabaseSettings()
+        importDatabaseSettings.useExternal = importUseExternal
+        databaseManager.assignNewDatabaseSettings(importDatabaseSettings)
 
-        def updateParsingStatus(lineNumber):
-            # importStatus, currenLineNumber, backupFilePath,  successMessages, errorCollection
-            sendCSVUploadStatusToClient("running", lineNumber, "", "", errorCollection)
-
-        resultOfSpools = CSVExportImporter.parseCSV(path, updateParsingStatus, errorCollection, logger)
-
-        if (len(errorCollection) != 0):
-            successMessage = "Some error(s) occurs during parsing! No spools imported!"
-            # importStatus, currenLineNumber, backupFilePath,  successMessages, errorCollection
-            sendCSVUploadStatusToClient("finished", "", "", successMessage, errorCollection)
-            return
-
-        importModeText = "append"
-        backupDatabaseFilePath = None
-        if (len(resultOfSpools) > 0):
-            # we could import some jobs
-
+        try:
+            # - parsing
             # - backup
-            backupDatabaseFilePath = databaseManager.backupDatabaseFile()
+            # - append or replace
 
-            # - import mode append/replace
-            if (SettingsKeys.KEY_IMPORTCSV_MODE_REPLACE == importCSVMode):
-                # delete old database and init a clean database
-                databaseManager.reCreateDatabase()
-                # reset selected spool
-                self._resetSelectedSpools()
+            def updateParsingStatus(lineNumber):
+                # importStatus, currenLineNumber, backupFilePath,  successMessages, errorCollection
+                sendCSVUploadStatusToClient("running", lineNumber, "", "", errorCollection)
 
-                importModeText = "fully replaced"
+            resultOfSpools = CSVExportImporter.parseCSV(path, updateParsingStatus, errorCollection, logger)
 
-            # - insert all printjobs in database
-            currentSpoolNumber = 0
-            for spool in resultOfSpools:
-                currentSpoolNumber = currentSpoolNumber + 1
-                updateParsingStatus(currentSpoolNumber)
+            if (len(errorCollection) != 0):
+                successMessage = "Some error(s) occurs during parsing! No spools imported!"
+                # importStatus, currenLineNumber, backupFilePath,  successMessages, errorCollection
+                sendCSVUploadStatusToClient("finished", "", "", successMessage, errorCollection)
+                return
 
-                remainingWeight = Transformer.calculateRemainingWeight(spool.usedWeight, spool.totalWeight)
-                if (remainingWeight != None):
-                    spool.remainingWeight = remainingWeight
-                    # spool.save()
+            importModeText = "append"
+            backupDatabaseFilePath = None
+            if (len(resultOfSpools) > 0):
+                # we could import some jobs
 
-                spool.isActive = True
+                # - backup
+                backupDatabaseFilePath = databaseManager.backupDatabaseFile()
 
-                databaseManager.saveSpool(spool)
-            pass
-        else:
-            errorCollection.append("Nothing to import!")
+                # - import mode append/replace
+                if (SettingsKeys.KEY_IMPORTCSV_MODE_REPLACE == importCSVMode):
+                    # delete old database and init a clean database
+                    databaseManager.reCreateDatabase()
+                    # reset selected spool
+                    self._resetSelectedSpools()
 
-        successMessage = ""
-        if (len(errorCollection) == 0):
-            successMessage = "All data is successful " + importModeText + " with " + str(len(resultOfSpools)) + " spools."
-        else:
-            successMessage = "Some error(s) occurs! Maybe you need to manually rollback the database!"
-        logger.info(successMessage)
-        sendCSVUploadStatusToClient("finished", "", backupDatabaseFilePath,  successMessage, errorCollection)
+                    importModeText = "fully replaced"
+
+                # - insert all printjobs in database
+                currentSpoolNumber = 0
+                for spool in resultOfSpools:
+                    currentSpoolNumber = currentSpoolNumber + 1
+                    updateParsingStatus(currentSpoolNumber)
+
+                    remainingWeight = Transformer.calculateRemainingWeight(spool.usedWeight, spool.totalWeight)
+                    if (remainingWeight != None):
+                        spool.remainingWeight = remainingWeight
+                        # spool.save()
+
+                    spool.isActive = True
+
+                    databaseManager.saveSpool(spool)
+                pass
+            else:
+                errorCollection.append("Nothing to import!")
+
+            successMessage = ""
+            if (len(errorCollection) == 0):
+                successMessage = "All data is successful " + importModeText + " with " + str(len(resultOfSpools)) + " spools."
+            else:
+                successMessage = "Some error(s) occurs! Maybe you need to manually rollback the database!"
+            logger.info(successMessage)
+            sendCSVUploadStatusToClient("finished", "", backupDatabaseFilePath,  successMessage, errorCollection)
+        finally:
+            databaseManager.assignNewDatabaseSettings(backupDatabaseSettings)
         pass
 
     def _buildDatabaseSettingsFromJson(self, jsonData):
@@ -1094,7 +1102,10 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
             self._databaseManager.assignNewDatabaseSettings(databaseSettings)
 
-            allSpoolModels = self._databaseManager.loadAllSpoolsByQuery(None)
+            # Materialize the lazy peewee query with list(...) BEFORE restoring the database
+            # settings - otherwise transform2CSV would iterate (and run the SQL) after the
+            # restore, i.e. against the wrong (restored) database.
+            allSpoolModels = list(self._databaseManager.loadAllSpoolsByQuery(None))
 
             self._databaseManager.assignNewDatabaseSettings(backupDatabaseSettings)
 

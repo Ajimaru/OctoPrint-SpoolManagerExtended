@@ -1,5 +1,6 @@
 # coding=utf-8
 
+import copy
 import datetime
 import json
 import os
@@ -660,7 +661,15 @@ class DatabaseManager(object):
         self._databaseSettings = databaseSettings
 
     def getDatabaseSettings(self):
-        return self._databaseSettings
+        # Return a shallow COPY, not the live object. Callers that temporarily switch the
+        # database (backup -> mutate useExternal -> restore) would otherwise mutate the active
+        # settings in place: a second getDatabaseSettings() call yields the SAME object, so the
+        # "backup" is already modified and restoring it is a no-op. The active DB then stays
+        # switched (e.g. to the outdated internal SQLite) until the next OctoPrint restart.
+        # DatabaseSettings holds only flat attributes, so copy.copy is sufficient.
+        if (self._databaseSettings is None):
+            return None
+        return copy.copy(self._databaseSettings)
 
     def testDatabaseConnection(self, databaseSettings = None):
         result = None
