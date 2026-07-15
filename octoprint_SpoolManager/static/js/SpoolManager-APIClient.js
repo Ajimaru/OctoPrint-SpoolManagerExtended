@@ -37,6 +37,33 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
         return _addApiKeyIfNecessary("./plugin/" + this.pluginId + "/exportSpools/" + exportType + "?instance=" + databaseInUse);
     }
 
+    this.getInventoryReportUrl = function(tableQuery, databaseInUse, reportFormat){
+        var params = ["instance=" + encodeURIComponent(databaseInUse)];
+        params.push("format=" + encodeURIComponent(reportFormat || "pdf"));
+        if (tableQuery){
+            var passThrough = ["sortColumn", "sortOrder", "filterName", "textFilter"];
+            passThrough.forEach(function(key){
+                if (tableQuery[key] != null){
+                    params.push(key + "=" + encodeURIComponent(tableQuery[key]));
+                }
+            });
+            // Array filters (materialFilter/vendorFilter/colorFilter) are joined by comma,
+            // matching how the backend reads them via flask.request.values.
+            // Always send all three: the backend accesses them together and would
+            // KeyError if only some are present (see _applyTableQueryFilters).
+            ["materialFilter", "vendorFilter", "colorFilter"].forEach(function(key){
+                var value = tableQuery[key];
+                if (value == null){
+                    value = "all";
+                } else if (Array.isArray(value)){
+                    value = value.join(",");
+                }
+                params.push(key + "=" + encodeURIComponent(value));
+            });
+        }
+        return _addApiKeyIfNecessary("./plugin/" + this.pluginId + "/exportInventoryReport?" + params.join("&"));
+    }
+
     this.getSampleCSVUrl = function(){
         return _addApiKeyIfNecessary("./plugin/" + this.pluginId + "/sampleCSV");
     }

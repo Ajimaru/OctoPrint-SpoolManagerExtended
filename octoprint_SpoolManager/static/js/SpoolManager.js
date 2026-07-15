@@ -978,6 +978,14 @@ $(function() {
             self.spoolDialog.showDialog(null, closeDialogHandler);
         }
 
+        // Downloads an inventory report (pdf/csv/xlsx) honoring the current tab filter/sort state.
+        self.generateInventoryReport = function(reportFormat){
+            var tableQuery = self.spoolItemTableHelper.buildTableQuery();
+            var instance = self.databaseInUse().toLowerCase();
+            var reportUrl = self.apiClient.getInventoryReportUrl(tableQuery, instance, reportFormat || "pdf");
+            window.open(reportUrl, "_newTab");
+        }
+
         var TableAttributeVisibility = function (){
             this.databaseId = ko.observable(false);
             this.displayName = ko.observable(true);

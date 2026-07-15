@@ -66,9 +66,10 @@ function TableItemHelper(loadItemsFunction, defaultPageSize, defaultSortColumn, 
         // return selectedItems;
     }
 
-    self._loadItems = function(){
+    // Builds the query object describing the current sort/filter state.
+    // Reused by the table loader and by external consumers (e.g. inventory report export).
+    self.buildTableQuery = function(){
         var from = Math.max(self.currentPage() * self.pageSize(), 0);
-//        var to = Math.min(from + self.pageSize(), self.totalItemCount());
         var to = self.pageSize();
         if (to == 0){
             to = self.pageSize();
@@ -84,19 +85,22 @@ function TableItemHelper(loadItemsFunction, defaultPageSize, defaultSortColumn, 
             selectedFilterNamesString = selectedFilterNames.sort().join();
         }
 
-        var tableQuery = {
+        return {
             "selectedPageSize": self.selectedPageSize(),
             "from": from,
             "to": to,
             "sortColumn": self.sortColumn(),
             "sortOrder": self.sortOrder(),
-            // "filterName": self.selectedFilterName(),
             "filterName": selectedFilterNamesString,
             "materialFilter": materialFilter,
             "vendorFilter": vendorFilter,
             "colorFilter": colorFilter,
             "textFilter": self.filterTextQuery()
         };
+    }
+
+    self._loadItems = function(){
+        var tableQuery = self.buildTableQuery();
         self.loadItemsFunction( tableQuery, self.items, self.totalItemCount );
     }
 
