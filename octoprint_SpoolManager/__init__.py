@@ -1056,7 +1056,7 @@ class SpoolmanagerPlugin(
         settings[SettingsKeys.SETTINGS_KEY_MQTT_ENABLED] = False
         settings[SettingsKeys.SETTINGS_KEY_MQTT_DISCOVERY_ENABLED] = True
         settings[SettingsKeys.SETTINGS_KEY_MQTT_DISCOVERY_PREFIX] = "homeassistant"
-        settings[SettingsKeys.SETTINGS_KEY_MQTT_TOPIC_BASE] = "octoPrint/plugin/SpoolManager"
+        settings[SettingsKeys.SETTINGS_KEY_MQTT_TOPIC_BASE] = "octoprint/plugin/SpoolManager"
         # instance-name default stays empty here, because this runs during plugin-init before
         # self._settings is injected; the effective default is filled in on_settings_load
         settings[SettingsKeys.SETTINGS_KEY_MQTT_INSTANCE_NAME] = ""

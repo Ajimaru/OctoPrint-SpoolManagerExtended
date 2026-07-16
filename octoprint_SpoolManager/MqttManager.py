@@ -74,7 +74,7 @@ class MqttManager(object):
 
 	def _getTopicBase(self):
 		base = self._plugin._settings.get([SettingsKeys.SETTINGS_KEY_MQTT_TOPIC_BASE])
-		return (base or "octoPrint/plugin/SpoolManager").strip().strip("/")
+		return (base or "octoprint/plugin/SpoolManager").strip().strip("/")
 
 	@staticmethod
 	def _slugify(value):
