@@ -6,6 +6,7 @@ import os
 import octoprint.plugin
 import datetime
 import flask
+from octoprint.server.util.flask import no_firstrun_access
 from flask import jsonify, request, make_response, Response, send_file, abort
 import json
 import shutil
@@ -414,6 +415,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
     ##############################################################################################   ALLOWED TO PRINT
     @octoprint.plugin.BlueprintPlugin.route("/allowedToPrint", methods=["GET"])
+    @no_firstrun_access
     def allowed_to_print(self):
 
         checkForSelectedSpool = self._settings.get_boolean([SettingsKeys.SETTINGS_KEY_WARN_IF_SPOOL_NOT_SELECTED])
@@ -534,6 +536,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
     #############################################################################################  START PRINT CONFIRMED
     @octoprint.plugin.BlueprintPlugin.route("/startPrintConfirmed", methods=["GET"])
+    @no_firstrun_access
     def start_print_confirmed(self):
         spoolModels = self.loadSelectedSpools()
         printer_profile = self._printer_profile_manager.get_current_or_default()
@@ -556,6 +559,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
     #####################################################################################################   SELECT SPOOL
     @octoprint.plugin.BlueprintPlugin.route("/selectSpool", methods=["PUT"])
+    @no_firstrun_access
     def select_spool(self):
         jsonData = request.json
 
@@ -592,7 +596,6 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
     #####################################################################################################   SELECT SPOOL BY QR
 
-    from octoprint.server.util.flask import no_firstrun_access, restricted_access
     @octoprint.plugin.BlueprintPlugin.route("/selectSpoolByQRCode/<string:databaseId>", methods=["GET"])
     @no_firstrun_access
     def selectSpoolByQRCode(self, databaseId):
@@ -787,6 +790,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     ######################################################################################   UPLOAD CSV FILE (in Thread)
 
     @octoprint.plugin.BlueprintPlugin.route("/importCSV", methods=["POST"])
+    @no_firstrun_access
     def importSpoolData(self):
 
         input_name = "file"
@@ -922,6 +926,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
     #######################################################################################   DOWNLOAD DATABASE-FILE
     @octoprint.plugin.BlueprintPlugin.route("/downloadDatabase", methods=["GET"])
+    @no_firstrun_access
     def downloadDatabase(self):
         return send_file(self._databaseManager.getDatabaseSettings().fileLocation,
                          mimetype='application/octet-stream',
@@ -933,6 +938,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     # downloads the file via /downloadDatabaseBackup, and only then triggers the scheme upgrade
     # (mirrors the external "download dump first, abort on failure" behaviour)
     @octoprint.plugin.BlueprintPlugin.route("/createDatabaseBackup", methods=["PUT"])
+    @no_firstrun_access
     def createDatabaseBackup(self):
         backupResult = self._databaseManager.createLocalDatabaseBackup()
         if (backupResult["success"] == False):
@@ -944,6 +950,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     #######################################################################################   DOWNLOAD LOCAL DB BACKUP
     # serves the .db backup file created by /createDatabaseBackup (in the plugin data folder)
     @octoprint.plugin.BlueprintPlugin.route("/downloadDatabaseBackup", methods=["GET"])
+    @no_firstrun_access
     def downloadDatabaseBackup(self):
         backupFileName = flask.request.args.get("fileName")
         if (backupFileName == None or backupFileName == ""):
@@ -976,6 +983,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     # The mandatory backup (.db / .sql) must succeed; the additional .csv is best-effort and does
     # not block the import if it fails.
     @octoprint.plugin.BlueprintPlugin.route("/createImportBackup", methods=["PUT"])
+    @no_firstrun_access
     def createImportBackup(self):
         databaseSettings = self._databaseManager.getDatabaseSettings()
         if (databaseSettings == None):
@@ -1049,6 +1057,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                "mysql" == databaseSettings.type
 
     @octoprint.plugin.BlueprintPlugin.route("/exportDatabaseDump", methods=["GET"])
+    @no_firstrun_access
     def exportDatabaseDump(self):
 
         if (self._isExternalMySQLConfigured() == False):
@@ -1067,6 +1076,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                         headers={'Content-Disposition': 'attachment; filename=' + fileName})
 
     @octoprint.plugin.BlueprintPlugin.route("/importDatabaseDump", methods=["POST"])
+    @no_firstrun_access
     def importDatabaseDump(self):
 
         if (self._isExternalMySQLConfigured() == False):
@@ -1109,6 +1119,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     # append = insert the uploaded spools). Only available for the internal SQLite database.
     # The frontend creates+downloads the pre-import backup first (createImportBackup).
     @octoprint.plugin.BlueprintPlugin.route("/importDatabaseFile", methods=["POST"])
+    @no_firstrun_access
     def importDatabaseFile(self):
 
         databaseSettings = self._databaseManager.getDatabaseSettings()
@@ -1143,6 +1154,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
     #######################################################################################   DELETE DATABASE
     @octoprint.plugin.BlueprintPlugin.route("/deleteDatabase/<string:databaseType>", methods=["POST"])
+    @no_firstrun_access
     def deleteDatabase(self, databaseType):
 
         databaseSettings = None
@@ -1160,6 +1172,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
     #######################################################################################   COPY DATABASE
     @octoprint.plugin.BlueprintPlugin.route("/copyDatabase", methods=["POST"])
+    @no_firstrun_access
     def copyDatabase(self):
         # metaDataResult = self._databaseManager.loadDatabaseMetaInformations(None)
 
@@ -1173,6 +1186,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
     #######################################################################################   LOAD DATABASE METADATA
     @octoprint.plugin.BlueprintPlugin.route("/loadDatabaseMetaData", methods=["GET"])
+    @no_firstrun_access
     def loadDatabaseMetaData(self):
 
         # databaseId = self._getValueFromJSONOrNone("databaseId", jsonData)
@@ -1184,6 +1198,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
     #######################################################################################   UPGRADE DATABASE SCHEME
     @octoprint.plugin.BlueprintPlugin.route("/upgradeDatabaseScheme", methods=["PUT"])
+    @no_firstrun_access
     def upgradeDatabaseScheme(self):
 
         jsonData = request.json if request.is_json else {}
@@ -1206,6 +1221,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
     #######################################################################################   TEST DATABASE CONNECTION
     @octoprint.plugin.BlueprintPlugin.route("/testDatabaseConnection", methods=["PUT"])
+    @no_firstrun_access
     def testDatabaseConnection(self):
 
         jsonData = request.json
@@ -1221,6 +1237,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
     ###############################################################################  CONFIRM DATABASE CONNECTION PROBLEM
     @octoprint.plugin.BlueprintPlugin.route("/confirmDatabaseProblemMessage", methods=["PUT"])
+    @no_firstrun_access
     def confirmDatabaseConnectionProblem(self):
 
         self.databaseConnectionProblemConfirmed = True
@@ -1232,6 +1249,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
     ###########################################################################################   EXPORT DATABASE as CSV
     @octoprint.plugin.BlueprintPlugin.route("/exportSpools/<string:exportType>", methods=["GET"])
+    @no_firstrun_access
     def exportSpoolsData(self, exportType):
 
         databaseSettings = self._databaseManager.getDatabaseSettings()
@@ -1287,6 +1305,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
     ###################################################################################   INVENTORY REPORT (PDF/CSV/XLSX)
     @octoprint.plugin.BlueprintPlugin.route("/exportInventoryReport", methods=["GET"])
+    @no_firstrun_access
     def exportInventoryReport(self):
         from octoprint_SpoolManager.common import InventoryReport
 
@@ -1331,6 +1350,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
     ##################################################################################################   LOAD ALL SPOOLS
     @octoprint.plugin.BlueprintPlugin.route("/loadSpoolsByQuery", methods=["GET"])
+    @no_firstrun_access
     def loadAllSpoolsByQuery(self):
 
         self._logger.debug("API Load all spool")
@@ -1523,6 +1543,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
     ##################################################################################################   NEXT SPOOL ID
     @octoprint.plugin.BlueprintPlugin.route("/nextSpoolId", methods=["GET"])
+    @no_firstrun_access
     def loadNextSpoolId(self):
         # prospective databaseId of the next created spool, used for the {id} display name variable preview
         maxDatabaseId = self._databaseManager.getMaxSpoolDatabaseId()
@@ -1559,6 +1580,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
     #######################################################################################################   SAVE SPOOL
     @octoprint.plugin.BlueprintPlugin.route("/saveSpool", methods=["PUT"])
+    @no_firstrun_access
     def saveSpool(self):
         self._logger.info("API Save spool")
         jsonData = request.json
@@ -1618,6 +1640,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
     #####################################################################################################   DELETE SPOOL
     @octoprint.plugin.BlueprintPlugin.route("/deleteSpool/<int:databaseId>", methods=["DELETE"])
+    @no_firstrun_access
     def deleteSpool(self, databaseId):
         self._logger.info("API Delete spool with database id '" + str(databaseId) + "'")
         databaseId = self._databaseManager.deleteSpool(databaseId)
