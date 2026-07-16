@@ -50,3 +50,11 @@ class SettingsKeys():
 	## Debugging
 	SETTINGS_KEY_SQL_LOGGING_ENABLED = "sqlLoggingEnabled"
 	SETTINGS_KEY_EXTRUSION_DEBUGGING_ENABLED = "extrusionDebuggingEnabled"
+
+	## MQTT (read-only publishing via the OctoPrint-MQTT plugin)
+	SETTINGS_KEY_MQTT_ENABLED = "mqttEnabled"
+	SETTINGS_KEY_MQTT_DISCOVERY_ENABLED = "mqttDiscoveryEnabled"
+	SETTINGS_KEY_MQTT_DISCOVERY_PREFIX = "mqttDiscoveryPrefix"
+	SETTINGS_KEY_MQTT_TOPIC_BASE = "mqttTopicBase"
+	SETTINGS_KEY_MQTT_INSTANCE_NAME = "mqttInstanceName"
+	SETTINGS_KEY_MQTT_RETAIN = "mqttRetain"
