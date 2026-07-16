@@ -1575,6 +1575,11 @@ class DatabaseManager(object):
                     myQuery = myQuery.order_by(fn.Lower(SpoolModel.displayName).desc())
                 else:
                     myQuery = myQuery.order_by(fn.Lower(SpoolModel.displayName).asc())
+            if ("databaseId" == sortColumn):
+                if ("desc" == sortOrder):
+                    myQuery = myQuery.order_by(SpoolModel.databaseId.desc())
+                else:
+                    myQuery = myQuery.order_by(SpoolModel.databaseId.asc())
             if ("lastUse" == sortColumn):
                 if ("desc" == sortOrder):
                     myQuery = myQuery.order_by(SpoolModel.lastUse.desc())
