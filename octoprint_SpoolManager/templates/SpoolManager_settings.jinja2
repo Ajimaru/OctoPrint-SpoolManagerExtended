@@ -9,6 +9,7 @@
             <li><a href="#tab-spool-Template" data-toggle="tab">Template</a></li>
             <li><a href="#tab-spool-Export-Import" data-toggle="tab">Export / Import</a></li>
             <li><a href="#tab-spool-Storage" data-toggle="tab">Storage</a></li>
+            <li><a href="#tab-spool-MQTT" data-toggle="tab">MQTT</a></li>
             <li><a href="#tab-spool-Debugging" data-toggle="tab">Debugging</a></li>
         </ul>
         <div class="tab-content">
@@ -726,6 +727,68 @@ FPE;	2.16
             </div>
 
             <!-- DEBUGGING - TAB -->
+            <!-- MQTT - TAB -->
+            <div class="tab-pane" id="tab-spool-MQTT">
+                <div class="alert alert-warning" data-bind="visible: !isMqttPluginAvailable()">
+                    The <a href="https://plugins.octoprint.org/plugins/mqtt/" target="_blank">OctoPrint-MQTT plugin</a> is not installed or not enabled. It is required for this feature.
+                </div>
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.mqttEnabled" > Publish spool information via MQTT
+                        </label>
+                        <span class="help-block">
+                            <small>Read-only: the selected spool per tool (name, material, color, remaining weight) is published to the MQTT broker
+                            configured in the OctoPrint-MQTT plugin. Spools can <strong>not</strong> be changed via MQTT.</small>
+                        </span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.mqttDiscoveryEnabled" > Home Assistant autodiscovery
+                        </label>
+                        <span class="help-block">
+                            <small>Publishes retained discovery configs, so the spool sensors appear automatically as a device in Home Assistant.</small>
+                        </span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Discovery prefix</label>
+                    <div class="controls">
+                        <input type="text" class="input-medium" data-bind="value: pluginSettings.mqttDiscoveryPrefix">
+                        <span class="help-inline">Default: <code>homeassistant</code></span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Topic base</label>
+                    <div class="controls">
+                        <input type="text" class="input-xlarge" data-bind="value: pluginSettings.mqttTopicBase">
+                        <span class="help-inline">Default: <code>octoPrint/plugin/SpoolManager</code></span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Instance name</label>
+                    <div class="controls">
+                        <input type="text" class="input-medium" data-bind="value: pluginSettings.mqttInstanceName">
+                        <span class="help-block">
+                            <small>Must be unique per OctoPrint instance when several instances share one broker.
+                            Defaults to the title from OctoPrint Settings &rarr; Appearance (hostname if not set).</small>
+                        </span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.mqttRetain" > Retain state messages
+                        </label>
+                        <span class="help-block">
+                            <small>Keeps the last spool state on the broker, so Home Assistant shows values right after a restart.</small>
+                        </span>
+                    </div>
+                </div>
+            </div>
+
             <div class="tab-pane" id="tab-spool-Debugging">
                 <div class="control-group">
                     <div class="controls">

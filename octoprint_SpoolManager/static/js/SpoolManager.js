@@ -715,6 +715,7 @@ $(function() {
         });
 
         self.isFilamentManagerPluginAvailable = ko.observable(false);
+        self.isMqttPluginAvailable = ko.observable(false);
 
         // - Import CSV
         self.csvFileUploadName = ko.observable();
@@ -1613,9 +1614,10 @@ $(function() {
         }
 
         self.onSettingsShown = function(){
-            if (self.isFilamentManagerPluginAvailable() == false){
+            if (self.isFilamentManagerPluginAvailable() == false || self.isMqttPluginAvailable() == false){
                 self.apiClient.callAdditionalSettings(function(responseData) {
                     self.isFilamentManagerPluginAvailable(responseData.isFilamentManagerPluginAvailable);
+                    self.isMqttPluginAvailable(responseData.isMqttPluginAvailable);
                 });
             }
         }

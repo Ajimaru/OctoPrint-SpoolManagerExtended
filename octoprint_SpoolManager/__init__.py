@@ -2,6 +2,7 @@
 
 import math
 import os
+import socket
 import time
 import zipfile
 import xml.etree.ElementTree as ET
@@ -12,6 +13,7 @@ from octoprint.events import Events
 from octoprint.filemanager.destinations import FileDestinations
 from octoprint.access.permissions import Permissions
 from octoprint_SpoolManager.DatabaseManager import DatabaseManager
+from octoprint_SpoolManager.MqttManager import MqttManager
 
 from octoprint_SpoolManager.newodometer import NewFilamentOdometer
 
@@ -68,6 +70,9 @@ class SpoolmanagerPlugin(
         self.metaDataFilamentLengths = []
 
         self.alreadyCanceled = False
+
+        # MQTT (read-only publishing, helper is acquired later in on_after_startup)
+        self._mqttManager = MqttManager(self, self._logger)
 
         self._logger.info("Done initializing")
         pass
@@ -174,6 +179,10 @@ class SpoolmanagerPlugin(
         eventName = "plugin_spoolmanager_" + eventKey
         self._logger.info("Send Event '"+eventName+"' with payload '"+str(eventPayload)+"' to event-bus")
         self._event_bus.fire(eventName, payload=eventPayload)
+
+        mqttManager = getattr(self, "_mqttManager", None)
+        if mqttManager is not None:
+            mqttManager.handleEvent(eventKey, eventPayload)
 
     def _checkForMissingPluginInfos(self, sendToClient=False):
 
@@ -850,6 +859,12 @@ class SpoolmanagerPlugin(
     def on_after_startup(self):
         # check if needed plugins were available
         self._checkForMissingPluginInfos()
+
+        # MQTT: acquire the OctoPrint-MQTT helper and publish the initial state
+        self._mqttManager.initialize()
+        if self._mqttManager.isOperational():
+            self._mqttManager.publishDiscovery()
+            self._mqttManager.publishAllStates()
         pass
 
     # Listen to all  g-code which where already sent to the printer (thread: comm.sending_thread)
@@ -913,6 +928,14 @@ class SpoolmanagerPlugin(
         oldBedOffsetEnabled = self._settings.get_boolean([SettingsKeys.SETTINGS_KEY_BED_OFFSET_ENABLED])
         oldEnclosureOffsetEnabled = self._settings.get_boolean([SettingsKeys.SETTINGS_KEY_ENCLOSURE_OFFSET_ENABLED])
 
+        # capture old MQTT identity, so retained topics can be cleared if it changes
+        oldMqttEnabled = self._settings.get_boolean([SettingsKeys.SETTINGS_KEY_MQTT_ENABLED])
+        oldMqttIdentity = (
+            self._settings.get([SettingsKeys.SETTINGS_KEY_MQTT_DISCOVERY_PREFIX]),
+            self._settings.get([SettingsKeys.SETTINGS_KEY_MQTT_TOPIC_BASE]),
+            self._settings.get([SettingsKeys.SETTINGS_KEY_MQTT_INSTANCE_NAME]),
+        )
+
         # # default save function
         octoprint.plugin.SettingsPlugin.on_settings_save(self, data)
 
@@ -944,6 +967,19 @@ class SpoolmanagerPlugin(
             if selectedSpool is not None:
                 self.set_temp_offsets(toolIndex, selectedSpool)
 
+        # MQTT: clear retained topics on disable or identity change, republish when enabled
+        newMqttEnabled = self._settings.get_boolean([SettingsKeys.SETTINGS_KEY_MQTT_ENABLED])
+        newMqttIdentity = (
+            self._settings.get([SettingsKeys.SETTINGS_KEY_MQTT_DISCOVERY_PREFIX]),
+            self._settings.get([SettingsKeys.SETTINGS_KEY_MQTT_TOPIC_BASE]),
+            self._settings.get([SettingsKeys.SETTINGS_KEY_MQTT_INSTANCE_NAME]),
+        )
+        if (oldMqttEnabled and not newMqttEnabled) or (oldMqttEnabled and oldMqttIdentity != newMqttIdentity):
+            self._mqttManager.clearRetainedTopics()
+        if newMqttEnabled:
+            self._mqttManager.publishDiscovery()
+            self._mqttManager.publishAllStates()
+
         # In case we are switching between internal and external storage
         databaseSettings = self._buildDatabaseSettingsFromPluginSettings()
         self._databaseManager.assignNewDatabaseSettings(databaseSettings)
@@ -971,7 +1007,8 @@ class SpoolmanagerPlugin(
             # because of some race conditions, we can't push the initialDate during client-open event. So we provide the settings on request
             if "additionalSettingsValues" == action:
                 return flask.jsonify({
-                    "isFilamentManagerPluginAvailable": self._filamentManagerPluginImplementation is not None
+                    "isFilamentManagerPluginAvailable": self._filamentManagerPluginImplementation is not None,
+                    "isMqttPluginAvailable": self._mqttManager.isMqttPluginAvailable()
                 })
 
     ##~~ SettingsPlugin mixin
@@ -1015,6 +1052,16 @@ class SpoolmanagerPlugin(
         settings[SettingsKeys.SETTINGS_KEY_SQL_LOGGING_ENABLED] = False
         settings[SettingsKeys.SETTINGS_KEY_EXTRUSION_DEBUGGING_ENABLED] = False
 
+        ## MQTT (read-only publishing via the OctoPrint-MQTT plugin)
+        settings[SettingsKeys.SETTINGS_KEY_MQTT_ENABLED] = False
+        settings[SettingsKeys.SETTINGS_KEY_MQTT_DISCOVERY_ENABLED] = True
+        settings[SettingsKeys.SETTINGS_KEY_MQTT_DISCOVERY_PREFIX] = "homeassistant"
+        settings[SettingsKeys.SETTINGS_KEY_MQTT_TOPIC_BASE] = "octoPrint/plugin/SpoolManager"
+        # instance-name default stays empty here, because this runs during plugin-init before
+        # self._settings is injected; the effective default is filled in on_settings_load
+        settings[SettingsKeys.SETTINGS_KEY_MQTT_INSTANCE_NAME] = ""
+        settings[SettingsKeys.SETTINGS_KEY_MQTT_RETAIN] = True
+
         ## Database
         ## nested settings are not working, because if only a few attributes are changed it only returns these few attributes, instead the default values + adjusted values
         settings[SettingsKeys.SETTINGS_KEY_DATABASE_USE_EXTERNAL] = False
@@ -1039,6 +1086,20 @@ class SpoolmanagerPlugin(
 
         settings["excludedFromTemplateCopy"] = []
         return settings
+
+    def _getDefaultMqttInstanceName(self):
+        # the title from OctoPrint Settings -> Appearance, hostname as fallback
+        instanceName = self._settings.global_get(["appearance", "name"])
+        if instanceName is None or not instanceName.strip():
+            instanceName = socket.gethostname()
+        return instanceName
+
+    def on_settings_load(self):
+        data = octoprint.plugin.SettingsPlugin.on_settings_load(self)
+        # prefill the MQTT instance name shown in the settings dialog
+        if not (data.get(SettingsKeys.SETTINGS_KEY_MQTT_INSTANCE_NAME) or "").strip():
+            data[SettingsKeys.SETTINGS_KEY_MQTT_INSTANCE_NAME] = self._getDefaultMqttInstanceName()
+        return data
 
     ##~~ TemplatePlugin mixin
     def get_template_configs(self):
