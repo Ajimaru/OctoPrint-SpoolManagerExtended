@@ -1325,20 +1325,24 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # request/DB context is still valid, so the formatters get a plain list.
         allSpoolModels = list(self._databaseManager.loadAllSpoolsByQuery(tableQuery))
 
+        databaseSettings = self._databaseManager.getDatabaseSettings()
+        instanceName = self._settings.global_get(["appearance", "name"])
+        dbContextInfo = InventoryReport.build_database_context_info(databaseSettings, instanceName)
+
         now = datetime.datetime.now()
         currentDate = now.strftime("%Y%m%d-%H%M")
         baseName = "SpoolManager-Inventory-" + currentDate
 
         if (reportFormat == "csv"):
-            payload = InventoryReport.build_inventory_report_csv(allSpoolModels)
+            payload = InventoryReport.build_inventory_report_csv(allSpoolModels, dbContextInfo)
             mimetype = 'text/csv'
             fileName = baseName + ".csv"
         elif (reportFormat == "xlsx"):
-            payload = InventoryReport.build_inventory_report_xlsx(allSpoolModels).getvalue()
+            payload = InventoryReport.build_inventory_report_xlsx(allSpoolModels, dbContextInfo).getvalue()
             mimetype = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
             fileName = baseName + ".xlsx"
         else:
-            payload = InventoryReport.build_inventory_report_pdf(allSpoolModels).getvalue()
+            payload = InventoryReport.build_inventory_report_pdf(allSpoolModels, dbContextInfo).getvalue()
             mimetype = 'application/pdf'
             fileName = baseName + ".pdf"
 
