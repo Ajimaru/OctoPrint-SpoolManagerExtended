@@ -41,7 +41,19 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     # Human readable labels for validation error messages, keyed by JSON field name
     _FIELD_LABELS = {
         "displayName": "Displayname",
+        "vendor": "Vendor",
+        "material": "Material",
         "colorName": "Color",
+        "color": "Color code",
+        "finish": "Finish",
+        "code": "Code",
+        "batchNumber": "Batch number",
+        "purchasedFrom": "Purchased from",
+        "costUnit": "Cost unit",
+        "noteText": "Note",
+        "noteHtml": "Note",
+        "labels": "Labels",
+        "noteDeltaFormat": "Note",
         "density": "Density",
         "diameter": "Diameter",
         "diameterTolerance": "Diameter tolerance",
@@ -74,19 +86,19 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         spoolModel.version = self._toIntFromJSONOrNone("version", jsonData, validationErrors)
         # if statement is needed because assigning None is alos detected as an dirtyField
         if (self._getValueFromJSONOrNone("databaseId", jsonData) != None):
-            spoolModel.databaseId = self._getValueFromJSONOrNone("databaseId", jsonData)
+            spoolModel.databaseId = self._toIntFromJSONOrNone("databaseId", jsonData, validationErrors, minValue=1)
 
         spoolModel.isTemplate = self._getValueFromJSONOrNone("isTemplate", jsonData)
         spoolModel.isActive = self._getValueFromJSONOrNone("isActive", jsonData)
-        spoolModel.displayName = self._getValueFromJSONOrNone("displayName", jsonData)
-        spoolModel.vendor = self._getValueFromJSONOrNone("vendor", jsonData)
-        spoolModel.material = self._getValueFromJSONOrNone("material", jsonData)
+        spoolModel.displayName = self._toStringFromJSONOrNone("displayName", jsonData, validationErrors)
+        spoolModel.vendor = self._toStringFromJSONOrNone("vendor", jsonData, validationErrors)
+        spoolModel.material = self._toStringFromJSONOrNone("material", jsonData, validationErrors)
         spoolModel.density = self._toFloatFromJSONOrNone("density", jsonData, validationErrors, minValue=0)
         spoolModel.diameter = self._toFloatFromJSONOrNone("diameter", jsonData, validationErrors, minValue=0)
         spoolModel.diameterTolerance = self._toFloatFromJSONOrNone("diameterTolerance", jsonData, validationErrors, minValue=0)
-        spoolModel.colorName = self._getValueFromJSONOrNone("colorName", jsonData)
-        spoolModel.color = self._getValueFromJSONOrNone("color", jsonData)
-        spoolModel.finish = self._getValueFromJSONOrNone("finish", jsonData)
+        spoolModel.colorName = self._toStringFromJSONOrNone("colorName", jsonData, validationErrors)
+        spoolModel.color = self._toStringFromJSONOrNone("color", jsonData, validationErrors)
+        spoolModel.finish = self._toStringFromJSONOrNone("finish", jsonData, validationErrors)
         spoolModel.flowRateCompensation = self._toIntFromJSONOrNone("flowRateCompensation", jsonData, validationErrors, minValue=0)
         spoolModel.temperature = self._toIntFromJSONOrNone("temperature", jsonData, validationErrors, minValue=0)
         spoolModel.bedTemperature = self._toIntFromJSONOrNone("bedTemperature", jsonData, validationErrors, minValue=0)
@@ -100,8 +112,8 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         spoolModel.totalLength = self._toIntFromJSONOrNone("totalLength", jsonData, validationErrors, minValue=0)
         spoolModel.usedLength = self._toIntFromJSONOrNone("usedLength", jsonData, validationErrors, minValue=0)
         spoolModel.usedWeight = self._toFloatFromJSONOrNone("usedWeight", jsonData, validationErrors, minValue=0)
-        spoolModel.code = self._getValueFromJSONOrNone("code", jsonData)
-        spoolModel.batchNumber = self._getValueFromJSONOrNone("batchNumber", jsonData)
+        spoolModel.code = self._toStringFromJSONOrNone("code", jsonData, validationErrors)
+        spoolModel.batchNumber = self._toStringFromJSONOrNone("batchNumber", jsonData, validationErrors)
 
         # spoolModel.firstUse = StringUtils.transformToDateTimeOrNone(self._getValueFromJSONOrNone("firstUse", jsonData))
         # spoolModel.lastUse = StringUtils.transformToDateTimeOrNone(self._getValueFromJSONOrNone("lastUse", jsonData))
@@ -110,15 +122,24 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         spoolModel.lastUse = self._toDateTimeFromJSONOrNone("lastUseKO", jsonData, validationErrors)
         spoolModel.purchasedOn = self._toDateTimeFromJSONOrNone("purchasedOnKO", jsonData, validationErrors)
 
-        spoolModel.purchasedFrom = self._getValueFromJSONOrNone("purchasedFrom", jsonData)
+        spoolModel.purchasedFrom = self._toStringFromJSONOrNone("purchasedFrom", jsonData, validationErrors)
         spoolModel.cost = self._toFloatFromJSONOrNone("cost", jsonData, validationErrors, minValue=0)
-        spoolModel.costUnit = self._getValueFromJSONOrNone("costUnit", jsonData)
+        spoolModel.costUnit = self._toStringFromJSONOrNone("costUnit", jsonData, validationErrors)
 
-        spoolModel.labels = json.dumps(self._getValueFromJSONOrNone("labels", jsonData))
+        # TextField payloads: sanity cap at the MySQL TEXT limit so all backends behave the same
+        maxTextLength = 65535
 
-        spoolModel.noteText = self._getValueFromJSONOrNone("noteText", jsonData)
-        spoolModel.noteDeltaFormat = json.dumps(self._getValueFromJSONOrNone("noteDeltaFormat", jsonData))
-        spoolModel.noteHtml = self._getValueFromJSONOrNone("noteHtml", jsonData)
+        labelsJson = json.dumps(self._getValueFromJSONOrNone("labels", jsonData))
+        if (len(labelsJson) > maxTextLength):
+            validationErrors.append(self._fieldLabel("labels") + " must not be longer than " + str(maxTextLength) + " characters")
+        spoolModel.labels = labelsJson
+
+        spoolModel.noteText = self._toStringFromJSONOrNone("noteText", jsonData, validationErrors, maxLength=maxTextLength)
+        noteDeltaFormatJson = json.dumps(self._getValueFromJSONOrNone("noteDeltaFormat", jsonData))
+        if (len(noteDeltaFormatJson) > maxTextLength):
+            validationErrors.append(self._fieldLabel("noteDeltaFormat") + " must not be longer than " + str(maxTextLength) + " characters")
+        spoolModel.noteDeltaFormat = noteDeltaFormatJson
+        spoolModel.noteHtml = self._toStringFromJSONOrNone("noteHtml", jsonData, validationErrors, maxLength=maxTextLength)
 
         # required-field checks (mirrors the client-side rules so a direct API call cannot bypass them),
         # but only for real spools - templates are allowed to be incomplete
@@ -135,6 +156,17 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         if key in json:
             return json[key]
         return None
+
+    def _toStringFromJSONOrNone(self, key, json, validationErrors=None, maxLength=255):
+        # defense-in-depth: rejects oversized strings before they reach the database layer
+        value = self._getValueFromJSONOrNone(key, json)
+        if (value == None):
+            return None
+        if (isinstance(value, str) == False):
+            value = str(value)
+        if (maxLength != None and len(value) > maxLength and validationErrors is not None):
+            validationErrors.append(self._fieldLabel(key) + " must not be longer than " + str(maxLength) + " characters")
+        return value
 
     def _toFloatFromJSONOrNone(self, key, json, validationErrors=None, minValue=None):
         value = self._getValueFromJSONOrNone(key, json)
@@ -1531,9 +1563,15 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         self._logger.info("API Save spool")
         jsonData = request.json
 
-        databaseId = self._getValueFromJSONOrNone("databaseId", jsonData)
-        self._databaseManager.connectoToDatabase()
         validationErrors = []
+        databaseId = None
+        if (self._getValueFromJSONOrNone("databaseId", jsonData) != None):
+            databaseId = self._toIntFromJSONOrNone("databaseId", jsonData, validationErrors, minValue=1)
+            if (validationErrors):
+                # reject a non-numeric id before it reaches the database layer
+                self._logger.warning("Save spool rejected, validation errors: " + str(validationErrors))
+                return make_response(jsonify({"validationErrors": validationErrors}), 400)
+        self._databaseManager.connectoToDatabase()
         if (databaseId != None):
             self._logger.info("Load spool for update with database id '"+str(databaseId)+"'")
             spoolModel = self._databaseManager.loadSpool(databaseId, withReusedConnection=True)
