@@ -1008,16 +1008,25 @@ class DatabaseManager(object):
         return result
 
     ######################################################################################### MYSQL DUMP EXPORT / IMPORT
-    # The dump format is self-generated and validated on import:
+    # The dump format is self-generated and fully parsed on import:
     # - first line is SQL_DUMP_MARKER
     # - one INSERT per row on a single line (pymysql escaping produces no literal newlines)
     # - databaseId is always the first column (append-import relies on it)
+    # Dump content is NEVER executed as SQL text: DDL statements are only recognized and skipped
+    # (peewee drops/creates the tables), INSERT rows are parsed into plain values and re-inserted
+    # with parameterized queries.
     SQL_DUMP_MARKER = "-- SpoolManager MySQL dump"
 
     def _isExternalMySQL(self):
         return self._databaseSettings != None and \
                self._databaseSettings.useExternal == True and \
                "mysql" == self._databaseSettings.type
+
+    def _assertSafeSQLIdentifier(self, identifier):
+        # last line of defense before an identifier is concatenated into raw SQL
+        if (re.match(r"^[A-Za-z0-9_]+$", str(identifier)) == None):
+            raise ValueError("Unsafe SQL identifier: '" + str(identifier) + "'")
+        return identifier
 
     # builds the dump text, requires an already open MySQL connection (caller handles connect/close)
     def _generateMySQLDumpText(self):
@@ -1054,7 +1063,7 @@ class DatabaseManager(object):
         ]
 
         for model in MODELS:
-            tableName = model._meta.table_name
+            tableName = self._assertSafeSQLIdentifier(model._meta.table_name)
 
             dumpLines.append("DROP TABLE IF EXISTS `" + tableName + "`;")
 
@@ -1064,7 +1073,7 @@ class DatabaseManager(object):
             dumpLines.append("")
 
             cursor = self._database.execute_sql("SHOW COLUMNS FROM `" + tableName + "`")
-            columnNames = [column[0] for column in cursor.fetchall()]
+            columnNames = [self._assertSafeSQLIdentifier(column[0]) for column in cursor.fetchall()]
             # make sure databaseId is the first column, the append-import relies on it
             if ("databaseId" in columnNames):
                 columnNames.remove("databaseId")
@@ -1289,16 +1298,20 @@ class DatabaseManager(object):
             result["errorMessage"] = "Dump file contains no SQL statements."
             return result
 
-        # - validate all statements against the whitelist before executing anything
-        allowedTableNames = [model._meta.table_name for model in MODELS]
+        # - parse and validate ALL statements before touching the database.
+        #   DDL statements (DROP/CREATE) and SET NAMES are only recognized and skipped,
+        #   INSERTs must fully parse into plain value literals - anything else aborts the import.
+        allowedModelsByTableName = {model._meta.table_name: model for model in MODELS}
+        parsedInsertRows = []  # entries: (model, columnNames, values)
         for index, statement in enumerate(statements):
-            if (self._isAllowedDumpStatement(statement, allowedTableNames) == False):
-                result["errorMessage"] = "Statement #" + str(index + 1) + " is not allowed. " \
+            if (self._isIgnoredDumpStatement(statement, allowedModelsByTableName) == True):
+                continue
+            parsedInsert = self._parseInsertDumpStatement(statement, allowedModelsByTableName)
+            if (parsedInsert == None):
+                result["errorMessage"] = "Statement #" + str(index + 1) + " is not allowed or malformed. " \
                                          "Only SET NAMES, DROP/CREATE/INSERT for the SpoolManager tables are accepted."
                 return result
-
-        spoolTableName = SpoolModel._meta.table_name
-        spoolInsertPrefix = "INSERT INTO `" + spoolTableName + "` ("
+            parsedInsertRows.append(parsedInsert)
 
         try:
             connected = self.connectoToDatabase(sendErrorPopUp=False)
@@ -1310,39 +1323,50 @@ class DatabaseManager(object):
                 return result
 
             if ("replace" == importMode):
-                # DROP/CREATE force implicit commits in MySQL, so no single wrapping transaction is possible
-                for index, statement in enumerate(statements):
-                    try:
-                        self._database.execute_sql(statement)
-                        result["executedStatementCount"] = result["executedStatementCount"] + 1
-                        if (statement.startswith(spoolInsertPrefix)):
-                            result["importedSpoolCount"] = result["importedSpoolCount"] + 1
-                    except Exception as e:
-                        # only the statement number is logged, INSERT contents could include user data
-                        self._logger.exception("importMySQLDatabaseDump: statement #" + str(index + 1) + " failed")
-                        result["errorMessage"] = "Statement #" + str(index + 1) + " failed: " + str(e) + \
-                                                 ". The database might be partially restored. " \
-                                                 "Use 'ReCreate Database' and import again."
-                        return result
+                # DROP/CREATE force implicit commits in MySQL, but they are peewee-generated now;
+                # all row inserts afterwards run in one transaction
+                self._database.drop_tables(MODELS)
+                self._database.create_tables(MODELS)
+                try:
+                    with self._database.atomic():
+                        # group the rows per model + column signature for insert_many
+                        groupedRows = {}
+                        for model, columnNames, values in parsedInsertRows:
+                            groupedRows.setdefault((model, tuple(columnNames)), []).append(values)
+                        for (model, columnNames), rows in groupedRows.items():
+                            fields = [model._meta.columns[columnName] for columnName in columnNames]
+                            for rowChunk in chunked(rows, 100):
+                                model.insert_many(rowChunk, fields=fields).execute()
+                            result["executedStatementCount"] = result["executedStatementCount"] + len(rows)
+                            if (model == SpoolModel):
+                                result["importedSpoolCount"] = result["importedSpoolCount"] + len(rows)
+                        # safety net: the dump should contain the scheme-version row, recreate it if missing
+                        schemeVersionQuery = PluginMetaDataModel.select().where(
+                            PluginMetaDataModel.key == PluginMetaDataModel.KEY_DATABASE_SCHEME_VERSION)
+                        if (schemeVersionQuery.count() == 0):
+                            PluginMetaDataModel.create(key=PluginMetaDataModel.KEY_DATABASE_SCHEME_VERSION,
+                                                       value=CURRENT_DATABASE_SCHEME_VERSION)
+                except Exception as e:
+                    # only counts are logged, row contents could include user data
+                    self._logger.exception("importMySQLDatabaseDump: row import failed")
+                    result["errorMessage"] = "Row import failed: " + str(e) + \
+                                             ". The database might be partially restored. " \
+                                             "Use 'ReCreate Database' and import again."
+                    return result
             else:
-                # append: only spool-INSERTs, without databaseId so that new ids are generated
-                insertStatements = []
-                for statement in statements:
-                    if (statement.startswith(spoolInsertPrefix)):
-                        rewrittenStatement = self._stripDatabaseIdFromInsertStatement(statement)
-                        if (rewrittenStatement == None):
-                            result["errorMessage"] = "Unexpected INSERT format, could not strip databaseId."
-                            return result
-                        insertStatements.append(rewrittenStatement)
-                if (len(insertStatements) == 0):
+                # append: only spool rows, without databaseId (first column) so that new ids are generated
+                spoolRows = [(columnNames, values) for model, columnNames, values in parsedInsertRows
+                             if model == SpoolModel]
+                if (len(spoolRows) == 0):
                     result["errorMessage"] = "Dump file contains no spools to append."
                     return result
 
                 with self._database.atomic():
-                    for statement in insertStatements:
-                        self._database.execute_sql(statement)
-                result["executedStatementCount"] = len(insertStatements)
-                result["importedSpoolCount"] = len(insertStatements)
+                    for columnNames, values in spoolRows:
+                        fields = [SpoolModel._meta.columns[columnName] for columnName in columnNames[1:]]
+                        SpoolModel.insert_many([values[1:]], fields=fields).execute()
+                result["executedStatementCount"] = len(spoolRows)
+                result["importedSpoolCount"] = len(spoolRows)
 
             result["success"] = True
             return result
@@ -1368,25 +1392,139 @@ class DatabaseManager(object):
                 currentLines = []
         return statements
 
-    def _isAllowedDumpStatement(self, statement, allowedTableNames):
+    def _isIgnoredDumpStatement(self, statement, allowedModelsByTableName):
+        # DDL is never executed from the dump, peewee drops/creates the tables instead
         if ("SET NAMES utf8mb4;" == statement):
             return True
-        for tableName in allowedTableNames:
-            if (statement.startswith("DROP TABLE IF EXISTS `" + tableName + "`;")):
+        for tableName in allowedModelsByTableName:
+            if (statement == "DROP TABLE IF EXISTS `" + tableName + "`;"):
                 return True
             if (statement.startswith("CREATE TABLE `" + tableName + "` (")):
                 return True
-            if (statement.startswith("INSERT INTO `" + tableName + "` (")):
-                return True
         return False
 
-    def _stripDatabaseIdFromInsertStatement(self, statement):
-        # expected single-line format: INSERT INTO `table` (`databaseId`, ...) VALUES (123, ...);
-        insertMatch = re.match(r"^INSERT INTO (`[^`]+`) \(`databaseId`, (.+)\) VALUES \(\d+, (.+)\);$", statement)
+    def _parseInsertDumpStatement(self, statement, allowedModelsByTableName):
+        # expected single-line exporter format: INSERT INTO `table` (`databaseId`, ...) VALUES (123, ...);
+        # returns (model, columnNames, values) or None if the statement deviates in any way
+        insertMatch = re.match(
+            r"^INSERT INTO `([A-Za-z0-9_]+)` \(((?:`[A-Za-z0-9_]+`, )*`[A-Za-z0-9_]+`)\) VALUES \((.*)\);$",
+            statement, re.DOTALL)
         if (insertMatch == None):
             return None
-        return "INSERT INTO " + insertMatch.group(1) + " (" + insertMatch.group(2) + ") " \
-               "VALUES (" + insertMatch.group(3) + ");"
+        model = allowedModelsByTableName.get(insertMatch.group(1))
+        if (model == None):
+            return None
+        columnNames = [columnName.strip("`") for columnName in insertMatch.group(2).split(", ")]
+        if (len(columnNames) != len(set(columnNames))):
+            return None
+        if (columnNames[0] != "databaseId"):
+            return None
+        for columnName in columnNames:
+            if ((columnName in model._meta.columns) == False):
+                return None
+        values = self._parseInsertValuesText(insertMatch.group(3))
+        if (values == None or len(values) != len(columnNames)):
+            return None
+        return (model, columnNames, values)
+
+    def _parseInsertValuesText(self, valuesText):
+        # tokenizes the VALUES(...) body into plain Python values, returns None on ANY deviation.
+        # Only quoted string literals, NULL and numeric literals separated by commas are accepted -
+        # unquoted parentheses/semicolons/backticks/comments (subqueries, functions, statement
+        # smuggling, ON DUPLICATE KEY tails) can never parse as a bare token and abort the import.
+        values = []
+        index = 0
+        length = len(valuesText)
+        expectValue = True
+        while (index < length):
+            character = valuesText[index]
+            if (character == " "):
+                index += 1
+                continue
+            if (character == ","):
+                if (expectValue == True):
+                    return None
+                expectValue = True
+                index += 1
+                continue
+            if (expectValue == False):
+                return None
+            if (character == "'"):
+                parsedLiteral = self._parseQuotedDumpLiteral(valuesText, index)
+                if (parsedLiteral == None):
+                    return None
+                literalBody, index = parsedLiteral
+                values.append(self._unescapeMySQLStringLiteral(literalBody))
+            else:
+                startIndex = index
+                while (index < length and valuesText[index] != "," and valuesText[index] != " "):
+                    index += 1
+                bareValue = self._convertBareDumpToken(valuesText[startIndex:index])
+                if (bareValue == None):
+                    return None
+                values.append(bareValue[0])
+            expectValue = False
+        if (expectValue == True):
+            return None  # empty body or trailing comma
+        return values
+
+    def _parseQuotedDumpLiteral(self, text, startIndex):
+        # startIndex points at the opening quote; returns (rawLiteralBody, indexAfterClosingQuote) or None.
+        # Inside the literal a backslash always consumes the next character (pymysql escaping)
+        # and a doubled '' is an escaped quote, so an embedded "'); DROP TABLE ..." stays data.
+        index = startIndex + 1
+        length = len(text)
+        literalBody = []
+        while (index < length):
+            character = text[index]
+            if (character == "\\"):
+                if (index + 1 >= length):
+                    return None
+                literalBody.append(character + text[index + 1])
+                index += 2
+                continue
+            if (character == "'"):
+                if (index + 1 < length and text[index + 1] == "'"):
+                    literalBody.append("''")
+                    index += 2
+                    continue
+                return ("".join(literalBody), index + 1)
+            literalBody.append(character)
+            index += 1
+        return None  # unterminated literal
+
+    def _convertBareDumpToken(self, token):
+        # returns the value wrapped in a tuple or None on rejection
+        # (NULL is a valid value, so a bare None cannot signal rejection)
+        if ("NULL" == token):
+            return (None,)
+        if (re.match(r"^-?\d+$", token) != None):
+            return (int(token),)
+        if (re.match(r"^-?(\d+\.\d*|\.\d+|\d+)([eE][+-]?\d+)?$", token) != None):
+            return (float(token),)
+        return None
+
+    def _unescapeMySQLStringLiteral(self, literalBody):
+        # reverses pymysql escape_string / doubled-quote escaping
+        escapeMap = {"0": "\0", "n": "\n", "r": "\r", "t": "\t", "b": "\b",
+                     "Z": "\x1a", "'": "'", '"': '"', "\\": "\\"}
+        resultCharacters = []
+        index = 0
+        length = len(literalBody)
+        while (index < length):
+            character = literalBody[index]
+            if (character == "\\" and index + 1 < length):
+                nextCharacter = literalBody[index + 1]
+                resultCharacters.append(escapeMap.get(nextCharacter, nextCharacter))
+                index += 2
+                continue
+            if (character == "'" and index + 1 < length and literalBody[index + 1] == "'"):
+                resultCharacters.append("'")
+                index += 2
+                continue
+            resultCharacters.append(character)
+            index += 1
+        return "".join(resultCharacters)
 
     ################################################################################################ DATABASE OPERATIONS
     def _handleReusableConnection(self, databaseCallMethode, withReusedConnection, methodeNameForLogging, defaultReturnValue=None):

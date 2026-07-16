@@ -15,7 +15,7 @@ plugin_name = "OctoPrint-SpoolManager"
 
 # The plugin's version. Can be overwritten within OctoPrint's internal data via __plugin_version__ in the plugin module
 #
-plugin_version = "1.8.0a3.dev76"
+plugin_version = "1.8.0a3.dev79"
 
 # The plugin's description. Can be overwritten within OctoPrint's internal data via __plugin_description__ in the plugin
 # module
@@ -39,7 +39,7 @@ plugin_requires = [
     "qrcode",
 	"reportlab",  # inventory report PDF export (issue #209)
 	"openpyxl",  # inventory report XLSX export (issue #209)
-	"peewee",
+	"peewee>=3.14,<5",
 	"psycopg2-binary",  # postgres - driver
 	"pymysql",	#mysql - driver
 	"cryptography", # connecting to MySQL
