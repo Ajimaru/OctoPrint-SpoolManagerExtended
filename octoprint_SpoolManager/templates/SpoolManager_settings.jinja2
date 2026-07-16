@@ -482,6 +482,11 @@ FPE;	2.16
                                             <font color="green"><b><span data-bind="text: sqlImportResultText"></span></b></font>
                                         </div>
                                     </div>
+                                    <div class="help-block" data-bind="visible: showExternalDatabaseErrorMessage">
+                                        <div class="alert alert-error">
+                                            <span style="color: red;"><b><span data-bind="text: externalDatabaseErrorMessage"></span></b></span>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
