@@ -48,8 +48,16 @@
                 </span>
             </div>
             <div class="myspan8">
-                <span data-bind="visible: spoolDialog.isExistingSpool() == false"><h2>NEW </h2></span>
-                <span><h2 data-bind="text: spoolDialog.spoolItemForEditing.displayName"></h2></span>
+                <h2>
+                    <span
+                        class="label label-info"
+                        style="margin-right: 5px; font-size: inherit; line-height: inherit;"
+                        data-bind="visible: spoolDialog.isExistingSpool() == false"
+                    >
+                        NEW
+                    </span>
+                    <span data-bind="text: spoolDialog.spoolItemForEditing.displayName"></span>
+                </h2>
             </div>
 
 <!-- Customize Field visiblity
@@ -367,7 +375,7 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                         </div>
                         <!-- /ko -->
                         <div class="control-group" data-bind="visible: !spoolDialog.simpleMode()">
-                            <label class="control-label">Serialnumber</label>
+                            <label class="control-label">Serial number</label>
                             <div class="controls">
                                 <input data-bind="textInput: spoolDialog.spoolItemForEditing.code"  type="text" class="input-large"  />
                             </div>
@@ -651,7 +659,7 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
         </form>
     </div>
     <div class="modal-footer" >
-        <div class="control-group">
+        <div class="control-group" style="margin-bottom: 0">
             <div class="controls row-fluid">
                 <span class="span8" style="text-align:left">
 
@@ -671,15 +679,15 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                                                                                 }"></select>
                     <button class="btn btn-info" data-bind="enable: spoolDialog.spoolItemForEditing.selectedForTool() != undefined, click: spoolDialog.selectSpoolItemForPrinting" style="text-align:right"><i class="fa fa-print"></i> Select for Printing</button>
                     <!-- /ko -->
-                    <div data-bind="visible: printerStateViewModel.isPrinting()">
-                        <small>Deletion during printing is not possible</small>
-                    </div>
-                    <div data-bind="visible: spoolDialog.isLoadedInTool() &amp;&amp; !printerStateViewModel.isPrinting()">
-                        <small>Spool is loaded into a tool and cannot be deleted</small>
-                    </div>
-
                     <button class="btn btn-info" data-bind="visible: spoolDialog.isExistingSpool()==false,
                                                             click: spoolDialog.selectAndCopyTemplateSpool" style="text-align:right">Copy from Template...</button>
+
+                    <div data-bind="visible: printerStateViewModel.isPrinting()" class="muted" style="margin-top: 10px;">
+                        <small>Deletion during printing is not possible</small>
+                    </div>
+                    <div data-bind="visible: spoolDialog.isLoadedInTool() &amp;&amp; !printerStateViewModel.isPrinting()" class="muted" style="margin-top: 10px;">
+                        <small>Spool is loaded into a tool and cannot be deleted</small>
+                    </div>
 
                 </span>
                 <span class="span4 text-right">
