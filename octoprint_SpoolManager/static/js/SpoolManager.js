@@ -1313,16 +1313,18 @@ $(function() {
 
             // identify for which toolindex is the current selectedSpoolItem is selected
             var currentDatabaseId = selectedSpoolItem.databaseId();
+            var isLoadedInTool = false;
             if (currentDatabaseId) {
                 for (var i = 0; i < self.selectedSpoolsForSidebar().length; i++) {
                     spoolItem = self.selectedSpoolsForSidebar()[i]();
                     if (spoolItem !== null && spoolItem.databaseId() === currentDatabaseId) {
                         selectedSpoolItem.selectedForTool(i);
+                        isLoadedInTool = true;
                         break;
                     }
                 }
             }
-            self.spoolDialog.showDialog(selectedSpoolItem, closeDialogHandler);
+            self.spoolDialog.showDialog(selectedSpoolItem, closeDialogHandler, isLoadedInTool);
         };
 
         closeDialogHandler = function(shouldTableReload, specialAction, currentSpoolItem){
