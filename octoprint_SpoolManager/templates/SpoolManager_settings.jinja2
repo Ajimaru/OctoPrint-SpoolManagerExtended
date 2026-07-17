@@ -215,6 +215,22 @@ FPE;	2.16
                 </div>
                 <hr/>
                 <div class="control-group">
+                    <label class="control-label">Label size (print)</label>
+                    <div class="controls">
+                        <div class="input-append">
+                            <input type="number" step="1" min="1" class="input-mini text-right" data-bind="value: pluginSettings.qrCodeLabelWidthMM">
+                            <span class="add-on">mm</span>
+                        </div>
+                        &times;
+                        <div class="input-append">
+                            <input type="number" step="1" min="1" class="input-mini text-right" data-bind="value: pluginSettings.qrCodeLabelHeightMM">
+                            <span class="add-on">mm</span>
+                        </div>
+                        <span class="help-block">Page size (width &times; height) used when printing the label via "Preview Label". Default 89 &times; 36 mm (Dymo 99012 address label).</span>
+                    </div>
+                </div>
+                <hr/>
+                <div class="control-group">
                     <div class="controls">
                         <label class="checkbox">
                             <input type="checkbox" data-bind="checked: pluginSettings.qrCodeUseURLPrefix"> Use URL prefix for QR-Code URL

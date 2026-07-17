@@ -765,17 +765,56 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 safeFinish = re.sub(r"[^\w\s#,()-]", "", str(spoolModel.finish))
                 finishHtml = "<h3>Spoolfinish: " + safeFinish + "</h3>"
             htmlContent = \
+                        "<div class='spm-label-text'>" \
                         "<h3>Database Id: " + str(spoolModel.databaseId) + "</h3>" \
                         "<h3>Spoolname: " + spoolModel.displayName + "</h3>" \
                         + colorHtml \
                         + finishHtml + \
-                        "<img loading='lazy' src='" + qrCodeImageUrl + "' />"
+                        "</div>" \
+                        "<img loading='lazy' src='" + qrCodeImageUrl + "' />" \
+                        "<button class='spm-print-btn' onclick='window.print()'>Print Label</button>"
         else:
             htmlContent = "<h3>Spool with database Id not found</h3>"
 
+        # Label printing (print button, @page label size) based on ideas from
+        # https://github.com/mdziekon/OctoPrint-SpoolManager/issues/47 (ScottGibb)
+        # and PRs mdziekon#54 / dojohnso#59 (reimplemented, not merged)
+        # label size for printing, from settings (fallback: Dymo 99012 address label)
+        def _labelDimension(settingsKey, defaultValue):
+            try:
+                value = float(self._settings.get([settingsKey]))
+                if (value <= 0):
+                    return defaultValue
+                return value
+            except (TypeError, ValueError):
+                return defaultValue
+        labelWidthMM = _labelDimension(SettingsKeys.SETTINGS_KEY_QR_CODE_LABEL_WIDTH_MM, 89.0)
+        labelHeightMM = _labelDimension(SettingsKeys.SETTINGS_KEY_QR_CODE_LABEL_HEIGHT_MM, 36.0)
+        labelWidth = "%g" % labelWidthMM
+        labelHeight = "%g" % labelHeightMM
+        qrMaxHeight = "%g" % max(labelHeightMM - 4.0, 1.0)
+
+        qrCodeStyle = \
+                    "<style>" \
+                    "body{display:flex;flex-direction:column;align-items:center;" \
+                    "justify-content:center;text-align:center;}" \
+                    "img{max-width:100%;}" \
+                    "h3{font-size:2em;margin:0.2em 0;}" \
+                    ".spm-print-btn{margin-top:12px;padding:6px 18px;font-size:1.1em;cursor:pointer;}" \
+                    "@page{size:" + labelWidth + "mm " + labelHeight + "mm;margin:0;}" \
+                    "@media print{" \
+                    ".spm-print-btn{display:none;}" \
+                    "body{margin:0;height:" + labelHeight + "mm;flex-direction:row;justify-content:flex-start;" \
+                    "align-items:center;gap:2mm;text-align:left;}" \
+                    ".spm-label-text{order:2;overflow:hidden;}" \
+                    "img{max-height:" + qrMaxHeight + "mm;width:auto;order:1;margin-left:2mm;}" \
+                    "h3{font-size:8pt;margin:0;}" \
+                    "}" \
+                    "</style>"
+
         qrCodeHTMLViewTemplate = ""\
                                 "<html>" \
-                                "<head><link rel='icon' href='data:,'></head>" \
+                                "<head><link rel='icon' href='data:,'>" + qrCodeStyle + "</head>" \
                                 + htmlContent +\
                                 "</html>" \
                                 ""
