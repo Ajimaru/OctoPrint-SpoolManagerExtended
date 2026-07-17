@@ -759,6 +759,8 @@ function SpoolManagerEditSpoolDialog(){
 
     // Knockout stuff
     this.isExistingSpool = ko.observable(false);
+    // true when the spool currently being edited is loaded into a tool slot -> deletion is blocked
+    this.isLoadedInTool = ko.observable(false);
     this.spoolSelectedByQRCode = ko.observable(false);
 
     // Simple view mode (issue #1): strips the dialog down to basic filament tracking.
@@ -1540,9 +1542,11 @@ function SpoolManagerEditSpoolDialog(){
         self.templateSpools(spoolItemsArray);
     }
 
-    this.showDialog = function(spoolItem, closeDialogHandler){
+    this.showDialog = function(spoolItem, closeDialogHandler, isLoadedInTool){
         self.autoUpdateEnabled = false;
         self.closeDialogHandler = closeDialogHandler;
+        // is this spool currently loaded into a tool slot? -> block deletion (see delete button binding)
+        self.isLoadedInTool(isLoadedInTool === true);
         // get the current tool caunt
         self.allToolIndices([]);
         var toolCount = self.printerProfilesViewModel.currentProfileData().extruder.count();
@@ -1756,6 +1760,10 @@ function SpoolManagerEditSpoolDialog(){
     }
 
     self.deleteSpoolItem = function(){
+        // safety net: a spool loaded into a tool must not be deleted (button is disabled, but guard the action too)
+        if (self.isLoadedInTool()){
+            return;
+        }
         var result = confirm("Do you really want to delete this spool?");
         if (result == true){
             self.apiClient.callDeleteSpool(self.spoolItemForEditing.databaseId(), function(responseData) {
