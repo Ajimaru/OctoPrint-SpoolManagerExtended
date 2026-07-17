@@ -27,6 +27,8 @@ class SettingsKeys():
 	SETTINGS_KEY_QR_CODE_BACKGROUND_COLOR = "qrCodeBackgroundColor"
 	SETTINGS_KEY_QR_CODE_WIDTH = "qrCodeWidth"
 	SETTINGS_KEY_QR_CODE_HEIGHT = "qrCodeHeight"
+	SETTINGS_KEY_QR_CODE_LABEL_WIDTH_MM = "qrCodeLabelWidthMM"
+	SETTINGS_KEY_QR_CODE_LABEL_HEIGHT_MM = "qrCodeLabelHeightMM"
 
 	## Export / Import
 	SETTINGS_KEY_IMPORT_CSV_MODE = "importCSVMode"
