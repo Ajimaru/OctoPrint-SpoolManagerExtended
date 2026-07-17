@@ -656,23 +656,27 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                 <span class="span8" style="text-align:left">
 
                     <button type="button" class="btn btn-danger" data-bind="visible: spoolDialog.isExistingSpool,
-                                                                            disable: printerStateViewModel.isPrinting(),
-                                                                            click: spoolDialog.deleteSpoolItem" >Delete</button>
-                    <div data-bind="visible: printerStateViewModel.isPrinting()">
-                        <small>Deletion during printing is not possible</small>
-                    </div>
+                                                                            disable: printerStateViewModel.isPrinting() || spoolDialog.isLoadedInTool(),
+                                                                            click: spoolDialog.deleteSpoolItem" ><i class="fa fa-trash-o"></i> Delete</button>
                     <button type="button" class="btn btn-warning" data-bind="visible: spoolDialog.isExistingSpool,
-                                                                             click: spoolDialog.copySpoolItem" >Copy</button>
+                                                                             click: spoolDialog.copySpoolItem" ><i class="fa fa-copy"></i> Copy</button>
                     <!-- visible: spoolDialog.spoolItemForEditing.selectedFromQRCode() == true,                        -->
                     <!-- ko if: spoolDialog.spoolItemForEditing.databaseId -->
+                    <i class="fa fa-tint" style="margin-right: 4px;"></i>
                     <select id="selectForTool" class="span2" style="margin-bottom: 0px" data-bind="optionsCaption: 'Choose...',
                                                                                 value: spoolDialog.spoolItemForEditing.selectedForTool,
                                                                                 options: spoolDialog.allToolIndices,
                                                                                 optionsText: function(item) {
                                                                                                 return 'Tool '+ item
                                                                                                 }"></select>
-                    <button class="btn btn-info" data-bind="enable: spoolDialog.spoolItemForEditing.selectedForTool() != undefined, click: spoolDialog.selectSpoolItemForPrinting" style="text-align:right">Select for Printing</button>
+                    <button class="btn btn-info" data-bind="enable: spoolDialog.spoolItemForEditing.selectedForTool() != undefined, click: spoolDialog.selectSpoolItemForPrinting" style="text-align:right"><i class="fa fa-print"></i> Select for Printing</button>
                     <!-- /ko -->
+                    <div data-bind="visible: printerStateViewModel.isPrinting()">
+                        <small>Deletion during printing is not possible</small>
+                    </div>
+                    <div data-bind="visible: spoolDialog.isLoadedInTool() &amp;&amp; !printerStateViewModel.isPrinting()">
+                        <small>Spool is loaded into a tool and cannot be deleted</small>
+                    </div>
 
                     <button class="btn btn-info" data-bind="visible: spoolDialog.isExistingSpool()==false,
                                                             click: spoolDialog.selectAndCopyTemplateSpool" style="text-align:right">Copy from Template...</button>
