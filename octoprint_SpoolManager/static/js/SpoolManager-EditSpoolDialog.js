@@ -1774,10 +1774,14 @@ function SpoolManagerEditSpoolDialog(){
         }
     }
 
-    self.selectSpoolItemForPrinting = function(){
+    // Adapted from mdziekon/OctoPrint-SpoolManager PR #29 (GH-24): the "Select for printing" button now
+    // passes the chosen tool explicitly instead of relying on a separate <select>.
+    // Kept backwards-compatible: falls back to selectedForTool() when no toolIdx is supplied.
+    self.selectSpoolItemForPrintingOnTool = function(params){
+        var toolIdx = (params && params.toolIdx !== undefined) ? params.toolIdx : self.spoolItemForEditing.selectedForTool();
         self.spoolItemForEditing.isSpoolVisible(false);
         self.spoolDialog.modal('hide');
-        self.closeDialogHandler(false, "selectSpoolForPrinting", self.spoolItemForEditing);
+        self.closeDialogHandler(false, "selectSpoolForPrinting", self.spoolItemForEditing, toolIdx);
     }
 
     // Template-combobox handlers (issue #48)
