@@ -1039,6 +1039,8 @@ class SpoolmanagerPlugin(
         settings[SettingsKeys.SETTINGS_KEY_QR_CODE_BACKGROUND_COLOR] = "#ffffff"
         settings[SettingsKeys.SETTINGS_KEY_QR_CODE_WIDTH] = "100"
         settings[SettingsKeys.SETTINGS_KEY_QR_CODE_HEIGHT] = "100"
+        settings[SettingsKeys.SETTINGS_KEY_QR_CODE_LABEL_WIDTH_MM] = "89"
+        settings[SettingsKeys.SETTINGS_KEY_QR_CODE_LABEL_HEIGHT_MM] = "36"
 
         ## Export / Import
         settings[SettingsKeys.SETTINGS_KEY_IMPORT_CSV_MODE] = SettingsKeys.KEY_IMPORTCSV_MODE_APPEND
