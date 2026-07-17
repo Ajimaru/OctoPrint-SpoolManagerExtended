@@ -417,24 +417,32 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                     <div class="span6" >
                         <div class="">
                             <div class="row" data-bind="visible: !spoolDialog.simpleMode()">
+                                {# Separate date + time inputs: a single datetime-local input reports an empty #}
+                                {# value until both parts are filled, silently losing date-only entries on save. #}
                                 <div class="control-group  no-bottom-gap">
                                     <label class="control-label">Last use</label>
                                     <div class="controls" >
-                                        <input type="datetime-local"
-                                               title="Format e.g. 2022-01-12T14:36"
-                                               placeholder="YYYY-MM-DDThh:mm"
-                                               pattern="[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}"
-                                               data-bind="value: spoolDialog.spoolItemForEditing.lastUseKO" />
+                                        <input type="date"
+                                               title="Format e.g. 2022-01-12"
+                                               placeholder="YYYY-MM-DD"
+                                               data-bind="value: spoolDialog.spoolItemForEditing.lastUseDateKO" />
+                                        <input type="time"
+                                               title="Optional time, defaults to 00:00"
+                                               placeholder="hh:mm"
+                                               data-bind="value: spoolDialog.spoolItemForEditing.lastUseTimeKO" />
                                     </div>
                                 </div>
                                 <div class="control-group  no-bottom-gap">
                                     <label class="control-label">First use</label>
                                     <div class="controls" >
-                                        <input id="my-firstuse" type="datetime-local"
-                                               title="Format e.g. 2022-01-12T14:36"
-                                               placeholder="YYYY-MM-DDThh:mm"
-                                               pattern="[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}"
-                                               data-bind="value: spoolDialog.spoolItemForEditing.firstUseKO" />
+                                        <input id="my-firstuse" type="date"
+                                               title="Format e.g. 2022-01-12"
+                                               placeholder="YYYY-MM-DD"
+                                               data-bind="value: spoolDialog.spoolItemForEditing.firstUseDateKO" />
+                                        <input type="time"
+                                               title="Optional time, defaults to 00:00"
+                                               placeholder="hh:mm"
+                                               data-bind="value: spoolDialog.spoolItemForEditing.firstUseTimeKO" />
                                     </div>
                                 </div>
                                 <div class="control-group  no-bottom-gap">
@@ -447,24 +455,6 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                                data-bind="value: spoolDialog.spoolItemForEditing.purchasedOnKO" />
                                     </div>
                                 </div>
-{#                                <div class="control-group  no-bottom-gap">#}
-{#                                    <label class="control-label">Last use</label>#}
-{#                                    <div class="controls" style="display:flex">#}
-{#                                        {{ forms.datetimepicker('lastUse-date-picker', 'spoolDialog.spoolItemForEditing.lastUse') }}#}
-{#                                    </div>#}
-{#                                </div>#}
-{#                                <div class="control-group">#}
-{#                                    <label class="control-label">First use</label>#}
-{#                                    <div class="controls">#}
-{#                                        {{ forms.datetimepicker('firstUse-date-picker', 'spoolDialog.spoolItemForEditing.firstUse') }}#}
-{#                                    </div>#}
-{#                                </div>#}
-{#                                <div class="control-group no-bottom-gap">#}
-{#                                    <label class="control-label">Purchased on</label>#}
-{#                                    <div class="controls">#}
-{#                                        {{ forms.datetimepicker('purchasedOn-date-picker', 'spoolDialog.spoolItemForEditing.purchasedOn') }}#}
-{#                                    </div>#}
-{#                                </div>#}
                                 <div class="control-group no-bottom-gap">
                                     <label class="control-label">Purchased from</label>
                                     <div class="controls">

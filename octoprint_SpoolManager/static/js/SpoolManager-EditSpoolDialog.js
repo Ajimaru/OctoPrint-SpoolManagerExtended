@@ -317,6 +317,49 @@ function SpoolManagerEditSpoolDialog(){
         this.purchasedOn = ko.observable();
         this.purchasedOnKO = ko.observable();
 
+        // Split date/time bindings for the native inputs. A single datetime-local input
+        // reports an empty value until BOTH date and time are filled in, so a date-only
+        // entry was silently lost on save. Separate date + time inputs avoid that; a
+        // missing time defaults to 00:00.
+        var createDatePartKO = function(dateTimeKO){
+            return ko.pureComputed({
+                read: function(){
+                    var value = dateTimeKO();
+                    return (value) ? value.split("T")[0] : "";
+                },
+                write: function(newDate){
+                    if (!newDate){
+                        dateTimeKO(null);
+                        return;
+                    }
+                    var value = dateTimeKO();
+                    var timePart = (value && value.indexOf("T") != -1) ? value.split("T")[1] : "00:00";
+                    dateTimeKO(newDate + "T" + timePart);
+                }
+            });
+        };
+        var createTimePartKO = function(dateTimeKO){
+            return ko.pureComputed({
+                read: function(){
+                    var value = dateTimeKO();
+                    return (value && value.indexOf("T") != -1) ? value.split("T")[1] : "";
+                },
+                write: function(newTime){
+                    var value = dateTimeKO();
+                    if (!value){
+                        // time without a date is meaningless - wait for a date
+                        return;
+                    }
+                    var datePart = value.split("T")[0];
+                    dateTimeKO(datePart + "T" + (newTime ? newTime : "00:00"));
+                }
+            });
+        };
+        this.firstUseDateKO = createDatePartKO(this.firstUseKO);
+        this.firstUseTimeKO = createTimePartKO(this.firstUseKO);
+        this.lastUseDateKO = createDatePartKO(this.lastUseKO);
+        this.lastUseTimeKO = createTimePartKO(this.lastUseKO);
+
 
         this.purchasedFrom = ko.observable();
         this.cost = ko.observable();
