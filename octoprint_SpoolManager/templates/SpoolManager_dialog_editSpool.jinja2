@@ -48,6 +48,8 @@
                 </span>
             </div>
             <div class="myspan8">
+                <!-- "NEW" badge styled as a Bootstrap label: spool edit dialog UX improvement -->
+                <!-- authored by @mdziekon, adopted via PR #44 (commit 642bea0). -->
                 <h2>
                     <span
                         class="label label-info"
@@ -375,6 +377,7 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                         </div>
                         <!-- /ko -->
                         <div class="control-group" data-bind="visible: !spoolDialog.simpleMode()">
+                            <!-- "Serialnumber" -> "Serial number" label fix by @mdziekon, adopted via PR #44 (commit 642bea0). -->
                             <label class="control-label">Serial number</label>
                             <div class="controls">
                                 <input data-bind="textInput: spoolDialog.spoolItemForEditing.code"  type="text" class="input-large"  />
@@ -658,6 +661,8 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
             </div>
         </form>
     </div>
+    <!-- Modal-footer layout rework (muted hint styling, "Copy from Template" placement, tightened spacing) -->
+    <!-- authored by @mdziekon, adopted via PR #44 (commit 642bea0). -->
     <div class="modal-footer" >
         <div class="control-group" style="margin-bottom: 0">
             <div class="controls row-fluid">
