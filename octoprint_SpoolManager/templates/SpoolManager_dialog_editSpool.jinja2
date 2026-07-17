@@ -254,6 +254,17 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                                   textInput: spoolDialog.spoolItemForEditing.finishCustomText" />
                             </div>
                         </div>
+                        {# Preview-Label button, simple view only (full view: QR-code thumbnail is the link).
+                           Idea from mdziekon#54 / dojohnso#59 (ScottGibb), reimplemented #}
+                        <div class="control-group" style="margin-top: 12px;" data-bind="visible: spoolDialog.simpleMode() && spoolDialog.isExistingSpool() && pluginSettings.qrCodeEnabled()">
+                            <label class="control-label">QR Label</label>
+                            <div class="controls">
+                                <a class="btn btn-small" target="_new"
+                                   data-bind="attr: $root.generateQRCodeImageSourceAttribute(spoolDialog.spoolItemForEditing.databaseId(),
+                                                                                             spoolDialog.spoolItemForEditing.displayName(),
+                                                                                             'htmlView')">Preview Label</a>
+                            </div>
+                        </div>
                         <div class="control-group no-bottom-gap" data-bind="visible: !spoolDialog.simpleMode()">
                             <label class="control-label">Flow Rate Compensation<sup>4</sup></label>
                             <div class="controls">
