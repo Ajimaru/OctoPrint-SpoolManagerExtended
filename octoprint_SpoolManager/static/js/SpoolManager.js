@@ -1327,10 +1327,17 @@ $(function() {
             self.spoolDialog.showDialog(selectedSpoolItem, closeDialogHandler, isLoadedInTool);
         };
 
-        closeDialogHandler = function(shouldTableReload, specialAction, currentSpoolItem){
+        // `toolIndexOverride` added for the dropdown "Select for printing" button, adapted from
+        // mdziekon/OctoPrint-SpoolManager PR #29 (GH-24). Optional/backwards-compatible: existing
+        // positional callers (save/delete paths) omit it and keep the selectedForTool() behaviour.
+        closeDialogHandler = function(shouldTableReload, specialAction, currentSpoolItem, toolIndexOverride){
 
             if (specialAction === "selectSpoolForPrinting"){
-                var toolIndex = currentSpoolItem.selectedForTool();
+                // the dropdown button passes the chosen tool explicitly; the save-path falls back to the spool's tool
+                var toolIndex = toolIndexOverride;
+                if (toolIndex === undefined || toolIndex === null || toolIndex === ""){
+                    toolIndex = currentSpoolItem.selectedForTool();
+                }
                 if (toolIndex === undefined || toolIndex === null || toolIndex === ""){
                     // clear current selection
                     toolIndex = -1;
