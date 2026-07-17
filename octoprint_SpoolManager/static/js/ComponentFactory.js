@@ -29,93 +29,15 @@ function ComponentFactory(pluginId) {
     }
 
     ////////////////////////////////////////////////////////////////////////////////////////////////// DATETIME - PICKER
-    /*
-    <div class="input-append datetime">
-        <input id="DueDate" type="text" value="13.11.2017 13:24" class="input-large; text-right"><span class="add-on" id="DueDate-Icon"><i class="icon-th"></i></span>
-    </div>
-    */
+    // jQuery datetimepicker removal authored by @mdziekon, adopted via mdziekon/OctoPrint-SpoolManager PR #21.
+    // The dialog uses native date/datetime-local inputs; this only provides the observables
+    // the edit dialog binds against.
     this.createDateTimePicker = function(elementId, showTimePicker){
-
-        if (showTimePicker == null){
-            showTimePicker = true;
-            dateTimeFormat = 'd.m.Y H:i';
-        }
-        if (showTimePicker == false){
-            dateTimeFormat = 'd.m.Y';
-        }
 
         var componentViewModel = {
             currentDateTime: ko.observable(),
             isEnabled: ko.observable(true)
         }
-
-        var elementSelector = "#" + elementId ;
-        // Build defualt widget
-        var datePicker = $(elementSelector).datetimepicker({
-            format:dateTimeFormat,
-            closeOnDateSelect:true,
-            closeOnTimeSelect:false,
-            timepicker:showTimePicker,
-            weeks:true,
-        });
-        jQuery.datetimepicker.setLocale('en');
-
-        $($(elementSelector).parent().find('span[class=add-on]')[0]).on('click', function () {
-            if (componentViewModel.isEnabled() == true){
-                $(elementSelector).datetimepicker('show');
-            }
-        });
-
-
-        // sync: jquery -> observable
-
-        return componentViewModel;
-    }
-
-
-    ////////////////////////////////////////////////////////////////////////////////////////////////////// DATE - PICKER
-    /* DEPRECATED use createDateTimePicker */
-    this.createDatePicker = function(elementId){
-
-       var componentViewModel = {
-            currentDate: ko.observable(new Date())
-        }
-
-        var elementSelector = "#" + elementId ;
-        // Build defualt widget
-        var datePicker = $(elementSelector).datepicker({
-            format: "dd.mm.yyyy"
-        });
-        jQuery.datetimepicker.setLocale('en');
-
-        // sync: jquery -> observable
-        datePicker.on('pick.datepicker', function (event) {
-            newDate = event.date;
-            if (componentViewModel.currentDate() == null || newDate.getTime() != componentViewModel.currentDate().getTime() ){
-                componentViewModel.currentDate(newDate);
-            }
-            // new future date
-            //  if (e.date < new Date()) {
-            //    e.preventDefault(); // Prevent to pick the date
-            //  }
-        });
-
-        // sync: observable -> jquery
-        componentViewModel.currentDate.subscribe(function(newDate){
-            currentDate = datePicker.datepicker('getDate');
-            if (newDate == null){
-                datePicker.datepicker('reset');
-            } else {
-                newDateTime = newDate.getTime();
-                if (componentViewModel.currentDate() == null || newDateTime != currentDate.getTime()){
-                    if (newDate != null){
-                        datePicker.datepicker('setDate', newDate);
-                    } else {
-                        datePicker.datepicker('reset');
-                    }
-                }
-            }
-        });
 
         return componentViewModel;
     }
