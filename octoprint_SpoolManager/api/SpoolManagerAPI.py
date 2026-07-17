@@ -776,6 +776,9 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         else:
             htmlContent = "<h3>Spool with database Id not found</h3>"
 
+        # Label printing (print button, @page label size) based on ideas from
+        # https://github.com/mdziekon/OctoPrint-SpoolManager/issues/47 (ScottGibb)
+        # and PRs mdziekon#54 / dojohnso#59 (reimplemented, not merged)
         # label size for printing, from settings (fallback: Dymo 99012 address label)
         def _labelDimension(settingsKey, defaultValue):
             try:
