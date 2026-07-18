@@ -56,6 +56,11 @@ function TableItemHelper(loadItemsFunction, defaultPageSize, defaultSortColumn, 
 
     self.isInitialLoadDone = false;
     self._filterTextReloadTimer = null;
+    // Lazy table loading (issue mdziekon#5): while false, every _loadItems() call is
+    // swallowed (binding-time auto-load, page-size restore, filter/sort subscriptions).
+    // Set to false before binding, re-enabled via enableLoadingAndReload() on tab show.
+    self.isLoadingEnabled = true;
+    self.isLoading = ko.observable(false);
     // ############################################################################################### private functions
 
 
@@ -102,9 +107,18 @@ function TableItemHelper(loadItemsFunction, defaultPageSize, defaultSortColumn, 
     }
 
     self._loadItems = function(){
+        if (self.isLoadingEnabled == false){
+            return;
+        }
+        self.isLoading(true);
         var tableQuery = self.buildTableQuery();
         self.loadItemsFunction( tableQuery, self.items, self.totalItemCount, self.databaseItemCount );
     }
+
+    // the load function fills self.items last, so the arrival of items ends the spinner
+    self.items.subscribe(function(){
+        self.isLoading(false);
+    });
 
     self.currentPage.subscribe(function(newPageIndex) {
         self._loadItems()
@@ -167,6 +181,12 @@ function TableItemHelper(loadItemsFunction, defaultPageSize, defaultSortColumn, 
 
     // ################################################################################################ public functions
     self.reloadItems = function(){
+        self._loadItems();
+    }
+
+    // first SpoolManager-tab show with lazy table loading: allow loads and fetch now
+    self.enableLoadingAndReload = function(){
+        self.isLoadingEnabled = true;
         self._loadItems();
     }
 

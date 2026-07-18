@@ -139,7 +139,10 @@ $(function() {
             if (localStorage[storageKey] == null){
                 localStorage[storageKey] = "25"; // default page size
             } else {
-                self.spoolItemTableHelper.selectedPageSize(localStorage[storageKey]);
+                // localStorage only stores strings; the page-size options are numbers
+                // (except "all"), so convert back or the select shows the default (PR #8 fix)
+                var storedPageSize = localStorage[storageKey];
+                self.spoolItemTableHelper.selectedPageSize(storedPageSize == "all" ? "all" : Number(storedPageSize));
             }
             self.spoolItemTableHelper.selectedPageSize.subscribe(function(newValue){
                 localStorage[storageKey] = newValue;
@@ -938,13 +941,24 @@ $(function() {
             self.selectSpoolForSidebar(toolIndex, null);
         }
 
-        self.loadSpoolsForSidebar = function() {
-            // update filament list length
+        // Lazy loading of the spool selector's data (Attribution @mdziekon, PR #8):
+        // when enabled, the (up to 3333 items) selector dataset is fetched on first
+        // dialog open instead of on OctoPrint page load.
+        self.hasInitializedSpoolsSelector = false;
+
+        self._isLazySelectorEnabled = function(){
+            return self.pluginSettings != null
+                && self.pluginSettings.performanceLazyLoadSpoolSelectorData
+                && self.pluginSettings.performanceLazyLoadSpoolSelectorData() == true;
+        }
+
+        // resize the sidebar spool slots to match the printer profile's extruder count
+        self.updateAvailableSpoolSlots = function() {
             var currentProfileData = self.settingsViewModel.printerProfiles.currentProfileData(),
                 numExtruders = (currentProfileData ? currentProfileData.extruder.count() : 0),
                 currentSelectedSpools = self.selectedSpoolsForSidebar().length,
                 diff = numExtruders - currentSelectedSpools,
-                i, item;
+                i;
             if (diff !== 0) {
                 if (diff > 0) {
                     for (i = 0; i < diff; i++) {
@@ -957,6 +971,32 @@ $(function() {
                 }
                 self.selectedSpoolsForSidebar.valueHasMutated();
             }
+        }
+
+        // fill the sidebar spool slots with the given selected-spools data
+        self._applySelectedSpoolsData = function(spoolsData) {
+            var slot, spoolData, spoolItem;
+            for(var i=0; i<self.selectedSpoolsForSidebar().length; i++) {
+                slot = self.selectedSpoolsForSidebar()[i];
+                spoolData = (i < spoolsData.length) ? spoolsData[i] : null;
+                spoolItem = spoolData ? self.spoolDialog.createSpoolItemForTable(spoolData) : null;
+                slot(spoolItem);
+            }
+        }
+
+        // fetch the current spool selection via the dedicated endpoint
+        self.loadCurrentSelectedSpoolsData = function() {
+            self.apiClient.callLoadSelectedSpools(function(responseData){
+                var spoolsData = responseData["selectedSpools"];
+                if (spoolsData != null){
+                    self._applySelectedSpoolsData(spoolsData);
+                }
+            });
+        }
+
+        // fetch the full spool list for the sidebar select-spool dialog
+        self.loadSpoolSelectorData = function() {
+            self.hasInitializedSpoolsSelector = true;
 
             var currentFilterName = "all";
             // if (self.pluginSettings!= null){
@@ -989,19 +1029,20 @@ $(function() {
                         return result;
                     }); // transform to SpoolItems with KO.obseravables
                     self.allSpoolsForSidebar(allSpoolItems);
-
-                    var spoolsData = responseData["selectedSpools"],
-                        slot, spoolData, spoolItem;
-                    for(var i=0; i<self.selectedSpoolsForSidebar().length; i++) {
-                        slot = self.selectedSpoolsForSidebar()[i];
-                        spoolData = (i < spoolsData.length) ? spoolsData[i] : null;
-                        spoolItem = spoolData ? self.spoolDialog.createSpoolItemForTable(spoolData) : null;
-                        slot(spoolItem);
-                    }
                     // Pre sorting in Selection-Dialog
                     // self.sidebarFilterSorter.sortSpoolArray("displayName", "ascending");
                 }
             });
+        }
+
+        // load everything the sidebar widgets need; while the lazy selector setting is
+        // active and the selector was never opened, the big selector query is skipped
+        self.loadSidebarSpoolWidgetsData = function() {
+            self.updateAvailableSpoolSlots();
+            self.loadCurrentSelectedSpoolsData();
+            if (self._isLazySelectorEnabled() == false || self.hasInitializedSpoolsSelector == true){
+                self.loadSpoolSelectorData();
+            }
         }
 
         // ----------------- start: display units (table / sidebar / tooltips)
@@ -1184,6 +1225,11 @@ $(function() {
                 e.stopPropagation();
             });
 
+            // lazy selector: fetch the spool list on first dialog open
+            if (self._isLazySelectorEnabled() && self.hasInitializedSpoolsSelector == false){
+                self.loadSpoolSelectorData();
+            }
+
             self.sidebarSelectSpoolModalSpoolItem(spoolItem);
             self.sidebarSelectSpoolModalToolIndex(toolIndex);
 
@@ -1276,7 +1322,7 @@ $(function() {
                 if (wasSchemeUpgradeNeeded == true && self.schemeUpgradeNeeded() == false){
                     // the database is usable again (scheme upgraded, possibly by another instance) -
                     // the sidebar spools/selection were loaded while it was broken, so refresh them too
-                    self.loadSpoolsForSidebar();
+                    self.loadSidebarSpoolWidgetsData();
                 }
 
                 totalItemCount = responseData["totalItemCount"];
@@ -1348,7 +1394,7 @@ $(function() {
             if (shouldTableReload == true){
                 self.spoolItemTableHelper.reloadItems();
                 // TODO auto reload of sidebar spools without loosing selection
-                self.loadSpoolsForSidebar();
+                self.loadSidebarSpoolWidgetsData();
             }
         }
 
@@ -1553,6 +1599,15 @@ $(function() {
 
             // assign current pluginSettings
             self.pluginSettings = self.settingsViewModel.settings.plugins[PLUGIN_ID];
+
+            // Lazy table loading (issue mdziekon#5): defer the first table fetch until the
+            // SpoolManager tab is shown. Must be set before loadSettingsFromBrowserStore(),
+            // because restoring the page size already triggers a table load.
+            if (self.pluginSettings.performanceLazyLoadSpoolTable
+                && self.pluginSettings.performanceLazyLoadSpoolTable() == true){
+                self.spoolItemTableHelper.isLoadingEnabled = false;
+            }
+
             // load browser stored settings (includs TabelVisibility and pageSize, ...)
             loadSettingsFromBrowserStore();
 
@@ -1563,8 +1618,8 @@ $(function() {
                  $("#qrcode-background-color-picker + .btn-group button span.color-preview").css("background-color", self.pluginSettings.qrCodeBackgroundColor());
              });
 
-            // Load all Spools
-            self.loadSpoolsForSidebar();
+            // Load sidebar data (selected spools always; full selector list only when not lazy)
+            self.loadSidebarSpoolWidgetsData();
             // Edit Spool Dialog Binding
             self.spoolDialog.initBinding(self.apiClient, self.pluginSettings, self.printerProfilesViewModel, self.printerStateViewModel);
             // Import Dialog
@@ -1612,7 +1667,9 @@ $(function() {
             // });
 
             // needed after the tool-count is changed
-            self.settingsViewModel.printerProfiles.currentProfileData.subscribe(self.loadSpoolsForSidebar);
+            self.settingsViewModel.printerProfiles.currentProfileData.subscribe(function(){
+                self.updateAvailableSpoolSlots();
+            });
         }
 
         self.onAfterBinding = function() {
@@ -1637,17 +1694,15 @@ $(function() {
                 return;
             }
 
-            if ("initalData" == data.action){
+            // NOTE: the backend sends "initialData"; the old "initalData" comparison (typo)
+            // made this handler dead code. With lazy table loading this push is the startup
+            // source for pluginNotWorking, so the typo had to be fixed.
+            if ("initialData" == data.action){
 
                 self.pluginNotWorking(data.pluginNotWorking);
                 self.isFilamentManagerPluginAvailable(data.isFilamentManagerPluginAvailable);
-                var spoolsData = data.selectedSpools,
-                    slot, spoolData, spoolItem;
-                for(var i=0; i<self.selectedSpoolsForSidebar().length; i++) {
-                    slot = self.selectedSpoolsForSidebar()[i];
-                    spoolData = (i < spoolsData.length) ? spoolsData[i] : null;
-                    spoolItem = spoolData ? self.spoolDialog.createSpoolItemForTable(spoolData) : null;
-                    slot(spoolItem);
+                if (data.selectedSpools != null){
+                    self._applySelectedSpoolsData(data.selectedSpools);
                 }
 
                 return;
@@ -1670,7 +1725,7 @@ $(function() {
             }
             if ("reloadTable and sidebarSpools" == data.action){
                 self.spoolItemTableHelper.reloadItems();
-                self.loadSpoolsForSidebar();
+                self.loadSidebarSpoolWidgetsData();
                 return;
             }
             if ("csvImportStatus" == data.action){
@@ -1711,7 +1766,9 @@ $(function() {
 
         self.onTabChange = function(next, current){
             if ("#tab_plugin_SpoolManager" == next) {
-                self.spoolItemTableHelper.reloadItems();
+                // with lazy table loading this is the first (deferred) load,
+                // afterwards it behaves like the previous reloadItems() call
+                self.spoolItemTableHelper.enableLoadingAndReload();
             }
             //alert("Next:"+next +" Current:"+current);
             if ("#tab_plugin_PrintJobHistory" == next){
