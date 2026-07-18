@@ -84,6 +84,20 @@
                 </div>
 
                 <hr/>
+                <h4>Performance</h4>
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.performanceLazyLoadSpoolSelectorData" > Lazy load spool selector data (spool list is fetched on first "select spool" dialog open instead of on page load).
+                        </label>
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.performanceLazyLoadSpoolTable" > Lazy load spool table (table is fetched on first SpoolManager tab open instead of on page load).
+                        </label>
+                        <span class="help-inline"><small>Reduces load on less powerful machines / large databases. A page reload is required after changing these options.</small></span>
+                    </div>
+                </div>
+
+                <hr/>
                 <h4>Remaining check</h4>
                 <div class="control-group">
                     <label class="control-label">Enter safety buffer (e.g. PTFE Tube length)</label>

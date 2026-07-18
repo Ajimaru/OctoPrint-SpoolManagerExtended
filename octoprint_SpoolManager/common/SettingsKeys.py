@@ -19,6 +19,10 @@ class SettingsKeys():
 	SETTINGS_KEY_LENGTH_UNIT = "lengthUnit" # mm, cm, m
 	SETTINGS_KEY_WEIGHT_UNIT = "weightUnit" # g, kg
 
+	## Performance (Attribution @mdziekon, PR #8 / issue #5)
+	SETTINGS_KEY_PERFORMANCE_LAZY_LOAD_SPOOL_SELECTOR_DATA = "performanceLazyLoadSpoolSelectorData"
+	SETTINGS_KEY_PERFORMANCE_LAZY_LOAD_SPOOL_TABLE = "performanceLazyLoadSpoolTable"
+
 	## QR - Code
 	SETTINGS_KEY_QR_CODE_ENABLED = "qrCodeEnabled"
 	SETTINGS_KEY_QR_CODE_USE_URL_PREFIX = "qrCodeUseURLPrefix"
