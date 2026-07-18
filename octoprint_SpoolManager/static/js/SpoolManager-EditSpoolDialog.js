@@ -83,10 +83,29 @@ ko.bindingHandlers.numberField = {
         // run once so a value that arrives invalid (e.g. loaded then edited) is caught immediately
         updateValidity();
 
+        // Programmatic writes (density autosuggest, weight auto-calculation, dialog reload)
+        // update the input without firing any DOM event, so a previously set invalid flag
+        // would stick (red border + blocked Save) until the user touches the field again.
+        // Re-validate whenever the value-owning observable changes; deferred so the value
+        // binding has already synced element.value before we read element.validity.
+        var trackedValue = trackOnly ? allBindings.get("value") : observable;
+        var programmaticSubscription = null;
+        if (trackedValue && typeof trackedValue.subscribe === "function"){
+            programmaticSubscription = trackedValue.subscribe(function(){
+                setTimeout(function(){
+                    pasteRejected = false;
+                    updateValidity();
+                }, 0);
+            });
+        }
+
         ko.utils.domNodeDisposal.addDisposeCallback(element, function(){
             $(element).off(".numberField");
             if (subscription){
                 subscription.dispose();
+            }
+            if (programmaticSubscription){
+                programmaticSubscription.dispose();
             }
             // drop this field from the invalid set when the node goes away (dialog close/reopen)
             var current = invalidFields();
@@ -119,593 +138,27 @@ function SpoolManagerEditSpoolDialog(){
     };
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////////// CONSTANTS
-    var DEFAULT_COLOR = "#ff0000";
-    // Density values (g/cm3) derived from SpoolmanDB-Community
-    // https://github.com/Icezaza2543/SpoolmanDB-Community (maintained fork of
-    // https://github.com/Donkie/SpoolmanDB) - Copyright (c) 2024 Donkie, MIT License
-    // Keys are the normalized material names, see normalizeMaterialKey().
-    var densityMap = {
-        PLA:	1.24,
-        PLA_PLUS:	1.24,   // matches "PLA+" and legacy "PLA_plus"
-        PLA_CF:	1.24,
-        ABS:	1.04,
-        ABS_PLUS:	1.06,
-        ABS_T:	1.08,
-        ABS_CF:	1.065,
-        ASA:	1.05,
-        ASA_CF:	1.12,
-        PETG:	1.27,
-        PETG_CF:	1.27,
-        PCTG:	1.21,
-        NYLON:	1.14,
-        PA6:	1.13,
-        PA11:	1.03,
-        PA12:	1.01,
-        PA_CF:	1.20,
-        PA6_CF:	1.24,
-        PA12_CF:	1.15,
-        TPU:	1.21,
-        TPU_85A:	1.12,
-        TPU_90A:	1.185,
-        TPU_95A:	1.21,
-        TPE:	1.15,
-        FLEXIBLE_TPE_32D:	1.10,
-        FLEXIBLE_TPE_88A:	0.89,
-        FPE:	2.16,
-        PC:	    1.20,
-        PC_ABS:	1.19,
-        PC_PBT:	1.20,
-        PC_CF:	1.24,
-        WOOD:	1.28,
-        CARBON_FIBER:	1.30,
-        HIPS:	1.03,
-        PVA:	1.23,
-        PVB:	1.10,
-        BVOH:	1.25,
-        PP:	    0.90,
-        PP_CF:	1.145,
-        PP_GF:	1.03,
-        POM:	1.40,
-        PMMA:	1.18,
-        PET:	1.38,
-        PET_CF:	1.29,
-        PBT:	1.31,
-        PPS:	1.35,
-        PPS_CF:	1.35,
-        PVDF:	1.78,
-        PEI_ULTEM:	1.27,
-        PEKK:	1.28,
-        PEEK:	1.32,
-        PEEK_CF:	1.35,
-        PPSU:	1.37,
-        // aliases for alternative spellings (e.g. imported from Spoolman / typed manually)
-        FLEXIBLE_TPU:	1.21,
-        SEMI_FLEXIBLE_FPE:	2.16,
-        POLYCARBONATE_PC:	1.20,
-        POLYPROPYLENE_PP:	0.90,
-        ACETAL_POM:	1.40,
-        PEI:	1.27,
-        PA:	    1.14
-    };
+    // Shared constants & helpers moved to common/constants.js / common/utils.js
+    // (structure adopted from mdziekon/OctoPrint-SpoolManager PR #11, GH-10).
+    // Aliases are function-scoped on purpose: OctoPrint concatenates all plugin JS into one
+    // bundle, top-level declarations with generic names would collide with other files.
+    var roundWithPrecision = SPOOLMANAGER_UTILS.roundWithPrecision;
+    var FORMAT_DATETIME_LOCAL = SPOOLMANAGER_CONSTANTS.DATES.DISPLAY_FORMATS.DATETIME_LOCAL;
+    var FORMAT_DATE = SPOOLMANAGER_CONSTANTS.DATES.DISPLAY_FORMATS.DATE;
 
-    // Normalizes a material display name to a densityMap key:
-    // "Flexible (TPU)" -> "FLEXIBLE_TPU", "PC/ABS" -> "PC_ABS", "PLA+" -> "PLA_PLUS"
-    var normalizeMaterialKey = function(materialName){
-        if (!materialName){
-            return "";
-        }
-        return materialName
-            .trim()
-            .toUpperCase()
-            .replace(/\+/g, "_PLUS")
-            .replace(/[^A-Z0-9]+/g, "_")
-            .replace(/^_+|_+$/g, "");
-    };
-
-    self.unitValues = {
-        WEIGHT: "weight",
-        LENGTH: "length"
-    };
-    self.stateValues = {
-        INITIAL: "initial",
-        USED: "used",
-        REMAINING: "remaining"
-    };
-    self.scopeValues = {
-        FILAMENT: "filament",
-        SPOOL: "spool",
-        COMBINED: "spool+filament"
-    };
+    // also referenced by the jinja2 template as spoolDialog.scopeValues
+    self.scopeValues = SPOOLMANAGER_CONSTANTS.FILAMENT_STATS_CALC_MODES;
 
     var FILAMENT = self.scopeValues.FILAMENT;
     var COMBINED = self.scopeValues.COMBINED;
     var SPOOL = self.scopeValues.SPOOL;
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////////// ITEM MODEL
-    var SpoolItem = function(spoolData, editable) {
-        // Init Item
-
-        // if we use the Item for Editing we need to initialise the widget-model as well , e.g. Option-Values, Suggestion-List
-        // if we just use this Item in readonly-mode we need simple ko.observer
-
-        // FormatHelperFunction
-        formatOnlyDate = function (data, dateBindingName) {
-            var dateValue = data[dateBindingName];
-            if (dateValue != null && dateValue() != null && dateValue() != ""){
-                dateValue = dateValue();
-                var result = dateValue.split(" ")[0];
-                return result
-            }
-            return "";
-        };
-
-        this.selectedFromQRCode = ko.observable(false);
-        this.selectedForTool = ko.observable(0);    // Default Tool 0
-        this.isFilteredForSelection = ko.observable(false);
-        // - list all attributes
-        this.version = ko.observable();
-        this.isSpoolVisible = ko.observable(false);
-        this.hasNoData = ko.observable();
-        this.databaseId = ko.observable();
-        this.isTemplate = ko.observable();
-        this.isActive = ko.observable();
-        this.isInActive = ko.observable();
-        this.displayName = ko.observable();
-//        this.vendor = ko.observable();
-//        this.material = ko.observable();
-        this.density = ko.observable();
-        this.diameter = ko.observable();
-        this.diameterTolerance = ko.observable();
-        this.flowRateCompensation = ko.observable();
-        this.temperature = ko.observable();
-        this.bedTemperature = ko.observable();
-        this.enclosureTemperature = ko.observable();
-        this.offsetTemperature = ko.observable();
-        this.offsetBedTemperature = ko.observable();
-        this.offsetEnclosureTemperature = ko.observable();
-        this.colorName = ko.observable();
-        this.color = ko.observable();
-        // "finish" is the persisted value; the dropdown works on finishSelection,
-        // free text (selection "custom") on finishCustomText
-        this.finishSelection = ko.observable();
-        this.finishCustomText = ko.observable();
-        this.finish = ko.computed({
-            read: function(){
-                if (this.finishSelection() === "custom"){
-                    return this.finishCustomText();
-                }
-                return this.finishSelection();
-            },
-            write: function(value){
-                var predefinedFinishes = ["silk", "matt", "marble", "metal", "glow"];
-                if (!value){
-                    this.finishSelection(undefined);
-                    this.finishCustomText(undefined);
-                } else if (predefinedFinishes.indexOf(value) !== -1){
-                    this.finishSelection(value);
-                    this.finishCustomText(undefined);
-                } else {
-                    this.finishSelection("custom");
-                    this.finishCustomText(value);
-                }
-            },
-            owner: this
-        });
-        this.totalWeight = ko.observable();
-        this.spoolWeight = ko.observable();
-        this.remainingWeight = ko.observable();
-        this.remainingPercentage = ko.observable();
-        this.totalLength = ko.observable();
-        this.usedLength = ko.observable();
-        this.usedLengthPercentage = ko.observable();
-        this.remainingLength = ko.observable();
-        this.remainingLengthPercentage = ko.observable();
-        this.usedWeight = ko.observable();
-        this.usedPercentage = ko.observable();
-        this.code = ko.observable();
-        this.batchNumber = ko.observable();
-//        this.labels = ko.observable();
-//            this.allLabels = ko.observable();
-        this.noteText = ko.observable()
-        this.noteDeltaFormat = ko.observable()
-        this.noteHtml = ko.observable()
-
-        this.firstUse = ko.observable();
-        this.lastUse = ko.observable();
-        this.firstUseKO = ko.observable();
-        this.lastUseKO = ko.observable();
-        this.purchasedOn = ko.observable();
-        this.purchasedOnKO = ko.observable();
-
-        // Split date/time bindings for the native inputs. A single datetime-local input
-        // reports an empty value until BOTH date and time are filled in, so a date-only
-        // entry was silently lost on save. Separate date + time inputs avoid that; a
-        // missing time defaults to 00:00.
-        var createDatePartKO = function(dateTimeKO){
-            return ko.pureComputed({
-                read: function(){
-                    var value = dateTimeKO();
-                    return (value) ? value.split("T")[0] : "";
-                },
-                write: function(newDate){
-                    if (!newDate){
-                        dateTimeKO(null);
-                        return;
-                    }
-                    var value = dateTimeKO();
-                    var timePart = (value && value.indexOf("T") != -1) ? value.split("T")[1] : "00:00";
-                    dateTimeKO(newDate + "T" + timePart);
-                }
-            });
-        };
-        var createTimePartKO = function(dateTimeKO){
-            return ko.pureComputed({
-                read: function(){
-                    var value = dateTimeKO();
-                    return (value && value.indexOf("T") != -1) ? value.split("T")[1] : "";
-                },
-                write: function(newTime){
-                    var value = dateTimeKO();
-                    if (!value){
-                        // time without a date is meaningless - wait for a date
-                        return;
-                    }
-                    var datePart = value.split("T")[0];
-                    dateTimeKO(datePart + "T" + (newTime ? newTime : "00:00"));
-                }
-            });
-        };
-        this.firstUseDateKO = createDatePartKO(this.firstUseKO);
-        this.firstUseTimeKO = createTimePartKO(this.firstUseKO);
-        this.lastUseDateKO = createDatePartKO(this.lastUseKO);
-        this.lastUseTimeKO = createTimePartKO(this.lastUseKO);
-
-
-        this.purchasedFrom = ko.observable();
-        this.cost = ko.observable();
-        this.costUnit = ko.observable();
-
-        // Assign default values for editing
-        // overwrite and/or add attributes
-        var vendorViewModel = self.componentFactory.createSelectWithFilter("spool-vendor-select", $('#spool-form'));
-        this.vendor = vendorViewModel.selectedOption;
-        this.allVendors = vendorViewModel.allOptions;
-
-        var materialViewModel = self.componentFactory.createSelectWithFilter("spool-material-select", $('#spool-form'));
-        this.material = materialViewModel.selectedOption;
-        // this.allMaterials = materialViewModel.allOptions;
-
-        // Autosuggest for "density"
-        this.material.subscribe(function(newMaterial){
-            if ($("#dialog_spool_edit").is(":visible")){
-                if (self.spoolItemForEditing.isSpoolVisible() == true){
-                    var mat = self.spoolItemForEditing.material();
-                    if (mat){
-                        var density = densityMap[normalizeMaterialKey(mat)]
-                        if (density){
-                           self.spoolItemForEditing.density(density);
-                        }
-                    }
-                }
-            }
-        });
-
-        if (editable == true){
-            // Multi-color support (issue #19): "color" holds the composed value
-            // ("#hex", "#hex;#hex[;#hex]" or "rainbow"), the pickers hold the parts.
-            var spoolItemInstance = this;
-            this.colorCount = ko.observable(1);
-            this.isRainbow = ko.observable(false);
-            this.isTransparent = ko.observable(false);
-            // true = transparent without any base tint ("transparent"),
-            // false = transparent with a chosen base color ("transparent:#hex")
-            this.transparentUntinted = ko.observable(false);
-            var colorViewModel = self.componentFactory.createColorPicker("filament-color-picker", true);
-            var colorViewModel2 = self.componentFactory.createColorPicker("filament-color-picker2", true);
-            var colorViewModel3 = self.componentFactory.createColorPicker("filament-color-picker3", true);
-            // picking the "translucent" swatch enables transparent without a base tint
-            var activateTransparent = function(){
-                spoolItemInstance.transparentUntinted(true);
-                spoolItemInstance.isTransparent(true);
-            };
-            colorViewModel.onTranslucentSelected = activateTransparent;
-            colorViewModel2.onTranslucentSelected = activateTransparent;
-            colorViewModel3.onTranslucentSelected = activateTransparent;
-            var pickerColors = [colorViewModel.selectedColor, colorViewModel2.selectedColor, colorViewModel3.selectedColor];
-            var applyingColor = false;
-            var composeColor = function(){
-                if (applyingColor == true){
-                    return;
-                }
-                if (spoolItemInstance.isRainbow() == true){
-                    spoolItemInstance.color("rainbow");
-                    return;
-                }
-                // transparent without a base tint: no hex value at all
-                if (spoolItemInstance.isTransparent() == true && spoolItemInstance.transparentUntinted() == true){
-                    spoolItemInstance.color("transparent");
-                    return;
-                }
-                var colors = [];
-                for (var i = 0; i < spoolItemInstance.colorCount(); i++){
-                    colors.push(pickerColors[i]() || DEFAULT_COLOR);
-                }
-                var composedColor = colors.join(";");
-                if (spoolItemInstance.isTransparent() == true){
-                    composedColor = "transparent:" + composedColor;
-                }
-                spoolItemInstance.color(composedColor);
-            };
-            // picking a real base color after "translucent" turns it into a tinted transparent
-            var onBaseColorPicked = function(newValue){
-                if (applyingColor == true){
-                    // color is being loaded programmatically, keep the untinted flag as set
-                    return;
-                }
-                if (newValue && spoolItemInstance.transparentUntinted() == true){
-                    spoolItemInstance.transparentUntinted(false);
-                }
-                composeColor();
-            };
-            pickerColors[0].subscribe(onBaseColorPicked);
-            pickerColors[1].subscribe(onBaseColorPicked);
-            pickerColors[2].subscribe(onBaseColorPicked);
-            this.colorCount.subscribe(composeColor);
-            this.isRainbow.subscribe(composeColor);
-            this.isTransparent.subscribe(composeColor);
-            this.transparentUntinted.subscribe(composeColor);
-            // unchecking the transparent checkbox also clears the untinted flag
-            this.isTransparent.subscribe(function(newValue){
-                if (newValue == false){
-                    spoolItemInstance.transparentUntinted(false);
-                }
-            });
-            // rainbow and transparent are mutually exclusive
-            this.isRainbow.subscribe(function(newValue){
-                if (newValue == true && spoolItemInstance.isTransparent() == true){
-                    spoolItemInstance.isTransparent(false);
-                }
-            });
-            this.isTransparent.subscribe(function(newValue){
-                if (newValue == true && spoolItemInstance.isRainbow() == true){
-                    spoolItemInstance.isRainbow(false);
-                }
-            });
-            // pushes a stored color value into the picker widgets/flags
-            this.applyColorToEditor = function(colorValue){
-                applyingColor = true;
-                try {
-                    if (("" + colorValue).toLowerCase() === "rainbow"){
-                        spoolItemInstance.isRainbow(true);
-                        spoolItemInstance.isTransparent(false);
-                        spoolItemInstance.transparentUntinted(false);
-                        spoolItemInstance.colorCount(1);
-                        pickerColors[0](DEFAULT_COLOR);
-                    } else {
-                        var plainColorValue = "" + colorValue;
-                        var transparent = plainColorValue.toLowerCase().indexOf("transparent") === 0;
-                        // "transparent" without a ":#hex" suffix = untinted
-                        var untinted = false;
-                        if (transparent){
-                            plainColorValue = plainColorValue.substr("transparent".length);
-                            if (plainColorValue.indexOf(":") === 0){
-                                plainColorValue = plainColorValue.substr(1);
-                            }
-                            if (plainColorValue.length === 0){
-                                untinted = true;
-                                plainColorValue = DEFAULT_COLOR;
-                            }
-                        }
-                        var colors = plainColorValue.split(";");
-                        spoolItemInstance.isRainbow(false);
-                        spoolItemInstance.isTransparent(transparent);
-                        spoolItemInstance.transparentUntinted(untinted);
-                        spoolItemInstance.colorCount(Math.min(colors.length, 3));
-                        for (var i = 0; i < 3; i++){
-                            if (i < colors.length && colors[i]){
-                                pickerColors[i](colors[i]);
-                            }
-                        }
-                    }
-                } finally {
-                    applyingColor = false;
-                }
-            };
-            this.color(DEFAULT_COLOR);  // needed
-            pickerColors[0](DEFAULT_COLOR);
-            pickerColors[1]("#0000ff");
-            pickerColors[2]("#ffff00");
-
-            var firstUseViewModel = self.componentFactory.createDateTimePicker("firstUse-date-picker");
-            var lastUseViewModel = self.componentFactory.createDateTimePicker("lastUse-date-picker");
-            var purchasedOnViewModel = self.componentFactory.createDateTimePicker("purchasedOn-date-picker", false);
-            this.firstUse = firstUseViewModel.currentDateTime;
-            this.lastUse = lastUseViewModel.currentDateTime;
-            this.purchasedOn = purchasedOnViewModel.currentDateTime;
-        }
-        self.labelsViewModel = self.componentFactory.createLabels("spool-labels-select", $('#spool-form'));
-        this.labels   = self.labelsViewModel.selectedOptions;
-        this.allLabels = self.labelsViewModel.allOptions;
-
-        // Non-persistent fields (these exist only in this view model for weight-calculation)
-        this.totalCombinedWeight = ko.observable();
-        this.remainingCombinedWeight = ko.observable();
-        this.drivenScope = ko.observable();
-        this.drivenScopeOptions = ko.observableArray([
-            {
-                text: "Filament Amount",
-                value: FILAMENT,
-            },
-            {
-                text: "Spool Weight",
-                value: SPOOL,
-            },
-            {
-                text: "Combined Weight",
-                value: COMBINED,
-            },
-        ]);
-
-        // Fill Item with data
-        this.update(spoolData);
-    }
-
-    SpoolItem.prototype.update = function (data) {
-        var updateData = data || {}
-
-        // TODO weight: renaming
-        self.autoUpdateEnabled = false;
-
-        // update latest all catalog
-        if (self.catalogs != null){
-            // labels
-            this.allLabels.removeAll();
-            ko.utils.arrayPushAll(this.allLabels, self.catalogs.labels);
-            // materials
-            // this.allMaterials(self.catalogs.materials);
-
-            //vendors
-            this.allVendors(self.catalogs.vendors);
-        }
-
-        this.selectedFromQRCode(updateData.selectedFromQRCode);
-        this.selectedForTool(updateData.selectedForTool);
-        this.hasNoData(data == null);
-        this.version(updateData.version);
-        this.databaseId(updateData.databaseId);
-        this.isTemplate(updateData.isTemplate);
-        this.isActive(updateData.isActive);
-        this.isInActive(!updateData.isActive);
-        this.displayName(updateData.displayName);
-        this.vendor(updateData.vendor);
-
-        this.material(updateData.material);
-        this.density(updateData.density);
-        this.diameter(updateData.diameter);
-        this.diameterTolerance(updateData.diameterTolerance);
-        this.finish(updateData.finish);
-        // first update color code, and then update the color name
-        var rawColor = updateData.color == null ? DEFAULT_COLOR : updateData.color;
-        if (this.applyColorToEditor != null){
-            this.applyColorToEditor(rawColor);
-        }
-        this.color(rawColor);
-        // if no custom color name present, use predefined name
-        if (updateData.colorName == null || updateData.colorName.length == 0){
-            var preDefinedColorName = false;
-            if (("" + rawColor).toLowerCase() === "rainbow"){
-                preDefinedColorName = "Rainbow";
-            } else if (("" + rawColor).toLowerCase().indexOf("transparent") === 0){
-                var baseColor = ("" + rawColor).substr("transparent".length).replace(/^:/, "").split(";")[0];
-                var baseName = baseColor ? tinycolor(baseColor).toName() : false;
-                preDefinedColorName = baseName != false ? "Transparent " + baseName : "Transparent";
-            } else {
-                preDefinedColorName = tinycolor(("" + rawColor).split(";")[0]).toName();
-            }
-            if (preDefinedColorName != false){
-                this.colorName(preDefinedColorName);
-            }
-        } else {
-            this.colorName(updateData.colorName);
-        }
-
-        this.flowRateCompensation(updateData.flowRateCompensation);
-        this.temperature(updateData.temperature);
-        this.bedTemperature(updateData.bedTemperature);
-        this.enclosureTemperature(updateData.enclosureTemperature);
-        this.offsetTemperature(updateData.offsetTemperature);
-        this.offsetBedTemperature(updateData.offsetBedTemperature);
-        this.offsetEnclosureTemperature(updateData.offsetEnclosureTemperature);
-        this.totalWeight(parseFloat(updateData.totalWeight));
-        this.spoolWeight(parseFloat(updateData.spoolWeight));
-        this.remainingWeight(parseFloat(updateData.remainingWeight));
-        this.remainingPercentage(updateData.remainingPercentage);
-        this.code(updateData.code);
-        this.batchNumber(updateData.batchNumber);
-        this.usedPercentage(updateData.usedPercentage);
-
-        this.totalLength(updateData.totalLength);
-        this.usedLength(updateData.usedLength);
-        this.usedLengthPercentage(updateData.usedLengthPercentage);
-        this.remainingLength(updateData.remainingLength);
-        this.remainingLengthPercentage(updateData.remainingLengthPercentage);
-        this.usedWeight(parseFloat(updateData.usedWeight));
-
-        this.firstUse(updateData.firstUse);
-        this.lastUse(updateData.lastUse);
-        this.purchasedOn(updateData.purchasedOn);
-        if (updateData.firstUse){
-            var convertedDateTime = moment(data.firstUse, "DD.MM.YYYY HH:mm").format("YYYY-MM-DDTHH:mm")
-            this.firstUseKO(convertedDateTime);
-        }
-        else{
-            this.firstUseKO(null);
-        }
-        if (updateData.lastUse){
-            var convertedDateTime = moment(data.lastUse, "DD.MM.YYYY HH:mm").format("YYYY-MM-DDTHH:mm")
-            this.lastUseKO(convertedDateTime);
-        }
-        else{
-            this.lastUseKO(null);
-        }
-        if (updateData.purchasedOn){
-            var convertedDateTime = moment(data.purchasedOn, "DD.MM.YYYY").format("YYYY-MM-DD")
-            this.purchasedOnKO(convertedDateTime);
-        }
-        else {
-            this.purchasedOnKO(null);
-        }
-
-        this.purchasedFrom(updateData.purchasedFrom);
-
-        this.cost(updateData.cost);
-        this.costUnit(updateData.costUnit);
-
-        // update label selections
-        if (updateData.labels != null){
-            this.labels.removeAll();
-            selectedLabels = updateData.labels
-            if (Array.isArray(updateData.labels) == false){
-                selectedLabels = JSON.parse(updateData.labels)
-            }
-            ko.utils.arrayPushAll(this.labels, selectedLabels);
-        }
-
-        // assign content to the Note-Section
-        // fill Obseravbles
-        this.noteText(updateData.noteText);
-        this.noteDeltaFormat(updateData.noteDeltaFormat);
-        if (updateData.noteHtml != null){
-            this.noteHtml(updateData.noteHtml);
-        } else {
-            // Fallback text
-            this.noteHtml(updateData.noteText);
-        }
-        // fill editor
-        if (self.noteEditor != null){
-            if (updateData.noteDeltaFormat == null || updateData.noteDeltaFormat.length == 0) {
-                // Fallback is text (if present), not Html
-                if (updateData.noteText != null){
-                    self.noteEditor.setText(updateData.noteText, 'api');
-                } else {
-                    self.noteEditor.setText("", 'api');
-                }
-            }else {
-                    deltaFormat = JSON.parse(updateData.noteDeltaFormat);
-                    self.noteEditor.setContents(deltaFormat, 'api');
-            }
-        }
-
-        // Calculate derived fields (these exists only in this view model)
-        this.totalCombinedWeight(_getValueOrZero(updateData.totalWeight) + _getValueOrZero(updateData.spoolWeight));
-        this.remainingCombinedWeight(_getValueOrZero(updateData.remainingWeight) + _getValueOrZero(updateData.spoolWeight));
-
-        self.autoUpdateEnabled = true;
-    };
+    // SpoolItem was extracted to SpoolManager-SpoolItem.js
+    // (adopted from mdziekon/OctoPrint-SpoolManager PR #11, GH-10)
 
 
     ///////////////////////////////////////////////////////////////////////////////////////////////// Instance Variables
-    self.componentFactory = new ComponentFactory();
     self.spoolDialog = null;
     self.templateSpoolDialog = null;
     self.closeDialogHandler = null;
@@ -784,14 +237,6 @@ function SpoolManagerEditSpoolDialog(){
     };
 
     self.noteEditor = null;
-
-    // Do I need these viewModels?
-    self.firstUseDatePickerModel = null;
-    self.lastUseDatePickerModel = null;
-    self.purchasedOndatePickerModel = null;
-    self.labelsViewModel = null;
-    self.filamentColorViewModel = null;
-    self.materialViewModel = null;
 
     self.catalogs = null;
     self.allMaterials = ko.observableArray([]);
@@ -942,19 +387,15 @@ function SpoolManagerEditSpoolDialog(){
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////// HELPER
 
+    // Validation shape adopted from mdziekon/OctoPrint-SpoolManager PR #11 (GH-10);
+    // extended with our invalidNumberFields check (see ko.bindingHandlers.numberField).
     self.isFormValidForSubmit = ko.pureComputed(function () {
-        if (self._checkMandatoryFields() == false){
-            return false;
-        }
-        if (self._checkDateTimeFormats() == false){
-            return false;
-        }
-        // block submit while any number field holds an invalid value (Fall A)
-        if (self.invalidNumberFields().length > 0){
-            return false;
-        }
-
-        return true;
+        return (
+            self._isEveryMandatoryFieldValid() &&
+            self._isEveryFilledDateFieldValid() &&
+            // block submit while any number field holds an invalid value (Fall A)
+            self.invalidNumberFields().length === 0
+        );
     });
 
     // comma-separated list of invalid number field labels, for the hint next to the Save button
@@ -964,50 +405,32 @@ function SpoolManagerEditSpoolDialog(){
         }).join(", ");
     });
 
-    self._checkMandatoryFields = function(){
-        // "Displayname", "total weight", "color name/code"
-        let namePresent = self.isDisplayNamePresent();
-        if (namePresent == false){
-            return false;
-        }
-        let colorNametPresent = self.isColorNamePresent();
-        if (colorNametPresent == false){
-            return false;
-        }
-        let weightPresent = self.isTotalCombinedWeightPresent();
-        if (weightPresent == false){
-            return false;
-        }
-        return true;
+    self._isEveryMandatoryFieldValid = function(){
+        // "Displayname", "color name", "total weight"
+        return (
+            self.isDisplayNamePresent() &&
+            self.isColorNamePresent() &&
+            self.isTotalCombinedWeightPresent()
+        );
     }
 
-    self._checkDateTimeFormats = function(){
-
-        // "First/LastUse", "purchasedOn"
-        let firstUse = self.spoolItemForEditing.firstUseKO()
-        if (firstUse && firstUse.trim().length != 0){
-            if (moment(firstUse, "YYYY-MM-DDTHH:mm").isValid() == false){
-                return false;
+    self._isEveryFilledDateFieldValid = function(){
+        // "First/LastUse", "purchasedOn" - empty fields are fine, filled ones must parse
+        var isEmptyOrValid = function(value, format){
+            if (!value || value.trim().length === 0){
+                return true;
             }
-        }
-        let lastUse = self.spoolItemForEditing.lastUseKO()
-        if (lastUse && lastUse.trim().length != 0){
-            if (moment(lastUse, "YYYY-MM-DDTHH:mm").isValid() == false){
-                return false;
-            }
-        }
-        let purchasedOn = self.spoolItemForEditing.purchasedOnKO()
-        if (purchasedOn && purchasedOn.trim().length != 0){
-            if (moment(purchasedOn, "YYYY-MM-DD").isValid() == false){
-                return false;
-            }
-        }
-        return true;
+            return moment(value, format).isValid();
+        };
+        return (
+            isEmptyOrValid(self.spoolItemForEditing.firstUseKO(), FORMAT_DATETIME_LOCAL) &&
+            isEmptyOrValid(self.spoolItemForEditing.lastUseKO(), FORMAT_DATETIME_LOCAL) &&
+            isEmptyOrValid(self.spoolItemForEditing.purchasedOnKO(), FORMAT_DATE)
+        );
     }
 
     self.isDisplayNamePresent = function(){
-        var displayName = self.spoolItemForEditing.displayName();
-        return (!displayName || displayName.trim().length === 0) == false;
+        return ((self.spoolItemForEditing.displayName() || "").trim().length > 0);
     }
 
     self.addColorClicked = function(){
@@ -1025,39 +448,11 @@ function SpoolManagerEditSpoolDialog(){
     }
 
     self.isColorNamePresent = function(){
-        var colorName = self.spoolItemForEditing.colorName();
-        return (!colorName || colorName.trim().length === 0) == false;
+        return ((self.spoolItemForEditing.colorName() || "").trim().length > 0);
     }
 
     self.isTotalCombinedWeightPresent = function(){
-        var totalCombinedWeight = self.spoolItemForEditing.totalCombinedWeight();
-        return (!totalCombinedWeight || (""+totalCombinedWeight).trim().length === 0) == false;
-    }
-
-    // self.transform2Date = function(dateValue){
-    //     if (dateValue == null){
-    //         return null;
-    //     }
-    //     if (dateValue instanceof Date){
-    //         return dateValue;
-    //     }
-    //     return new Date(dateValue);
-    // }
-
-//    self.getValueOrDefault = function(data, attribute, defaultValue){
-//        if (data == null){
-//            return defaultValue;
-//        }
-//        var value = data[attribute];
-//        if (value == null || value == undefine){
-//            return defaultValue;
-//        }
-//        return value;
-//    }
-
-    function _roundTo(x, precision) {
-        var increments = Math.pow(10, precision);
-        return Math.round((x + Number.EPSILON) * increments) / increments;
+        return (("" + (self.spoolItemForEditing.totalCombinedWeight() || "")).trim().length > 0);
     }
 
     // builds (or refreshes) an SVG checkerboard <pattern> in the filament svg's
@@ -1147,13 +542,6 @@ function SpoolManagerEditSpoolDialog(){
         });
     };
 
-    function _getValueOrZero(x) {
-        if (!x){
-            x = 0
-        }
-        return parseFloat(x);
-    }
-
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////// PUBLIC
     this.initBinding = function(apiClient, pluginSettings, printerProfilesViewModel, printerStateViewModel){
 
@@ -1169,21 +557,9 @@ function SpoolManagerEditSpoolDialog(){
         self.spoolDialog = $("#dialog_spool_edit");
         self.templateSpoolDialog = $("#dialog_template_spool_selection");
 
-        self.noteEditor = new Quill('#spool-note-editor', {
-            modules: {
-                toolbar: [
-                    ['bold', 'italic', 'underline'],
-                    [{ 'color': [] }, { 'background': [] }],
-                    [{ 'list': 'ordered' }, { 'list': 'bullet' }],
-                    ['link']
-                ]
-            },
-            theme: 'snow'
-        });
-
-        Quill.prototype.getHtml = function() {
-            return this.container.querySelector('.ql-editor').innerHTML;
-        };
+        // Adopted from mdziekon/OctoPrint-SpoolManager PR #11 (GH-10): note editor is created
+        // via the static factory instead of instantiating Quill inline
+        self.noteEditor = ComponentFactory.createNoteEditor('spool-note-editor');
 
         // initial coloring
         self._createSpoolItemForEditing();
@@ -1475,7 +851,7 @@ function SpoolManagerEditSpoolDialog(){
                 remainPercentageKo(NaN);
                 return;
             }
-            var usedPercentage = _roundTo(
+            var usedPercentage = roundWithPrecision(
                 100 * used / total,
                 0
             );
@@ -1492,7 +868,7 @@ function SpoolManagerEditSpoolDialog(){
                 return parseFloat(x()) || 0;
             }
 
-            targetKo(_roundTo(
+            targetKo(roundWithPrecision(
                 calcFn.apply(null, calcFnArguments.map(getValueOrZero)),
                 1
             ));
@@ -1510,13 +886,13 @@ function SpoolManagerEditSpoolDialog(){
         self.convertToLength = function (weight, density, diameter) {
             var volume = weight / (density *  Math.pow(10, -3)); // [mm^3] = [g] / ( [g/cm^3] * 10^-3 )
             var area = (Math.PI / 4) * Math.pow(diameter, 2); // [mm^2] = pi/4 * [mm]^2
-            return _roundTo(volume / area, 0); // [mm] = [mm^3] / [mm^2}
+            return roundWithPrecision(volume / area, 0); // [mm] = [mm^3] / [mm^2}
         };
 
         self.convertToWeight = function (length, density, diameter) {
             var area = (Math.PI / 4) * Math.pow(diameter, 2); // [mm^2] = pi/4 * [mm]^2
             var volume = area * length; // [mm^3] = [mm^2] * [mm]
-            return _roundTo(volume * density * Math.pow(10, -3), 1); // [g] = [mm^3] * [g/cm^3] * 10^3
+            return roundWithPrecision(volume * density * Math.pow(10, -3), 1); // [g] = [mm^3] * [g/cm^3] * 10^3
         };
 
         // lock mechanism to prevent infinite update loops
@@ -1544,8 +920,11 @@ function SpoolManagerEditSpoolDialog(){
     this.afterBinding = function(){
     }
 
+    // SpoolItem construction/update flow adopted from mdziekon/OctoPrint-SpoolManager PR #11 (GH-10):
+    // the item gets its dependencies (isEditable, catalogs) passed in explicitly and no longer
+    // mutates dialog state; note-editor sync + autoUpdate toggling happen in _updateActiveSpoolItem.
     this._createSpoolItemForEditing = function(){
-        self.spoolItemForEditing = new SpoolItem(null, true);
+        self.spoolItemForEditing = new SpoolItem(null, { isEditable: true, catalogs: self.catalogs });
 
         self.spoolItemForEditing.isInActive.subscribe(function(newValue){
             self.spoolItemForEditing.isActive(!newValue);
@@ -1555,8 +934,28 @@ function SpoolManagerEditSpoolDialog(){
     }
 
     this.createSpoolItemForTable = function(spoolData){
-        var newSpoolItem = new SpoolItem(spoolData, false);
+        var newSpoolItem = new SpoolItem(spoolData, { isEditable: false, catalogs: self.catalogs });
         return newSpoolItem;
+    }
+
+    // Central update of the item bound to the edit dialog: disables the weight auto-calculation
+    // while loading and syncs the note editor content
+    self._updateActiveSpoolItem = function(spoolData){
+        self.autoUpdateEnabled = false;
+        self.spoolItemForEditing.update(spoolData, { catalogs: self.catalogs });
+
+        var updateData = spoolData || {};
+        if (self.noteEditor != null){
+            if (updateData.noteDeltaFormat == null || updateData.noteDeltaFormat.length == 0) {
+                // Fallback is text (if present), not Html
+                self.noteEditor.setText(updateData.noteText != null ? updateData.noteText : "", 'api');
+            } else {
+                var deltaFormat = JSON.parse(updateData.noteDeltaFormat);
+                self.noteEditor.setContents(deltaFormat, 'api');
+            }
+        }
+
+        self.autoUpdateEnabled = true;
     }
 
     this.updateCatalogs = function(allCatalogs){
@@ -1607,36 +1006,19 @@ function SpoolManagerEditSpoolDialog(){
             // New Spool
             self.isExistingSpool(false);
             // reset values for a new spool
-            self.spoolItemForEditing.update({});
-            // self.spoolItemForEditing.isActive(true);
+            self._updateActiveSpoolItem({});
             self.spoolItemForEditing.isInActive(false);
-            // self.spoolItemForEditing.isTemplate(false);
-            // self.spoolItemForEditing.isActive(true);
-            // self.spoolItemForEditing.databaseId(null);
-            // self.spoolItemForEditing.costUnit(self.pluginSettings.currencySymbol());
-            // self.spoolItemForEditing.displayName(null);
-            // self.spoolItemForEditing.totalWeight(0.0);
-            // self.spoolItemForEditing.usedWeight(0.0);
-            // self.spoolItemForEditing.totalLength(0);
-            // self.spoolItemForEditing.usedLength(0);
-            // self.spoolItemForEditing.firstUse(null);
-            // self.spoolItemForEditing.firstUseKO(null);
-            // self.spoolItemForEditing.lastUse(null);
-            // self.spoolItemForEditing.lastUseKO(null);
-            // self.spoolItemForEditing.purchasedOn(null);
-            // self.spoolItemForEditing.remainingCombinedWeight(0);
-            // self.spoolItemForEditing.totalCombinedWeight(0);
 
             // Force the current day on new spools
-            self.spoolItemForEditing.purchasedOnKO(moment().format("YYYY-MM-DD"))
+            self.spoolItemForEditing.purchasedOnKO(moment().format(FORMAT_DATE))
 
             // Prefill diameter with the de-facto consumer standard of 1.75mm
             self.spoolItemForEditing.diameter(1.75);
         } else {
             self.isExistingSpool(true);
             // Make a copy of provided spoolItem
-            spoolItemCopy = ko.mapping.toJS(spoolItem);
-            self.spoolItemForEditing.update(spoolItemCopy);
+            var spoolItemCopy = ko.mapping.toJS(spoolItem);
+            self._updateActiveSpoolItem(spoolItemCopy);
         }
         self.spoolItemForEditing.drivenScope(COMBINED); // default calculation mode
         self.spoolItemForEditing.isSpoolVisible(true);
@@ -1740,7 +1122,7 @@ function SpoolManagerEditSpoolDialog(){
         self.isExistingSpool(false);
         self._refreshNextSpoolId();
         let spoolItemCopy = ko.mapping.toJS(spoolItem);
-        self.spoolItemForEditing.update(spoolItemCopy);
+        self._updateActiveSpoolItem(spoolItemCopy);
         self.spoolItemForEditing.isTemplate(false);
         // This sets isActive as well
         self.spoolItemForEditing.isInActive(false);
@@ -1763,16 +1145,11 @@ function SpoolManagerEditSpoolDialog(){
         var noteDeltaFormat = self.noteEditor.getContents();
         var noteHtml = self.noteEditor.getHtml();
 
+        // read current note values and push to item, because there is no 2-way binding
         self.spoolItemForEditing.noteText(noteText);
         self.spoolItemForEditing.noteDeltaFormat(noteDeltaFormat);
         self.spoolItemForEditing.noteHtml(noteHtml);
 
-        // read current note values and push to item, because there is no 2-way binding
-
-//        self.printJobItemForEdit.noteText(noteText);
-//        self.printJobItemForEdit.noteDeltaFormat(noteDeltaFormat);
-//        self.printJobItemForEdit.noteHtml(noteHtml);
-//
         self.apiClient.callSaveSpool(self.spoolItemForEditing, function(success, validationErrors){
             if (success === false){
                 // server rejected the save - keep the dialog open and tell the user why
