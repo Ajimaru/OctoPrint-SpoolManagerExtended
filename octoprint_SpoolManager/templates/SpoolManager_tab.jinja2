@@ -301,7 +301,7 @@
                     <!-- ko if: finish -->
                     <i>(<span data-bind="text: finish"></span>)</i>
                     <!-- /ko --></td>
-                <td data-bind="visible: $root.tableAttributeVisibility.lastFirstUse"><span data-bind="text: formatOnlyDate($data, 'lastUse')"></span><br><span data-bind="text: formatOnlyDate($data, 'firstUse')"></span></td>
+                <td data-bind="visible: $root.tableAttributeVisibility.lastFirstUse"><span data-bind="text: getDateFromAttribute($data, 'lastUse')"></span><br><span data-bind="text: getDateFromAttribute($data, 'firstUse')"></span></td>
                 <td data-bind="visible: $root.tableAttributeVisibility.weight" style="text-align: right;">
                     <span data-bind="text: $root.formatWeightForDisplay(totalWeight()), attr: {title: $root.buildTooltipForSpoolItem($data, 'Total weight: ', 'totalWeight')}"></span><br/>
                     <span data-bind="text: $root.formatWeightForDisplay(remainingWeight()), attr: {title: $root.buildTooltipForSpoolItem($data, 'Remaining weight: ', 'remainingWeight')}"></span><br>
