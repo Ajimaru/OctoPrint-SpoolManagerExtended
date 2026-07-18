@@ -192,7 +192,6 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
     //////////////////////////////////////////////////////////////////////////////// CONFIRM DatabaseConnectionPoblem
     this.confirmDatabaseProblemMessage = function (responseHandler){
         $.ajax({
-            //url: API_BASEURL + "plugin/"+PLUGIN_ID+"/loadPrintJobHistory",
             url: this.baseUrl + "plugin/" + this.pluginId + "/confirmDatabaseProblemMessage",
             dataType: "json",
             contentType: "application/json; charset=UTF-8",
@@ -208,14 +207,10 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
         query = _buildRequestQuery(tableQuery);
         urlToCall = this.baseUrl + "plugin/"+this.pluginId+"/loadSpoolsByQuery?"+query;
         $.ajax({
-            //url: API_BASEURL + "plugin/"+PLUGIN_ID+"/loadPrintJobHistory",
             url: urlToCall,
             type: "GET"
         }).always(function( data ){
             responseHandler(data)
-            //shoud be done by the server to make sure the server is informed countdownDialog.modal('hide');
-            //countdownDialog.modal('hide');
-            //countdownCircle = null;
         });
     }
 
@@ -245,7 +240,6 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
         jsonPayload = ko.toJSON(spoolItem)
 
         $.ajax({
-            //url: API_BASEURL + "plugin/"+PLUGIN_ID+"/loadPrintJobHistory",
             url: this.baseUrl + "plugin/" + this.pluginId + "/saveSpool",
             dataType: "json",
             contentType: "application/json; charset=UTF-8",
@@ -266,7 +260,6 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
     ////////////////////////////////////////////////////////////////////////////////////////////////// DELETE Spool-Item
     this.callDeleteSpool = function (databaseId, responseHandler){
         $.ajax({
-            //url: API_BASEURL + "plugin/"+PLUGIN_ID+"/loadPrintJobHistory",
             url: this.baseUrl + "plugin/" + this.pluginId + "/deleteSpool/" + databaseId,
             type: "DELETE"
         }).always(function( data ){
@@ -327,7 +320,6 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
     this.callDeleteDatabase = function(databaseType, databaseSettings, responseHandler){
         jsonPayload = ko.toJSON(databaseSettings)
         $.ajax({
-            //url: API_BASEURL + "plugin/"+PLUGIN_ID+"/loadPrintJobHistory",
             url: this.baseUrl + "plugin/"+this.pluginId+"/deleteDatabase/"+databaseType,
             dataType: "json",
             contentType: "application/json; charset=UTF-8",
@@ -356,19 +348,6 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
     this.getDownloadDatabaseUrl = function(exportType){
         return _addApiKeyIfNecessary("./plugin/" + this.pluginId + "/downloadDatabase");
     }
-
-//    // deactivate the Plugin/Check
-//    this.callDeactivatePluginCheck =  function (){
-//        $.ajax({
-//            url: this.baseUrl + "plugin/"+ this.pluginId +"/deactivatePluginCheck",
-//            type: "PUT"
-//        }).done(function( data ){
-//            //responseHandler(data)
-//        });
-//    }
-
-
-
 
 
 }

@@ -999,17 +999,6 @@ $(function() {
             self.hasInitializedSpoolsSelector = true;
 
             var currentFilterName = "all";
-            // if (self.pluginSettings!= null){
-            //      if(self.pluginSettings.hideEmptySpoolsInSidebar() == true) {
-            //          currentFilterName = "hideEmptySpools";
-            //      }
-            //      if(self.pluginSettings.hideInactiveSpoolsInSidebar() == true) {
-            //          currentFilterName = "hideInactiveSpools";
-            //      }
-            //      if(self.pluginSettings.hideEmptySpoolsInSidebar() == true && self.pluginSettings.hideInactiveSpoolsInSidebar() == true) {
-            //          currentFilterName = "hideEmptySpools,hideInactiveSpools";
-            //      }
-            // }
 
             var tableQuery = {
                 filterName: currentFilterName,
@@ -1169,14 +1158,6 @@ $(function() {
             var databaseId = -1
             if (spoolItem != null){
                 databaseId = spoolItem.databaseId();
-                // Why do we need this information
-                // if (toolIndex != -1){
-                //     var alreadyInTool = self.getSpoolItemSelectedTool(databaseId);
-                //     if (alreadyInTool !== null) {
-                //         alert('This spool is already selected for tool ' + alreadyInTool + '!');
-                //         return;
-                //     }
-                // }
             }
             self.apiClient.callSelectSpool(toolIndex, databaseId, commitCurrentSpoolValues, function(responseData){
                 var spoolItem = null;
@@ -1478,19 +1459,6 @@ $(function() {
 
                     if (result.reminderSpoolSelection.length) {
                         itemList = [];
-                        // for (item of result.reminderSpoolSelection) {
-                        //     itemList.push(((result.reminderSpoolSelection.length>1)?("Tool "+item.toolIndex+": "):'')+"'" + item.spoolName + "'");
-                        // }
-                        // if (itemList.length === 1) {
-                        //     check = confirm(
-                        //         'Do you want to start the print with the selected spool?\n- ' + itemList[0] + '?'
-                        //     );
-                        // } else {
-                        //     check = confirm(
-                        //         "Do you want to start the print with following selected spools?\n" +
-                        //         '- '+ itemList.join('\n- ')
-                        //     );
-                        // }
                         // build message for each tool
                         for (item of result.reminderSpoolSelection) {
                             var toolMessage = buildSpoolLabel(item);
@@ -1649,23 +1617,6 @@ $(function() {
                 self.pluginSettings.qrCodeBackgroundColor(newColorValue);
             });
 
-            // self.pluginSettings.hideEmptySpoolsInSidebar.subscribe(function(newCheckedVaue){
-            //     var payload = {
-            //             "hideEmptySpoolsInSidebar": newCheckedVaue
-            //         };
-            //     OctoPrint.settings.savePluginSettings(PLUGIN_ID, payload);
-            //     // self.loadSpoolsForSidebar();
-            //     // self.filterSelectionSidebar();
-            // });
-            // self.pluginSettings.hideInactiveSpoolsInSidebar.subscribe(function(newCheckedVaue){
-            //     var payload = {
-            //             "hideInactiveSpoolsInSidebar": newCheckedVaue
-            //         };
-            //     OctoPrint.settings.savePluginSettings(PLUGIN_ID, payload);
-            //     // self.loadSpoolsForSidebar();
-            //     // self.filterSelectionSidebar();
-            // });
-
             // needed after the tool-count is changed
             self.settingsViewModel.printerProfiles.currentProfileData.subscribe(function(){
                 self.updateAvailableSpoolSlots();
@@ -1777,12 +1728,6 @@ $(function() {
         }
 
         self.onAfterTabChange = function(current, previous){
-            // alert("Next:"+next +" Current:"+previous);
-            //if ("#tab_plugin_SpoolManager" == current){
-            // var selectedSpoolId = getUrlParameter("selectedSpoolId");
-            // if (selectedSpoolId) {
-            //     console.error("Id"+selectedSpoolId);
-            // }
             var tabHashCode = window.location.hash;
             // QR-Code-Call: We can only contain -spoolId on the very first page
             if (tabHashCode.includes("#tab_plugin_SpoolManager-spoolId")){
@@ -1816,7 +1761,6 @@ $(function() {
                     }
                 });
             }
-            //}
         }
 
         self.calculateRemainingPercentage = function(spoolItem) {
