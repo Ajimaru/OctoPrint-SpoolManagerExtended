@@ -76,26 +76,6 @@ function SpoolSelectionTableComp() {
             if (localStorage[storageKeyPrefix + "hideInActiveSpools"] != null){
                 self.hideInActiveSpools(localStorage[storageKeyPrefix + "hideInActiveSpools"] == 'false' ? false : true);
             }
-            // maybe if someone request for it
-            // if (localStorage[storageKeyPrefix + "showAllMaterialsForFilter"] != null){
-            //     self.showAllMaterialsForFilter(localStorage[storageKeyPrefix + "showAllMaterialsForFilter"] == 'false' ? false : true);
-            // }
-            // if (localStorage[storageKeyPrefix + "showAllVendorsForFilter"] != null){
-            //     self.showAllVendorsForFilter(localStorage[storageKeyPrefix + "showAllVendorsForFilter"] == 'false' ? false : true);
-            // }
-            // if (localStorage[storageKeyPrefix + "showAllColorsForFilter"] != null){
-            //     self.showAllColorsForFilter(localStorage[storageKeyPrefix + "showAllColorsForFilter"] == 'false' ? false : true);
-            // }
-            //
-            // if (localStorage[storageKeyPrefix + "selectedMaterialsForFilter"] != null){
-            //   self.selectedMaterialsForFilter(self._stringToArray(localStorage[storageKeyPrefix + "selectedMaterialsForFilter"]));
-            // }
-            // if (localStorage[storageKeyPrefix + "selectedVendorsForFilter"] != null){
-            //   self.selectedVendorsForFilter(self._stringToArray(localStorage[storageKeyPrefix + "selectedVendorsForFilter"]));
-            // }
-            // if (localStorage[storageKeyPrefix + "selectedColorsForFilter"] != null){
-            //   self.selectedColorsForFilter(self._stringToArray(localStorage[storageKeyPrefix + "selectedColorsForFilter"]));
-            // }
         }
 
         self._storeFilterSelectionsToBrowserStorage = function(){
@@ -109,20 +89,6 @@ function SpoolSelectionTableComp() {
             if (self.hideInActiveSpools() != null){
                 localStorage[storageKeyPrefix + "hideInActiveSpools"] = self.hideInActiveSpools();
             }
-            // maybe if someone request for it
-            // if (self.showAllMaterialsForFilter() != null){
-            //     localStorage[storageKeyPrefix + "showAllMaterialsForFilter"] = self.showAllMaterialsForFilter();
-            // }
-            // if (self.showAllVendorsForFilter() != null){
-            //     localStorage[storageKeyPrefix + "showAllVendorsForFilter"] = self.showAllVendorsForFilter();
-            // }
-            // if (self.showAllColorsForFilter() != null){
-            //     localStorage[storageKeyPrefix + "showAllColorsForFilter"] = self.showAllColorsForFilter();
-            // }
-            //
-            // localStorage[storageKeyPrefix + "selectedMaterialsForFilter"] = self._arrayToString(self.selectedMaterialsForFilter());
-            // localStorage[storageKeyPrefix + "selectedVendorsForFilter"] = self._arrayToString(self.selectedVendorsForFilter());
-            // localStorage[storageKeyPrefix + "selectedColorsForFilter"] = self._arrayToString(self.selectedColorsForFilter());
         }
 
         self._stringToArray = function(stringValues){
