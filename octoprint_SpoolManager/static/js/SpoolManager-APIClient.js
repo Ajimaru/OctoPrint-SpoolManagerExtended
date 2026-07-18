@@ -35,6 +35,12 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
         return urlContext;
     }
 
+    // fetch()-based API layer, approach adopted from mdziekon/OctoPrint-SpoolManager
+    // PR #2 (GH-1) and PR #7 (GH-4): a shared callApi() helper replaces the
+    // per-method $.ajax calls.
+    // The implementation deliberately differs: the callback-style contracts of the
+    // existing consumers are preserved instead of porting his Result/safeAsync
+    // pattern, so no call site had to change.
     var _buildPluginUrl = function (path) {
         return self.baseUrl + "plugin/" + self.pluginId + "/" + path;
     };
