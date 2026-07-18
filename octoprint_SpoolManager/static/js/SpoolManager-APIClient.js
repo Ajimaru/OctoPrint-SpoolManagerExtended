@@ -220,6 +220,16 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
     }
 
 
+    ///////////////////////////////////////////////////////////////////////////////////////////// LOAD SELECTED Spools
+    this.callLoadSelectedSpools = function (responseHandler){
+        $.ajax({
+            url: this.baseUrl + "plugin/" + this.pluginId + "/loadSelectedSpools",
+            type: "GET"
+        }).always(function( data ){
+            responseHandler(data);
+        });
+    }
+
     ///////////////////////////////////////////////////////////////////////////////////////////////// LOAD NEXT Spool-Id
     this.callLoadNextSpoolId = function (responseHandler){
         $.ajax({

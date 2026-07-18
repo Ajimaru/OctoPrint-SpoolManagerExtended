@@ -1031,6 +1031,10 @@ class SpoolmanagerPlugin(
         settings[SettingsKeys.SETTINGS_KEY_WEIGHT_UNIT] = "g"
         settings[SettingsKeys.SETTINGS_KEY_DEFAULT_VIEW_MODE_SIMPLE] = True
 
+        ## Performance
+        settings[SettingsKeys.SETTINGS_KEY_PERFORMANCE_LAZY_LOAD_SPOOL_SELECTOR_DATA] = False
+        settings[SettingsKeys.SETTINGS_KEY_PERFORMANCE_LAZY_LOAD_SPOOL_TABLE] = False
+
         ## QR-Code
         settings[SettingsKeys.SETTINGS_KEY_QR_CODE_ENABLED] = True
         settings[SettingsKeys.SETTINGS_KEY_QR_CODE_USE_URL_PREFIX] = False
