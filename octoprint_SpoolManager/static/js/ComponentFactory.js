@@ -1,309 +1,228 @@
 
+// Static factory methods adopted from mdziekon/OctoPrint-SpoolManager PR #11 (GH-10):
+// the component creators are stateless, so they live on ComponentFactory itself and the
+// constructor only delegates (prevents needless instantiation & coupling). The method
+// bodies are our own (extended color palette, translucent swatch, datetimepicker stub).
 function ComponentFactory(pluginId) {
 
     this.pluginId = pluginId
-    this.COMPONENT_PREFIX = "component_";
 
-/*
-    <component_printstatusselection-bla></component_printstatusselection-bla>
+    this.createDateTimePicker = ComponentFactory.createDateTimePicker;
+    this.createLabels = ComponentFactory.createLabels;
+    this.createSelectWithFilter = ComponentFactory.createSelectWithFilter;
+    this.createColorPicker = ComponentFactory.createColorPicker;
+    this.createNoteEditor = ComponentFactory.createNoteEditor;
+}
 
-            blaViewModel = self.componentFactory.createHelloWorldComponent("bla");
-            blaViewModel.hello("SUPER!!!!");
+////////////////////////////////////////////////////////////////////////////////////////////////// DATETIME - PICKER
+// jQuery datetimepicker removal authored by @mdziekon, adopted via mdziekon/OctoPrint-SpoolManager PR #21.
+// The dialog uses native date/datetime-local inputs; this only provides the observables
+// the edit dialog binds against.
+ComponentFactory.createDateTimePicker = function(elementId, showTimePicker){
 
-*/
-    this.createHelloWorldComponent = function(name){
-
-        componentName = this.COMPONENT_PREFIX + "printstatusselection-" + name;
-
-        var componentViewModel = {
-            hello: ko.observable("World")
-        }
-
-        componentTemplate = "<b>Hello <span data-bind='text: hello'></span></b>";
-
-        ko.components.register(componentName, {
-            viewModel: { instance: componentViewModel },
-            template: componentTemplate
-        });
-        return componentViewModel;
+    var componentViewModel = {
+        currentDateTime: ko.observable(),
+        isEnabled: ko.observable(true)
     }
 
-    ////////////////////////////////////////////////////////////////////////////////////////////////// DATETIME - PICKER
-    // jQuery datetimepicker removal authored by @mdziekon, adopted via mdziekon/OctoPrint-SpoolManager PR #21.
-    // The dialog uses native date/datetime-local inputs; this only provides the observables
-    // the edit dialog binds against.
-    this.createDateTimePicker = function(elementId, showTimePicker){
+    return componentViewModel;
+}
 
-        var componentViewModel = {
-            currentDateTime: ko.observable(),
-            isEnabled: ko.observable(true)
-        }
 
-        return componentViewModel;
+///////////////////////////////////////////////////////////////////////////////////////////////////////////// LABELS
+ComponentFactory.createLabels = function(elementId, dropDownParent){
+
+    var elementSelector = "#" + elementId ;
+    // Build Widget
+    var labels = $(elementSelector).select2({
+      dropdownParent: dropDownParent,
+      multiple: true,
+      placeholder: "Add a Label...",
+      width: '400px',
+      tags: true,
+      dropdownAutoWidth: true
+    });
+
+
+    // Widget Model
+    var componentViewModel = {
+        allOptions: ko.observableArray(),
+        selectedOptions: ko.observableArray(),
     }
 
-
-    ///////////////////////////////////////////////////////////////////////////////////////////////////////////// LABELS
-    this.createLabels = function(elementId, dropDownParent){
-
-        var elementSelector = "#" + elementId ;
-        // Build Widget
-        var labels = $(elementSelector).select2({
-          dropdownParent: dropDownParent,
-          multiple: true,
-          placeholder: "Add a Label...",
-//          allowClear: true,
-          width: '400px',
-          tags: true,
-          dropdownAutoWidth: true
-//          maximumSelectionLength: 2
-        });
-
-
-        // Widget Model
-        var componentViewModel = {
-            allOptions: ko.observableArray(),
-            selectedOptions: ko.observableArray(),
-//            labelsWidget: labels
+    // sync: observable -> jquery
+    var fired = [false];
+    componentViewModel.selectedOptions.subscribe(function(newSelections){
+        if (fired[0] == false){
+            fired[0] = true;
+            labels.val(newSelections);
+            labels.trigger('change');
+        } else {
+            fired[0] = false;
         }
-
-        // sync: observable -> jquery
-        var fired = [false];
-        componentViewModel.selectedOptions.subscribe(function(newSelections){
-            if (fired[0] == false){
-                fired[0] = true;
-                labels.val(newSelections);
-                labels.trigger('change');
-            } else {
-                fired[0] = false;
-            }
-        });
+    });
 
 
-        return componentViewModel;
+    return componentViewModel;
+}
+
+///////////////////////////////////////////////////////////////////////////// SELECT WITH FILTER
+ComponentFactory.createSelectWithFilter = function(elementId, dropDownParent){
+
+    var elementSelector = "#" + elementId;
+    // Build Widget
+    var select2 = $(elementSelector).select2({
+      dropdownParent: dropDownParent,
+      placeholder: "Choose...",
+      allowClear: true,
+      tags: true
+    });
+
+    // Widget Model
+    var componentViewModel = {
+        allOptions: ko.observableArray(),
+        selectedOption: ko.observable(),
+        select2Element: select2
     }
 
-    ///////////////////////////////////////////////////////////////////////////////////////////////// SELECT WITH FILTER
-    this.createSelectWithFilter = function(elementId, dropDownParent){
+    // sync: observable -> jquery
+    componentViewModel.selectedOption.subscribe(function(newSelection){
+        select2.val(newSelection);
+        select2.trigger('change');
+    });
+    return componentViewModel;
+}
 
-        var elementSelector = "#" + elementId;
-        // Build Widget
-        var select2 = $(elementSelector).select2({
-          dropdownParent: dropDownParent,
-          placeholder: "Choose...",
-          allowClear: true,
-          tags: true
-        });
+///////////////////////////////////////////////////////////////////////////////////// COLOR - PICKER
+ComponentFactory.createColorPicker = function(elementId, showTranslucent){
 
-        // Widget Model
-        var componentViewModel = {
-            allOptions: ko.observableArray(),
-            selectedOption: ko.observable(),
-            select2Element: select2
-        }
-
-        // sync: observable -> jquery
-        componentViewModel.selectedOption.subscribe(function(newSelection){
-            select2.val(newSelection);
-            select2.trigger('change');
-        });
-        return componentViewModel;
+    // Widget Model
+    var componentViewModel = {
+        selectedColor: ko.observable(),
+        // called when the special "translucent" swatch is picked (only present if showTranslucent == true)
+        onTranslucentSelected: null
     }
 
-    ///////////////////////////////////////////////////////////////////////////////////////////////////// COLOR - PICKER
-    this.createColorPicker = function(elementId, showTranslucent){
+    var elementSelector = "#" + elementId;
+    var pickColor = $(elementSelector).pickAColor({
+        showSpectrum          : false,
+        showSavedColors       : false,
+        saveColorsPerElement  : false,
+        fadeMenuToggle        : true,
+        showAdvanced          : true,
+        showBasicColors       : true,
+        showHexInput          : true,
+        allowBlank            : false,
+        basicColors           : $.extend(showTranslucent == true ? { translucent: 'ffffff' } : {}, {
+              white     : 'ffffff',
+              black     : '000000',
+              red       : 'ff0000',
+              green     : '008000',
+              blue      : '0000ff',
+              yellow    : 'ffff00',
+              orange    : 'ffa500',
+              purple    : '800080',
+              gray      : '808080',
+              darkgray  : 'A9A9A9',
+              lightgray : 'D3D3D3',
+              violet    : 'EE82EE',
+              pink      : 'FFC0CB',
+              brown     : 'A52A2A',
+              burlyWood : 'DEB887',
+              cyan      : '00FFFF',
+              magenta   : 'FF00FF',
+              lime      : '00FF00',
+              navy      : '000080',
+              teal      : '008080',
+              olive     : '808000',
+              maroon    : '800000',
+              gold      : 'FFD700',
+              silver    : 'C0C0C0',
+              bronze    : 'CD7F32',
+              beige     : 'F5F5DC',
+              coral     : 'FF7F50',
+              turquoise : '40E0D0',
+              indigo    : '4B0082',
+              khaki     : 'F0E68C',
+              salmon    : 'FA8072',
+              lavender  : 'E6E6FA',
+              mint      : '3EB489'
+            })
+    });
 
-        // Widget Model
-        var componentViewModel = {
-            selectedColor: ko.observable(),
-            // called when the special "translucent" swatch is picked (only present if showTranslucent == true)
-            onTranslucentSelected: null
+    // set while handling a click on the "translucent" swatch, so the
+    // change-handler below can ignore the bogus hex pick-a-color derives
+    // from the checkerboard swatch (its rendered background-color is
+    // transparent, which tinycolor turns into #000000 -> black)
+    var handlingTranslucentClick = false;
+    if (showTranslucent == true){
+        var $translucentLink = $(elementSelector).parent().find(".color-link.translucent");
+        // the swatch carries no real color: it only toggles the "transparent"
+        // semantic (isTransparent-flag) without setting a base hex color.
+        // The flag is armed already on mousedown/touchstart so it is set BEFORE
+        // pick-a-color's own click-based change-handler (which would otherwise
+        // write the bogus black hex derived from the checkerboard swatch).
+        $translucentLink.on("mousedown touchstart", function(){
+            handlingTranslucentClick = true;
+        });
+        $translucentLink.on("click", function(){
+            if (componentViewModel.onTranslucentSelected != null){
+                componentViewModel.onTranslucentSelected();
+            }
+            // reset once this click (and pick-a-color's bogus change) is done
+            setTimeout(function(){ handlingTranslucentClick = false; }, 0);
+        });
+    }
+
+    // sync: jquery -> observable
+    pickColor.on("change", function () {
+        if (handlingTranslucentClick == true){
+            // ignore the black hex derived from the checkerboard swatch
+            return;
+        }
+        var newColor = ""+$(this).val();
+        if (newColor.startsWith("#") == false){
+            newColor = "#" + $(this).val();
+        }
+        componentViewModel.selectedColor(newColor);
+    });
+
+    // sync: observable -> jquery SELCETED_OPTIONS
+    componentViewModel.selectedColor.subscribe(function(newColor){
+        // check if new color already selected
+        currentColor = "#" + pickColor.val();
+        if (currentColor != newColor){
+            newColorCode = newColor.substr(1);
+            pickColor.setColor(newColorCode);
         }
 
-        var elementSelector = "#" + elementId;
-        var pickColor = $(elementSelector).pickAColor({
-            showSpectrum          : false,
-            showSavedColors       : false,
-            saveColorsPerElement  : false,
-            fadeMenuToggle        : true,
-            showAdvanced          : true,
-            showBasicColors       : true,
-            showHexInput          : true,
-            allowBlank            : false,
-            basicColors           : $.extend(showTranslucent == true ? { translucent: 'ffffff' } : {}, {
-                  white     : 'ffffff',
-                  black     : '000000',
-                  red       : 'ff0000',
-                  green     : '008000',
-                  blue      : '0000ff',
-                  yellow    : 'ffff00',
-                  orange    : 'ffa500',
-                  purple    : '800080',
-                  gray      : '808080',
-                  darkgray  : 'A9A9A9',
-                  lightgray : 'D3D3D3',
-                  violet    : 'EE82EE',
-                  pink      : 'FFC0CB',
-                  brown     : 'A52A2A',
-                  burlyWood : 'DEB887',
-                  cyan      : '00FFFF',
-                  magenta   : 'FF00FF',
-                  lime      : '00FF00',
-                  navy      : '000080',
-                  teal      : '008080',
-                  olive     : '808000',
-                  maroon    : '800000',
-                  gold      : 'FFD700',
-                  silver    : 'C0C0C0',
-                  bronze    : 'CD7F32',
-                  beige     : 'F5F5DC',
-                  coral     : 'FF7F50',
-                  turquoise : '40E0D0',
-                  indigo    : '4B0082',
-                  khaki     : 'F0E68C',
-                  salmon    : 'FA8072',
-                  lavender  : 'E6E6FA',
-                  mint      : '3EB489'
-                })
-        });
-
-        // set while handling a click on the "translucent" swatch, so the
-        // change-handler below can ignore the bogus hex pick-a-color derives
-        // from the checkerboard swatch (its rendered background-color is
-        // transparent, which tinycolor turns into #000000 -> black)
-        var handlingTranslucentClick = false;
-        if (showTranslucent == true){
-            var $translucentLink = $(elementSelector).parent().find(".color-link.translucent");
-            // the swatch carries no real color: it only toggles the "transparent"
-            // semantic (isTransparent-flag) without setting a base hex color.
-            // The flag is armed already on mousedown/touchstart so it is set BEFORE
-            // pick-a-color's own click-based change-handler (which would otherwise
-            // write the bogus black hex derived from the checkerboard swatch).
-            $translucentLink.on("mousedown touchstart", function(){
-                handlingTranslucentClick = true;
-            });
-            $translucentLink.on("click", function(){
-                if (componentViewModel.onTranslucentSelected != null){
-                    componentViewModel.onTranslucentSelected();
-                }
-                // reset once this click (and pick-a-color's bogus change) is done
-                setTimeout(function(){ handlingTranslucentClick = false; }, 0);
-            });
-        }
-
-        // sync: jquery -> observable
-        pickColor.on("change", function () {
-            if (handlingTranslucentClick == true){
-                // ignore the black hex derived from the checkerboard swatch
-                return;
-            }
-            var newColor = ""+$(this).val();
-            if (newColor.startsWith("#") == false){
-                newColor = "#" + $(this).val();
-            }
-            componentViewModel.selectedColor(newColor);
-        });
-
-        // sync: observable -> jquery SELCETED_OPTIONS
-        componentViewModel.selectedColor.subscribe(function(newColor){
-            // check if new color already selected
-            currentColor = "#" + pickColor.val();
-            if (currentColor != newColor){
-                newColorCode = newColor.substr(1);
-                pickColor.setColor(newColorCode);
-            }
-
-        });
+    });
 
 
-        return componentViewModel;
+    return componentViewModel;
+}
+
+
+//////////////////////////////////////////////////////////////////////////////////////// NOTE EDITOR
+// Adopted from mdziekon/OctoPrint-SpoolManager PR #11 (GH-10): returns the raw Quill instance
+// (plus a getHtml helper) instead of a wrapper, so callers can use the full Quill API.
+ComponentFactory.createNoteEditor = function(elementId){
+
+    var elementSelector = "#" + elementId;
+    var noteEditor = new Quill(elementSelector, {
+        modules: {
+            toolbar: [
+                ['bold', 'italic', 'underline'],
+                [{ 'color': [] }, { 'background': [] }],
+                [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+                ['link']
+            ]
+        },
+        theme: 'snow'
+    });
+    Quill.prototype.getHtml = function() {
+        return this.container.querySelector('.ql-editor').innerHTML;
     };
 
-
-    //////////////////////////////////////////////////////////////////////////////////////////////////////// NOTE EDITOR
-    this.createNoteEditor = function(elementId){
-
-        // Widget Model
-//        var componentViewModel = {
-//            noteText: ko.observable(),
-//            noteDeltaFormat: ko.observable(),
-//            noteHtml: ko.observable(),
-//        }
-
-        var elementSelector = "#" + elementId;
-        var noteEditor = new Quill(elementSelector, {
-            modules: {
-                toolbar: [
-                    ['bold', 'italic', 'underline'],
-                    [{ 'color': [] }, { 'background': [] }],
-                    [{ 'list': 'ordered' }, { 'list': 'bullet' }],
-                    ['link']
-                ]
-            },
-            theme: 'snow'
-        });
-        Quill.prototype.getHtml = function() {
-            return this.container.querySelector('.ql-editor').innerHTML;
-        };
-
-        var NoteEditorController = function(providedNoteEditor){
-            var noteEditor = providedNoteEditor;
-
-            this.getText = function(){
-                return noteEditor.getText();
-            };
-
-            this.getHtml = function(){
-                return noteEditor.getHtml();
-            };
-
-            this.getDeltaFormat = function(){
-                return noteEditor.getContents();
-            };
-
-            this.setDeltaFormat = function(newDeltaFormat){
-                noteEditor.setContents(newDeltaFormat, 'api');
-            };
-        };
-        return new NoteEditorController(noteEditor);
-
-//        // write to editor
-//        deltaFormat = JSON.parse(printJobItemForEdit.noteDeltaFormat());
-//        self.noteEditor.setContents(deltaFormat, 'api');
-//
-//        // write to item
-//        var noteText = self.noteEditor.getText();
-//        var noteDeltaFormat = self.noteEditor.getContents();
-//        var noteHtml = self.noteEditor.getHtml();
-//        self.printJobItemForEdit.noteText(noteText);
-//        self.printJobItemForEdit.noteDeltaFormat(noteDeltaFormat);
-//        self.printJobItemForEdit.noteHtml(noteHtml);
-
-//        // sync: jquery -> observable
-//        noteEditor.on('text-change', function(delta, oldDelta, source) {
-////            debugger
-//            newDeltaAsString = JSON.stringify(delta);
-//            currentDeltaAsString = JSON.stringify(componentViewModel.noteDeltaFormat());
-//            if (newDeltaAsString != currentDeltaAsString){
-//                componentViewModel.noteText(noteEditor.getText());
-//                componentViewModel.noteDeltaFormat(delta);
-//                componentViewModel.noteHtml(noteEditor.getHtml());
-//            }
-//        });
-//
-//        // sync: observable -> jquery SELCETED_OPTIONS
-//        componentViewModel.noteDeltaFormat.subscribe(function(newDelta){
-////            debugger
-//            // check if new text already assigned
-//            newDeltaAsString = JSON.stringify(newDelta);
-//            currentDeltaAsString = JSON.stringify(noteEditor.getContents());
-//            if (newDeltaAsString != currentDeltaAsString){
-//                noteEditor.setContents(newDelta, 'api');
-//            }
-//        });
-//
-//
-//        return componentViewModel;
-    };
-
+    return noteEditor;
 }
