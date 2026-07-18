@@ -1121,9 +1121,14 @@ class SpoolmanagerPlugin(
                 # Minified 3rd-party assets adopted from mdziekon/OctoPrint-SpoolManager PR #13 (GH-12)
                 "js/tinycolor.min.js",
                 "js/pick-a-color.min.js",
+                # Shared constants/helpers, adopted from mdziekon/OctoPrint-SpoolManager PR #11 (GH-10).
+                # Load order matters: constants -> utils -> ComponentFactory -> SpoolItem -> consumers
+                "js/common/constants.js",
+                "js/common/utils.js",
                 "js/ResetSettingsUtilV3.js",
                 "js/ComponentFactory.js",
                 "js/TableItemHelper.js",
+                "js/SpoolManager-SpoolItem.js",
                 "js/SpoolManager.js",
                 "js/SpoolManager-APIClient.js",
                 "js/SpoolManager-FilterSorter.js",
