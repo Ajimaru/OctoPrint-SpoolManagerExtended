@@ -14,6 +14,7 @@ import tempfile
 import threading
 import qrcode
 import re
+from markupsafe import escape
 from io import BytesIO     # for handling byte strings
 from math import pi as PI
 
@@ -627,6 +628,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
     #####################################################################################################   GENERATE QR FOR SPOOL
     @octoprint.plugin.BlueprintPlugin.route("/generateQRCode/<string:databaseId>", methods=["GET"])
+    @no_firstrun_access
     def generateSpoolQRCode(self, databaseId):
 
         if (databaseId == "qrPreviewId" or self._databaseManager.loadSpool(databaseId) is not None):
@@ -744,6 +746,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
 
     @octoprint.plugin.BlueprintPlugin.route("/generateQRCodeView/<string:databaseId>", methods=["GET"])
+    @no_firstrun_access
     def generateSpoolQRCodeHTMLView(self, databaseId):
         htmlContent = ""
         spoolModel = self._databaseManager.loadSpool(databaseId)
@@ -767,7 +770,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             htmlContent = \
                         "<div class='spm-label-text'>" \
                         "<h3>Database Id: " + str(spoolModel.databaseId) + "</h3>" \
-                        "<h3>Spoolname: " + spoolModel.displayName + "</h3>" \
+                        "<h3>Spoolname: " + str(escape(spoolModel.displayName or "")) + "</h3>" \
                         + colorHtml \
                         + finishHtml + \
                         "</div>" \
