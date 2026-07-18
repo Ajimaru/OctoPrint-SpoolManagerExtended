@@ -1445,9 +1445,31 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                                     "totalItemCount": 0,
                                     "databaseItemCount": 0,
                                     "allSpools": [],
-                                    "selectedSpools": [],
                                     "schemeUpgradeNeeded": schemeUpgradeNeeded
                                 })
+
+    ##################################################################################################   LOAD SELECTED SPOOLS
+    # Attribution @mdziekon, PR #8: selected spools are fetched separately from the spools list,
+    # so the sidebar can show the current selection without pulling the whole selector dataset.
+    @octoprint.plugin.BlueprintPlugin.route("/loadSelectedSpools", methods=["GET"])
+    @no_firstrun_access
+    def getSelectedSpools(self):
+
+        self._logger.debug("API Load selected spools")
+
+        try:
+            selectedSpoolsAsDicts = [
+                (None if selectedSpool is None else Transformer.transformSpoolModelToDict(selectedSpool))
+                for selectedSpool in self.loadSelectedSpools()
+            ]
+        except Exception:
+            # e.g. outdated database scheme, see loadAllSpoolsByQuery
+            self._logger.exception("loadSelectedSpools failed")
+            selectedSpoolsAsDicts = []
+
+        return flask.jsonify({
+                                "selectedSpools": selectedSpoolsAsDicts
+                            })
 
     def _loadAllSpoolsByQueryResponse(self, tableQuery):
         allSpools = self._databaseManager.loadAllSpoolsByQuery(tableQuery)
@@ -1491,11 +1513,6 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         #   "colors": ["", "#123", "#456"],
         #   "labels": ["", "good", "bad"]
         # }
-        selectedSpoolsAsDicts = [
-            (None if selectedSpool is None else Transformer.transformSpoolModelToDict(selectedSpool))
-            for selectedSpool in self.loadSelectedSpools()
-        ]
-
         schemeUpgradeNeeded = self._databaseManager.isSchemeUpgradeNeeded()
         if (schemeUpgradeNeeded == True):
             # queries succeed again, so another OctoPrint instance sharing the database
@@ -1509,7 +1526,6 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                                 "totalItemCount": totalItemCount,
                                 "databaseItemCount": databaseItemCount,
                                 "allSpools": allSpoolsAsDict,
-                                "selectedSpools": selectedSpoolsAsDicts,
                                 "schemeUpgradeNeeded": schemeUpgradeNeeded
                             })
 
