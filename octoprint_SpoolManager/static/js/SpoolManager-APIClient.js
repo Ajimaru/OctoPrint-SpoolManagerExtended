@@ -251,6 +251,14 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
             });
     }
 
+    ///////////////////////////////////////////////////////////////////////////////////////////////// LOAD Spool by Id
+    this.callLoadSpoolById = function (databaseId, responseHandler){
+        _callApi(_buildPluginUrl("spool/" + databaseId), { method: "GET" },
+            function( data ){
+                responseHandler(data);
+            });
+    }
+
     ///////////////////////////////////////////////////////////////////////////////////////////////// LOAD NEXT Spool-Id
     this.callLoadNextSpoolId = function (responseHandler){
         _callApi(_buildPluginUrl("nextSpoolId"), { method: "GET" },
