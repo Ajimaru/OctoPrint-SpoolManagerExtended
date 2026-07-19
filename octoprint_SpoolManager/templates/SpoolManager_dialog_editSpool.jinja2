@@ -227,7 +227,7 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                             <label class="control-label">Density <sup>2,3</sup></label>
                             <div class="controls">
                                 <div class="input-append">
-                                    <input type="number" step="0.01" min="0" class="input-small text-right" data-bind="value: spoolDialog.spoolItemForEditing.density,
+                                    <input type="number" step="0.001" min="0" class="input-small text-right" data-bind="value: spoolDialog.spoolItemForEditing.density,
                                                               numberField: {invalidFields: spoolDialog.invalidNumberFields, key: 'density', trackOnly: true}" />
                                     <span class="add-on">g/cm³</span>
                                 </div>
@@ -238,13 +238,13 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                             <label class="control-label">Diameter <sup>2</sup></label>
                             <div class="controls">
                                 <div class="input-append">
-                                    <input type="number" step="0.01" min="0" class="input-mini text-right" data-bind="value: spoolDialog.spoolItemForEditing.diameter,
+                                    <input type="number" step="0.001" min="0" class="input-mini text-right" data-bind="value: spoolDialog.spoolItemForEditing.diameter,
                                                               numberField: {invalidFields: spoolDialog.invalidNumberFields, key: 'diameter', trackOnly: true}" />
                                     <span class="add-on">mm</span>
                                 </div>
                                 <div class="input-prepend input-append">
                                     <span class="add-on">±</span>
-                                    <input type="number" step="0.01" min="0" class="input-mini text-right" data-bind="value: spoolDialog.spoolItemForEditing.diameterTolerance,
+                                    <input type="number" step="0.001" min="0" class="input-mini text-right" data-bind="value: spoolDialog.spoolItemForEditing.diameterTolerance,
                                                               numberField: {invalidFields: spoolDialog.invalidNumberFields, key: 'diameterTolerance', trackOnly: true}" />
                                     <span class="add-on">mm</span>
                                 </div>
