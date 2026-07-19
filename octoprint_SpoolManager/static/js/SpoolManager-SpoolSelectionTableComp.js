@@ -27,7 +27,12 @@ function SpoolSelectionTableComp() {
         self.allMaterials = params.allMaterialsKOArray;
         self.allVendors = params.allVendorsKOArray;
         self.allColors = params.allColorsKOArray;
-        self.databaseItemCount = params.databaseItemCountKO;
+        // Optional: the template selection dialog lists template spools only, where a
+        // grand total of all spools in the database would be misleading. Guard against
+        // a missing param instead of letting the shared template call undefined().
+        self.databaseItemCount = ko.isObservable(params.databaseItemCountKO)
+                                    ? params.databaseItemCountKO
+                                    : null;
 
         self.selectSpoolFunction = params.selectSpoolFunction;
 

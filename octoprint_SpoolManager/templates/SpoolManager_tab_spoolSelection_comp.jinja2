@@ -46,7 +46,9 @@ File includes all Templates that are needed for custom Knockout.js components, s
     <div>
         <span class="pull-right" style="text-align: right;">
             <small>
+                <!-- ko if: databaseItemCount -->
                 <div data-bind="text: '(' + databaseItemCount() + ' Spools in Database)'"></div>
+                <!-- /ko -->
                 <div>Show/Total: <b><span data-bind="text: totalShown"></span> / <span data-bind="text: allSpools().length"></span></b></div>
             </small>
         </span>
