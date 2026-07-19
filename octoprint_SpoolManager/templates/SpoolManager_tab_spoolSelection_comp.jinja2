@@ -44,6 +44,12 @@ File includes all Templates that are needed for custom Knockout.js components, s
         </span>
     </div>
     <div>
+        <span class="pull-right" style="text-align: right;">
+            <small>
+                <div data-bind="text: '(' + databaseItemCount() + ' Spools in Database)'"></div>
+                <div>Show/Total: <b><span data-bind="text: totalShown"></span> / <span data-bind="text: allSpools().length"></span></b></div>
+            </small>
+        </span>
         <span class="pull-left">
             <small>
                 Sort by:
@@ -52,11 +58,6 @@ File includes all Templates that are needed for custom Knockout.js components, s
                 <a href="#" data-bind="click: function() { sortSpoolArray('firstUse'); }">First use  <span data-bind="visible: currentSortField()=='firstUse'">(<span data-bind="text: currentSortOder"></span>)</span></a> |
                 <a href="#" data-bind="click: function() { sortSpoolArray('remaining'); }">Remaining  <span data-bind="visible: currentSortField()=='remaining'">(<span data-bind="text: currentSortOder"></span>)</span></a> |
                 <a href="#" data-bind="click: function() { sortSpoolArray('material'); }">Material  <span data-bind="visible:  currentSortField()=='material'">(<span data-bind="text: currentSortOder"></span>)</span></a>
-            </small>
-        </span>
-        <span class="pull-right">
-            <small>
-                Show/Total: <b><span data-bind="text: totalShown"></span> / <span data-bind="text: allSpools().length"></span></b>
             </small>
         </span>
     </div>
