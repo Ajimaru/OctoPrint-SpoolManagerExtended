@@ -595,6 +595,20 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                                 "selectedSpool": spoolModelAsDict
                             })
 
+    #####################################################################################################   LOAD SINGLE SPOOL
+
+    @octoprint.plugin.BlueprintPlugin.route("/spool/<int:databaseId>", methods=["GET"])
+    @no_firstrun_access
+    def getSpoolById(self, databaseId):
+        spoolModel = self._databaseManager.loadSpool(databaseId)
+
+        if (spoolModel == None):
+            abort(404)
+
+        return flask.jsonify({
+            "spool": Transformer.transformSpoolModelToDict(spoolModel)
+        })
+
     #####################################################################################################   SELECT SPOOL BY QR
 
     @octoprint.plugin.BlueprintPlugin.route("/selectSpoolByQRCode/<string:databaseId>", methods=["GET"])
@@ -613,6 +627,16 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             #Just pick a single spool
             spoolModel = self._databaseManager.loadFirstSingleSpool();
             databaseId = spoolModel.databaseId
+
+        # the route binds databaseId as a string, but the selected-spool settings hold ints.
+        # without this cast the comparisons in _selectSpool() never match, so the
+        # "spool already assigned to another tool" handling silently never runs.
+        try:
+            databaseId = int(databaseId)
+        except (TypeError, ValueError):
+            databaseId = None
+        if (databaseId == None):
+            abort(400)
 
         # TODO QR-Code pre-select always tool0 and then the edit-dialog is shown. Better approach: show dialog and the user could choose
         spoolModel = self._selectSpool(0, databaseId)

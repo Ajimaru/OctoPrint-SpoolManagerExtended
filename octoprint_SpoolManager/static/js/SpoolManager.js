@@ -947,12 +947,17 @@ $(function() {
             }
         }
 
-        // fetch the current spool selection via the dedicated endpoint
-        self.loadCurrentSelectedSpoolsData = function() {
+        // fetch the current spool selection via the dedicated endpoint.
+        // `doneHandler` is optional and fires once the slots have been filled, for callers
+        // that need to read selectedSpoolsForSidebar() afterwards (e.g. the QR-Code path).
+        self.loadCurrentSelectedSpoolsData = function(doneHandler) {
             self.apiClient.callLoadSelectedSpools(function(responseData){
-                var spoolsData = responseData["selectedSpools"];
+                var spoolsData = (responseData != null) ? responseData["selectedSpools"] : null;
                 if (spoolsData != null){
                     self._applySelectedSpoolsData(spoolsData);
+                }
+                if (doneHandler){
+                    doneHandler();
                 }
             });
         }
@@ -1096,17 +1101,6 @@ $(function() {
             }
 
             return tooltip;
-        }
-
-        self.getSpoolItemSelectedTool = function(databaseId) {
-            var spoolItem;
-            for (var i=0; i<self.selectedSpoolsForSidebar().length; i++) {
-                spoolItem = self.selectedSpoolsForSidebar()[i]();
-                if (spoolItem !== null && self.selectedSpoolsForSidebar()[i]().databaseId() === databaseId) {
-                    return i;
-                }
-            }
-            return null;
         }
 
         self.selectSpoolForSidebar = function(toolIndex, spoolItem){
@@ -1699,31 +1693,30 @@ $(function() {
                 var selectedSpoolId = tabHashCode.replace("-spoolId", "").replace("#tab_plugin_SpoolManager", "");
                 selectedSpoolId = parseInt(selectedSpoolId);
                 console.info('Loading spool: '+selectedSpoolId);
-                var alreadyInTool = self.getSpoolItemSelectedTool(selectedSpoolId);
-                if (alreadyInTool !== null) {
-                    alert('This spool is already selected for tool ' + alreadyInTool + '!');
-                    return;
-                }
                 if (self.printerStateViewModel.isPrinting()) {
-                    // not doing this while printing
+                    // not doing this while printing (the API refuses it as well)
                     return;
                 }
-                // - Load SpoolItem from Backend
-                // - Open SpoolItem
-                // methode signature: toolIndex, databaseId, commitCurrentSpoolValues, responseHandler
-                var commitCurrentSpoolValues = false;
-                var toolIndex = 0
-                self.apiClient.callSelectSpool(0, selectedSpoolId, commitCurrentSpoolValues, function(responseData){
+                // The spool has already been selected server-side by /selectSpoolByQRCode,
+                // which redirected us here. So only fetch it for display instead of
+                // selecting it a second time.
+                self.apiClient.callLoadSpoolById(selectedSpoolId, function(responseData){
                     //Select the SpoolManager tab
                     $('a[href="#tab_plugin_SpoolManager"]').tab('show')
-                    var spoolItem = null;
-                    var spoolData = responseData["selectedSpool"];
-                    if (spoolData != null){
-                        spoolItem = self.spoolDialog.createSpoolItemForTable(spoolData);
-                        spoolItem.selectedFromQRCode(true);
-                        self.selectedSpoolsForSidebar()[0](spoolItem);
-                        self.showSpoolDialogAction(spoolItem);
+                    var spoolData = (responseData != null) ? responseData["spool"] : null;
+                    if (spoolData == null){
+                        // spool is gone (deleted in the meantime) -> nothing to show
+                        return;
                     }
+                    var spoolItem = self.spoolDialog.createSpoolItemForTable(spoolData);
+                    spoolItem.selectedFromQRCode(true);
+                    // Reflect the server-side selection in the sidebar instead of assuming
+                    // it ended up in tool 0. The dialog is only opened afterwards, because
+                    // showSpoolDialogAction() reads selectedSpoolsForSidebar() to determine
+                    // isLoadedInTool - opening it earlier would race against this request.
+                    self.loadCurrentSelectedSpoolsData(function(){
+                        self.showSpoolDialogAction(spoolItem);
+                    });
                 });
             }
         }
