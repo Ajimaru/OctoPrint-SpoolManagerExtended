@@ -889,6 +889,8 @@ $(function() {
 
         /////////////////////////////////////////////////////////////////////////////////////////// SIDEBAR - SELECT
         self.allSpoolsForSidebar = ko.observableArray([]);
+        // Grand total of every spool in the database (unfiltered) - shown as "(N Spools in Database)".
+        self.sidebarDatabaseItemCount = ko.observable(0);
         self.selectedSpoolsForSidebar = ko.observableArray([]);
         // see FILTER/SORTING https://embed.plnkr.co/plunk/Kj5JMv
         self.filterSelectionQuery = ko.observable();
@@ -971,6 +973,8 @@ $(function() {
 
             // api-call
             self.apiClient.callLoadSpoolsByQuery(tableQuery, function(responseData){
+
+                self.sidebarDatabaseItemCount(responseData["databaseItemCount"]);
 
                 var allSpoolData = responseData["allSpools"]; // rawdtata
                 if (allSpoolData != null){
