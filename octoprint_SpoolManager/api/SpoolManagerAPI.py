@@ -374,10 +374,14 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                     (databaseId, toolIndex)
                 )
                 # remove spool from current toolIndex
+                # (the missing "i += 1" used to make this loop spin forever whenever the
+                #  requested id was not present in databaseIds, hanging the request thread)
                 i = 0
                 while i < len(databaseIds):
                     if (databaseIds[i] == databaseId):
                         databaseIds[i] = None
+                        break
+                    i += 1
         else:
             if (toolIndex == -1):
                 self._logger.warn("databaseId and toolId is -1. This should not happen, strange!!!")
@@ -611,44 +615,70 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
     #####################################################################################################   SELECT SPOOL BY QR
 
+    # Redirect back to the plugin tab, carrying the outcome of the QR selection so the
+    # frontend can tell the user what happened. The status goes into a *real* query string
+    # in front of the "#": a "?" inside the fragment (…-spoolId<id>?spmQrStatus=…) throws
+    # OctoPrint's own startup code off while it restores the active tab from the hash, which
+    # leaves the UI stuck on "Loading OctoPrint's UI". The frontend reads it back from
+    # window.location.search once on load.
+    def _buildQRCodeRedirect(self, databaseId, status):
+        redirectURL = (flask.url_for("index", _external=True)
+                       + "?spmQrStatus=" + status
+                       + "#tab_plugin_SpoolManager-spoolId" + str(databaseId))
+        # 302 (not 307): this is a plain GET, and preserving the method serves no purpose
+        # here while behaving oddly in some QR-scanner in-app browsers.
+        return flask.redirect(redirectURL, 302)
+
     @octoprint.plugin.BlueprintPlugin.route("/selectSpoolByQRCode/<string:databaseId>", methods=["GET"])
     @no_firstrun_access
     def selectSpoolByQRCode(self, databaseId):
         self._logger.info("API select spool by QR code" + str(databaseId))
 
-        if self._printer.is_printing():
-            # not doing this mid-print since we can't ask the user what to do
-            abort(409)
-            return
-
-        spoolModel = None
-
         if ("qrPreviewId" == databaseId):
             #Just pick a single spool
             spoolModel = self._databaseManager.loadFirstSingleSpool();
+            if (spoolModel == None):
+                # empty database - nothing to preview
+                abort(404)
             databaseId = spoolModel.databaseId
 
         # the route binds databaseId as a string, but the selected-spool settings hold ints.
         # without this cast the comparisons in _selectSpool() never match, so the
         # "spool already assigned to another tool" handling silently never runs.
+        # Must happen before the is_printing() check below, so the redirect built there
+        # already carries a clean numeric id (especially for the qrPreviewId case).
         try:
             databaseId = int(databaseId)
         except (TypeError, ValueError):
             databaseId = None
         if (databaseId == None):
+            # no usable spool id -> no meaningful tab to redirect to
             abort(400)
+
+        if self._printer.is_printing():
+            # not doing this mid-print since we can't ask the user what to do.
+            # The selection is still refused, but instead of a raw 409 error page we send
+            # the user to the plugin tab and let the UI explain why. See
+            # https://github.com/mdziekon/OctoPrint-SpoolManager/issues/41 (@mdziekon)
+            return self._buildQRCodeRedirect(databaseId, "printing")
+
+        # Check existence up front and bail out *before* touching the selection: for an
+        # unknown id _selectSpool() treats the situation as "the spool stored for this tool
+        # vanished" and clears the tool's slot, which would deselect whatever is currently
+        # loaded just because someone scanned a stale QR code.
+        if (self._databaseManager.loadSpool(databaseId) == None):
+            self._logger.warning("Scanned QR code for spool id %d, which is not in the database." % databaseId)
+            return self._buildQRCodeRedirect(databaseId, "notfound")
 
         # TODO QR-Code pre-select always tool0 and then the edit-dialog is shown. Better approach: show dialog and the user could choose
         spoolModel = self._selectSpool(0, databaseId)
 
-        spoolModelAsDict = None
         if (spoolModel != None):
-            spoolModelAsDict = Transformer.transformSpoolModelToDict(spoolModel)
             #Take us back to the SpoolManager plugin tab
-            redirectURLWithSpoolSelection = flask.url_for("index", _external=True)+"#tab_plugin_SpoolManager-spoolId"+str(databaseId)
-            return flask.redirect(redirectURLWithSpoolSelection,307)
+            return self._buildQRCodeRedirect(databaseId, "selected")
         else:
-            abort(404)
+            # spool existed a moment ago but is gone now (deleted between the check and here)
+            return self._buildQRCodeRedirect(databaseId, "notfound")
 
     #####################################################################################################   GENERATE QR FOR SPOOL
     @octoprint.plugin.BlueprintPlugin.route("/generateQRCode/<string:databaseId>", methods=["GET"])
