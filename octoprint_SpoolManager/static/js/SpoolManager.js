@@ -1103,16 +1103,103 @@ $(function() {
             return tooltip;
         }
 
-        self.selectSpoolForSidebar = function(toolIndex, spoolItem){
-            var commitCurrentSpoolValues;
-            if (self.printerStateViewModel.isPrinting()) {
-                commitCurrentSpoolValues = confirm(
-                    'You are changing a spool while printing. SpoolManager will commit the usage so far to the previous spool, unless you wish otherwise.\n\n' +
-                    'Commit the usage of the print so far…\n' +
-                    '"OK": …to the previously selected spool\n' +
-                    '"Cancel": …to the new spool'
-                )
+        // Which spool currently sits in a tool slot (null if the slot is empty)?
+        self._currentSpoolInTool = function(toolIndex){
+            var slots = self.selectedSpoolsForSidebar();
+            if (toolIndex == null || toolIndex < 0 || toolIndex >= slots.length){
+                return null;
             }
+            return slots[toolIndex]();
+        }
+
+        // Which tool currently holds this spool (-1 if none)? A spool can only ever be
+        // assigned to a single tool, so selecting it for another one moves it.
+        self._findToolHoldingSpool = function(databaseId){
+            if (databaseId == null){
+                return -1;
+            }
+            var slots = self.selectedSpoolsForSidebar();
+            for (var i = 0; i < slots.length; i++){
+                var slotItem = slots[i]();
+                if (slotItem !== null && slotItem.databaseId() === databaseId){
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        self.selectSpoolForSidebar = function(toolIndex, spoolItem){
+            var currentSpoolItem = self._currentSpoolInTool(toolIndex);
+            var newDatabaseId = (spoolItem != null) ? spoolItem.databaseId() : null;
+            // The spool may already sit in another tool - assigning it here just moves it.
+            var toolAlreadyHoldingSpool = self._findToolHoldingSpool(newDatabaseId);
+            var isSameSpool = (toolAlreadyHoldingSpool !== -1);
+
+            if (self.printerStateViewModel.isPrinting() == false){
+                self._doSelectSpoolForSidebar(toolIndex, spoolItem, undefined);
+                return;
+            }
+
+            // From here on a print is running. The backend then insists on an explicit
+            // commitCurrentSpoolValues (409 otherwise), so every branch passes one.
+            if (isSameSpool == false){
+                // A different spool goes into the tool -> the usage so far has to be booked
+                // to either the previous or the new spool. A native confirm() only offers
+                // OK/Cancel, which forced "Cancel" to mean "book to the new spool"; the
+                // multi-button showConfirmationDialog() makes both choices explicit and lets
+                // Cancel do what it says: nothing.
+                var changeDescription;
+                if (spoolItem == null){
+                    var removedName = (currentSpoolItem != null) ? "'" + currentSpoolItem.displayName() + "'" : "The spool";
+                    changeDescription = removedName + " will be removed from tool " + toolIndex;
+                } else if (currentSpoolItem == null){
+                    changeDescription = "'" + spoolItem.displayName() + "' will be loaded into tool " + toolIndex;
+                } else {
+                    changeDescription = "Tool " + toolIndex + " will be changed from '" + currentSpoolItem.displayName() +
+                                        "' to '" + spoolItem.displayName() + "'";
+                }
+                showConfirmationDialog({
+                    title: "Change spool while printing?",
+                    message: changeDescription + " while a print is running. The filament used so far still has to be booked to a spool.",
+                    question: "The spool will be changed either way - where should the usage of the print so far be booked?",
+                    cancel: "Don't change spool",
+                    proceed: ["Book to previous", "Book to new"],
+                    proceedClass: "primary",
+                    onproceed: function(buttonIndex){
+                        // index 0 = previous spool (the old confirm()'s "OK"), 1 = new spool
+                        self._doSelectSpoolForSidebar(toolIndex, spoolItem, buttonIndex === 0);
+                    },
+                    nofade: true
+                });
+                return;
+            }
+
+            if (toolAlreadyHoldingSpool !== toolIndex){
+                // Same spool, but currently in a different tool -> selecting it here moves it
+                // between tools mid-print, which is easy to trigger accidentally (e.g. via a
+                // QR scan). Ask for a plain confirmation. No usage question: it is one and the
+                // same spool, so the print so far is booked to it regardless.
+                showConfirmationDialog({
+                    title: "Move spool while printing?",
+                    message: "'" + spoolItem.displayName() + "' is currently loaded in tool " + toolAlreadyHoldingSpool +
+                             ". A print is running.",
+                    question: "Move it from tool " + toolAlreadyHoldingSpool + " to tool " + toolIndex + "?",
+                    cancel: "Don't move spool",
+                    proceed: "Move to tool " + toolIndex,
+                    proceedClass: "primary",
+                    onproceed: function(){
+                        self._doSelectSpoolForSidebar(toolIndex, spoolItem, true);
+                    },
+                    nofade: true
+                });
+                return;
+            }
+
+            // Same spool, already in this very tool -> nothing actually changes, just re-assign.
+            self._doSelectSpoolForSidebar(toolIndex, spoolItem, true);
+        }
+
+        self._doSelectSpoolForSidebar = function(toolIndex, spoolItem, commitCurrentSpoolValues){
             // api-call
             var databaseId = -1
             if (spoolItem != null){
@@ -1120,6 +1207,16 @@ $(function() {
             }
             self.apiClient.callSelectSpool(toolIndex, databaseId, commitCurrentSpoolValues, function(responseData){
                 var spoolItem = null;
+                if (responseData == null){
+                    // request failed (e.g. stale CSRF token after a server restart, network error).
+                    // Without this guard the sidebar was cleared as if the spool had been
+                    // deselected, showing a selection state the server never agreed to.
+                    self.showPopUp("error", "Spool selection failed",
+                                   "The spool selection could not be saved. Please reload the page and try again.",
+                                   false);
+                    self.loadCurrentSelectedSpoolsData();
+                    return;
+                }
                 var spoolData = responseData["selectedSpool"];
                 if (spoolData != null){
                     spoolItem = self.spoolDialog.createSpoolItemForTable(spoolData);
@@ -1686,34 +1783,76 @@ $(function() {
             }
         }
 
+        // Feedback for the QR-code selection outcome, reported by /selectSpoolByQRCode
+        // via the "spmQrStatus" fragment parameter.
+        // See https://github.com/mdziekon/OctoPrint-SpoolManager/issues/41 (@mdziekon)
+        self._showQRCodeSelectionPopUp = function(status, spoolData){
+            var spoolName = (spoolData != null && spoolData["displayName"]) ? spoolData["displayName"] : "Spool";
+            if (status == "printing"){
+                // autoclose off: the user needs to understand nothing was selected
+                self.showPopUp("warning", "Spool not selected",
+                               "A print is currently running, so '" + spoolName + "' was not selected. Stop the print and scan again.",
+                               false);
+            } else if (status == "notfound"){
+                self.showPopUp("error", "Spool not found",
+                               "The scanned spool no longer exists in the database. It may have been deleted.",
+                               false);
+            } else {
+                self.showPopUp("success", "Spool selected",
+                               "'" + spoolName + "' is now selected for printing.",
+                               true);
+            }
+        }
+
+        // Guards against re-entering the QR handling below: clearing the hash and calling
+        // .tab('show') both trigger onAfterTabChange again, which would otherwise start a
+        // second run (and open a second dialog) while the first one is still in flight.
+        self._qrCodeSelectionInProgress = false;
+
         self.onAfterTabChange = function(current, previous){
             var tabHashCode = window.location.hash;
-            // QR-Code-Call: We can only contain -spoolId on the very first page
-            if (tabHashCode.includes("#tab_plugin_SpoolManager-spoolId")){
-                var selectedSpoolId = tabHashCode.replace("-spoolId", "").replace("#tab_plugin_SpoolManager", "");
-                selectedSpoolId = parseInt(selectedSpoolId);
-                console.info('Loading spool: '+selectedSpoolId);
-                if (self.printerStateViewModel.isPrinting()) {
-                    // not doing this while printing (the API refuses it as well)
-                    return;
-                }
+            // QR-Code-Call: We can only contain -spoolId on the very first page.
+            // The hash carries only the spool id (#tab_plugin_SpoolManager-spoolId<id>);
+            // the optional outcome rides in a real query string (?spmQrStatus=<status>),
+            // NOT inside the fragment - a "?" in the hash breaks OctoPrint's startup and
+            // leaves the UI stuck on "Loading OctoPrint's UI".
+            var qrCodeMatch = /^#tab_plugin_SpoolManager-spoolId(\d+)/.exec(tabHashCode);
+            if (qrCodeMatch != null && self._qrCodeSelectionInProgress == false){
+                self._qrCodeSelectionInProgress = true;
+                var selectedSpoolId = parseInt(qrCodeMatch[1]);
+                // older QR codes/bookmarks carry no status -> assume the selection worked
+                var qrStatus = getUrlParameter("spmQrStatus") || "selected";
+                console.info('Loading spool: '+selectedSpoolId+' (status: '+qrStatus+')');
+
                 // The spool has already been selected server-side by /selectSpoolByQRCode,
                 // which redirected us here. So only fetch it for display instead of
                 // selecting it a second time.
                 self.apiClient.callLoadSpoolById(selectedSpoolId, function(responseData){
                     //Select the SpoolManager tab
                     $('a[href="#tab_plugin_SpoolManager"]').tab('show')
+                    // Drop both the status query param and the spoolId hash only now that the
+                    // tab is settled, otherwise a reload re-runs the whole thing and pops the
+                    // same message up again.
+                    if (window.history && window.history.replaceState){
+                        window.history.replaceState(null, "", window.location.pathname + "#tab_plugin_SpoolManager");
+                    }
+                    self._qrCodeSelectionInProgress = false;
                     var spoolData = (responseData != null) ? responseData["spool"] : null;
+                    self._showQRCodeSelectionPopUp(qrStatus, spoolData);
                     if (spoolData == null){
                         // spool is gone (deleted in the meantime) -> nothing to show
                         return;
                     }
                     var spoolItem = self.spoolDialog.createSpoolItemForTable(spoolData);
-                    spoolItem.selectedFromQRCode(true);
+                    // Only true when the server actually performed the selection - the dialog
+                    // uses this to disable "Select for printing" as redundant.
+                    spoolItem.selectedFromQRCode(qrStatus == "selected");
                     // Reflect the server-side selection in the sidebar instead of assuming
                     // it ended up in tool 0. The dialog is only opened afterwards, because
                     // showSpoolDialogAction() reads selectedSpoolsForSidebar() to determine
                     // isLoadedInTool - opening it earlier would race against this request.
+                    // The dialog opens unconditionally now, even mid-print: the popup above
+                    // explains the refusal, and the footer buttons guard themselves.
                     self.loadCurrentSelectedSpoolsData(function(){
                         self.showSpoolDialogAction(spoolItem);
                     });
