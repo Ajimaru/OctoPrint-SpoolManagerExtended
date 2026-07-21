@@ -663,13 +663,15 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                                                             click: spoolDialog.deleteSpoolItem" ><i class="fa fa-trash-o"></i> Delete</button>
                     <button type="button" class="btn btn-warning" data-bind="visible: spoolDialog.isExistingSpool,
                                                                              click: spoolDialog.copySpoolItem" ><i class="fa fa-copy"></i> Copy</button>
-                    <!-- visible: spoolDialog.spoolItemForEditing.selectedFromQRCode() == true,                        -->
                     <!-- ko if: spoolDialog.spoolItemForEditing.databaseId -->
                     <!-- "Select for printing" dropdown/button adapted from mdziekon/OctoPrint-SpoolManager PR #29 (GH-24): -->
                     <!-- dropup listing every tool when >1, single direct button when exactly 1 tool. -->
+                    <!-- When the dialog was opened by a QR-code scan the spool is already selected server-side, -->
+                    <!-- so selecting again would be the duplicate call mdziekon/OctoPrint-SpoolManager#41 removes. -->
                         <!-- ko if: spoolDialog.allToolIndices().length > 1 -->
                             <div class="btn-group dropup">
-                                <a class="btn btn-info dropdown-toggle" data-toggle="dropdown" href="#">
+                                <a class="btn btn-info dropdown-toggle" data-toggle="dropdown" href="#"
+                                   data-bind="css: {disabled: spoolDialog.spoolItemForEditing.selectedFromQRCode()}">
                                     <i class="fa fa-print"></i> Select for printing...
                                     <span class="caret"></span>
                                 </a>
@@ -693,7 +695,8 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                             <button
                                 class="btn btn-info"
                                 type="button"
-                                data-bind="click: function () { spoolDialog.selectSpoolItemForPrintingOnTool({ toolIdx: spoolDialog.allToolIndices()[0] }); }"
+                                data-bind="click: function () { spoolDialog.selectSpoolItemForPrintingOnTool({ toolIdx: spoolDialog.allToolIndices()[0] }); },
+                                           enable: !spoolDialog.spoolItemForEditing.selectedFromQRCode()"
                             >
                                 <i class="fa fa-print"></i> Select for printing (tool #<span data-bind="text: spoolDialog.allToolIndices()[0]"></span>)
                             </button>
@@ -707,6 +710,9 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                     </div>
                     <div data-bind="visible: spoolDialog.isLoadedInTool() &amp;&amp; !printerStateViewModel.isPrinting()" class="muted" style="margin-top: 10px;">
                         <small>Spool is loaded into a tool and cannot be deleted</small>
+                    </div>
+                    <div data-bind="visible: spoolDialog.spoolItemForEditing.selectedFromQRCode()" class="muted" style="margin-top: 10px;">
+                        <small>Already selected via QR code</small>
                     </div>
 
                 </span>
