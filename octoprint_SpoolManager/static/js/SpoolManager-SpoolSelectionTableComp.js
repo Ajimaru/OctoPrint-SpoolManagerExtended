@@ -151,6 +151,32 @@ function SpoolSelectionTableComp() {
             self._storeFilterSelectionsToBrowserStorage();
         });
 
+        // Parse format for the "DD.MM.YYYY HH:mm" date fields (24h). Adopted from mdziekon PR #23;
+        // replaces the previous "DD.MM.YYYY hh:mm" (12h) which mis-sorted afternoon timestamps.
+        const PARSE_FORMAT_DATETIME = SPOOLMANAGER_CONSTANTS.DATES.PARSE_FORMATS.DATETIME;
+
+        // Factory for the shared lastUse/firstUse date comparator (both branches were identical).
+        // fieldAccessor(spool) must return the date-string observable value (or null).
+        var dateSortCallback = function(fieldAccessor, sortOrientation){
+            return function(a, b){
+                var sortResult;
+                var valueA = fieldAccessor(a) != null ? fieldAccessor(a) : "";
+                var valueB = fieldAccessor(b) != null ? fieldAccessor(b) : "";
+                if (valueA == valueB){
+                    sortResult = b.databaseId() - a.databaseId();
+                } else if (valueA == ""){
+                    sortResult = 1;
+                } else if (valueB == ""){
+                    sortResult = -1;
+                } else {
+                    var momA = moment(valueA, PARSE_FORMAT_DATETIME);
+                    var momB = moment(valueB, PARSE_FORMAT_DATETIME);
+                    sortResult = momA > momB ? -1 : 1;
+                }
+                return sortResult * sortOrientation;
+            };
+        };
+
         //  - do sorting
         self.sortSpoolArray = function(sortField, requestedSortOrder){
                 var sortResult = 0;
@@ -182,61 +208,9 @@ function SpoolSelectionTableComp() {
                         return sortResult;
                     });
                 } else if (sortField === 'lastUse') {
-                    sorted.sort(function sortDesc(a, b) {
-                        var valueA = a.lastUse() != null ? a.lastUse() : "";
-                        var valueB = b.lastUse() != null ? b.lastUse() : "";
-                        if (valueA == valueB){
-                            sortResult = b.databaseId() - a.databaseId();
-                        } else {
-                            if (valueA == ""){
-                                sortResult = 1;
-                            } else {
-                                if (valueB == ""){
-                                    sortResult = -1;
-                                } else {
-                                    var momA = moment(valueA, "DD.MM.YYYY hh:mm");
-                                    var momB = moment(valueB, "DD.MM.YYYY hh:mm");
-
-                                    if (momA > momB){
-                                        sortResult = -1;
-                                    } else {
-                                        sortResult = 1;
-                                    }
-                                }
-                            }
-                        }
-                        // sortResult = momB - momA;
-                        sortResult = sortResult * sortOrientation;
-                        return sortResult;
-                    });
+                    sorted.sort(dateSortCallback(function(spool){ return spool.lastUse(); }, sortOrientation));
                 } else if (sortField === 'firstUse') {
-                    sorted.sort(function sortDesc(a, b) {
-                        var valueA = a.firstUse() != null ? a.firstUse() : "";
-                        var valueB = b.firstUse() != null ? b.firstUse() : "";
-                        if (valueA == valueB){
-                            sortResult = b.databaseId() - a.databaseId();
-                        } else {
-                            if (valueA == ""){
-                                sortResult = 1;
-                            } else {
-                                if (valueB == ""){
-                                    sortResult = -1;
-                                } else {
-                                    var momA = moment(valueA, "DD.MM.YYYY hh:mm");
-                                    var momB = moment(valueB, "DD.MM.YYYY hh:mm");
-
-                                    if (momA > momB){
-                                        sortResult = -1;
-                                    } else {
-                                        sortResult = 1;
-                                    }
-                                }
-                            }
-                        }
-                        // sortResult = momB - momA;
-                        sortResult = sortResult * sortOrientation;
-                        return sortResult;
-                    });
+                    sorted.sort(dateSortCallback(function(spool){ return spool.firstUse(); }, sortOrientation));
                 } else if (sortField === 'remaining') {
                     sorted.sort(function sortDesc(a, b) {
                         var valueA = a.remainingWeight() != null ? a.remainingWeight() : 0;
@@ -270,10 +244,10 @@ function SpoolSelectionTableComp() {
                 return allColorsSelected == true ? "all" : self.selectedColorsForFilter().length;
             }
             if ("material" == filterLabelName){
-                return self._evalFilterLabel(self.allMaterials(), self.selectedMaterialsForFilter());
+                return SPOOLMANAGER_UTILS.buildFilterSelectionsCounter(self.allMaterials(), self.selectedMaterialsForFilter());
             }
             if ("vendor" == filterLabelName){
-                return self._evalFilterLabel(self.allVendors(), self.selectedVendorsForFilter());
+                return SPOOLMANAGER_UTILS.buildFilterSelectionsCounter(self.allVendors(), self.selectedVendorsForFilter());
             }
 
             return "not defined:" + filterLabelName;
@@ -322,7 +296,7 @@ function SpoolSelectionTableComp() {
         self._executeFilter = function(){
             var filterQuery = self.filterSelectionQuery == null || self.filterSelectionQuery() == null ? "" : self.filterSelectionQuery() ;
             filterQuery = filterQuery.toLowerCase();
-            var totalShownCount = -1;
+            var totalShownCount = 0;
             //console.error(self.allSpoolsKOArray().length)
             for (spool of self.allSpools()) {
 
@@ -377,34 +351,12 @@ function SpoolSelectionTableComp() {
                     }
                 }
                 if (spool.isFilteredForSelection() == false){
-                    if (totalShownCount == -1){
-                        totalShownCount = 0;
-                    }
                     totalShownCount += 1;
                 }
             // });
             }
-            if (totalShownCount == -1){
-                self.totalShown(self.allSpools().length);
-            } else {
-                self.totalShown(totalShownCount);
-            }
+            self.totalShown(totalShownCount);
     }
-
-        /**
-         * return the selection count of a specific catalog-array
-         */
-        self._evalFilterLabel = function(allArray, selectionArray){
-            // check if all selected
-            var selectionCount = 0
-            for (let item of allArray) {
-                if (selectionArray.indexOf(item) != -1){
-                    selectionCount++;
-                }
-            }
-            var allSelected = selectionCount ==  allArray.length
-            return allSelected == true ? "all" : selectionArray.length;
-        };
 
     }
 }

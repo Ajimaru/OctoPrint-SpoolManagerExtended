@@ -167,18 +167,6 @@ function TableItemHelper(loadItemsFunction, defaultPageSize, defaultSortColumn, 
 
     });
 
-    self._evalFilterLabel = function(allArray, selectionArray){
-        // check if all selected
-        var selectionCount = 0
-        for (let item of allArray) {
-            if (selectionArray.indexOf(item) != -1){
-                selectionCount++;
-            }
-        }
-        var allSelected = selectionCount ==  allArray.length
-        return allSelected == true ? "all" : selectionArray.length;
-    };
-
     // ################################################################################################ public functions
     self.reloadItems = function(){
         self._loadItems();
@@ -349,10 +337,10 @@ function TableItemHelper(loadItemsFunction, defaultPageSize, defaultSortColumn, 
             return allColorsSelected == true ? "all" : self.selectedColorsForFilter().length;
         }
         if ("material" == filterLabelName){
-            return self._evalFilterLabel(self.allMaterials(), self.selectedMaterialsForFilter());
+            return SPOOLMANAGER_UTILS.buildFilterSelectionsCounter(self.allMaterials(), self.selectedMaterialsForFilter());
         }
         if ("vendor" == filterLabelName){
-            return self._evalFilterLabel(self.allVendors(), self.selectedVendorsForFilter());
+            return SPOOLMANAGER_UTILS.buildFilterSelectionsCounter(self.allVendors(), self.selectedVendorsForFilter());
         }
 
         return "not defined:" + filterLabelName;
