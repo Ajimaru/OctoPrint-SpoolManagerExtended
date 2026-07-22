@@ -892,10 +892,6 @@ $(function() {
         // Grand total of every spool in the database (unfiltered) - shown as "(N Spools in Database)".
         self.sidebarDatabaseItemCount = ko.observable(0);
         self.selectedSpoolsForSidebar = ko.observableArray([]);
-        // see FILTER/SORTING https://embed.plnkr.co/plunk/Kj5JMv
-        self.filterSelectionQuery = ko.observable();
-
-        // self.sidebarFilterSorter = new SpoolsFilterSorter("sidebarSpoolSelection", self.allSpoolsForSidebar);
 
         self.sidebarSelectSpoolModalToolIndex = ko.observable(null);  // index of the current tool we want to select for
         self.sidebarSelectSpoolModalSpoolItem = ko.observable(null); // current spoolitem
@@ -988,8 +984,6 @@ $(function() {
                         return result;
                     }); // transform to SpoolItems with KO.obseravables
                     self.allSpoolsForSidebar(allSpoolItems);
-                    // Pre sorting in Selection-Dialog
-                    // self.sidebarFilterSorter.sortSpoolArray("displayName", "ascending");
                 }
             });
         }
@@ -1270,13 +1264,10 @@ $(function() {
             self.sidebarSelectSpoolModalSpoolItem(spoolItem);
             self.sidebarSelectSpoolModalToolIndex(toolIndex);
 
-            // self.sidebarFilterSorter.initFilterSorter();
-
             self.selectionSpoolDialog.modal({
                 minHeight: 300,
                 show: true
             });
-            $("#filterSelectionQueryTextfield").focus();
         }
 
         //////////////////////////////////////////////////////////////////////////////////////////////////// TABLE / TAB
@@ -1366,8 +1357,6 @@ $(function() {
                 allSpoolItems = responseData["allSpools"];
                 var allCatalogs = responseData["catalogs"];
 
-                // assign catalogs to sidebarFilterSorter
-                // self.sidebarFilterSorter.updateCatalogs(allCatalogs);
                 // assign catalogs to tablehelper
                 self.spoolItemTableHelper.updateCatalogs(allCatalogs);
                 // assign all catalogs to editview
