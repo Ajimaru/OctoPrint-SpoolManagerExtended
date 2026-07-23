@@ -23,6 +23,21 @@ SPOOLMANAGER_UTILS = {
         return Math.round((value + Number.EPSILON) * increments) / increments;
     },
 
+    // Returns the filter-selection counter label for a catalog: "all" when every catalog
+    // option is selected, otherwise the number of selected options. Consolidated from the
+    // duplicated _evalFilterLabel() in SpoolSelectionTableComp and TableItemHelper
+    // (adopted from mdziekon PR #23, adapted to the SPOOLMANAGER_UTILS object convention).
+    buildFilterSelectionsCounter: function (allArray, selectionArray) {
+        var selectionCount = 0;
+        for (let item of allArray) {
+            if (selectionArray.indexOf(item) != -1) {
+                selectionCount++;
+            }
+        }
+        var allSelected = selectionCount == allArray.length;
+        return allSelected == true ? "all" : selectionArray.length;
+    },
+
     // Normalizes a material display name to a MATERIALS_DENSITY_MAPPING key:
     // "Flexible (TPU)" -> "FLEXIBLE_TPU", "PC/ABS" -> "PC_ABS", "PLA+" -> "PLA_PLUS"
     normalizeMaterialKey: function (materialName) {
