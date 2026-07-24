@@ -670,8 +670,31 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             self._logger.warning("Scanned QR code for spool id %d, which is not in the database." % databaseId)
             return self._buildQRCodeRedirect(databaseId, "notfound")
 
-        # TODO QR-Code pre-select always tool0 and then the edit-dialog is shown. Better approach: show dialog and the user could choose
-        spoolModel = self._selectSpool(0, databaseId)
+        # Optional "?tool=<N>" query param decides which tool/extruder the spool is loaded
+        # into. Without it we keep the historical behaviour (tool 0), so existing QR codes
+        # that only carry the spool id still work unchanged. The target tool is baked into
+        # the scanned URL because a QR scan is a plain server-side GET - the server has no
+        # other way to learn which extruder the user means.
+        toolIndex = 0
+        toolParam = request.args.get("tool")
+        if (toolParam is not None):
+            try:
+                toolIndex = int(toolParam)
+            except (TypeError, ValueError):
+                toolIndex = 0
+
+        # Clamp to the printer profile's tool count instead of aborting: a typo in the
+        # URL prefix (or a QR printed for a printer with more tools) must not raise a 500
+        # or write into a slot that doesn't exist - it just falls back to tool 0.
+        printer_profile = self._printer_profile_manager.get_current_or_default()
+        printerProfileToolCount = printer_profile['extruder']['count']
+        if (toolIndex < 0 or toolIndex >= printerProfileToolCount):
+            self._logger.warning(
+                "QR code requested tool %d, but the printer profile only has %d tool(s) - falling back to tool 0."
+                % (toolIndex, printerProfileToolCount))
+            toolIndex = 0
+
+        spoolModel = self._selectSpool(toolIndex, databaseId)
 
         if (spoolModel != None):
             #Take us back to the SpoolManager plugin tab
