@@ -129,18 +129,15 @@ $(function() {
         };
 
         // Typs: error
+        // Thin delegate: the actual toast (including the dedupe logic) lives in common/dialogs.js
+        // so that other files can raise the same kind of notification without a viewmodel reference.
         self.showPopUp = function(popupType, popupTitle, message, autoclose){
-            var title = popupType.toUpperCase() + ": " + popupTitle;
-            var popupId = (title+message).replace(/([^a-z0-9]+)/gi, '-');
-            if($("."+popupId).length <1) {
-                new PNotify({
-                    title: "SPM:" + title,
-                    text: message,
-                    type: popupType,
-                    hide: autoclose,
-                    addclass: popupId
-                });
-            }
+            SPOOLMANAGER_DIALOGS.notify({
+                title: popupTitle,
+                message: message,
+                type: popupType,
+                autoclose: autoclose
+            });
         };
 
 
@@ -325,21 +322,39 @@ $(function() {
         }
 
         self.deleteDatabaseAction = function(databaseType) {
-            var result = confirm("Do you really want to delete all SpoolManager data in the " + databaseType + " database?");
-            if (result == true){
+            SPOOLMANAGER_DIALOGS.confirmDanger({
+                title: "Delete all spool data",
+                message: "All SpoolManager data in the " + SPOOLMANAGER_DIALOGS.escapeHtml(databaseType) +
+                         " database will be deleted. This cannot be undone.",
+                question: "Do you really want to delete all data?",
+                cancel: "Keep data",
+                proceed: "Delete everything"
+            }).then(function(confirmed){
+                if (confirmed != true){
+                    return;
+                }
                 var databaseSettings = self.buildDatabaseSettings();
                 databaseSettings.useExternal = databaseType == "external"
-                
+
                 self.apiClient.callDeleteDatabase(databaseType, databaseSettings, function(responseData) {
                     self.handleDatabaseMetaDataResponse(responseData);
                     self.spoolItemTableHelper.reloadItems();
                 });
-            }
+            });
         };
 
         self.copySpools = function() {
-            var result = confirm("Do you really want to copy all SpoolManager data from the internal database? This will replace all existing data.");
-            if (result == true) {
+            SPOOLMANAGER_DIALOGS.confirmDanger({
+                title: "Copy data from internal database",
+                message: "All SpoolManager data is copied from the internal database. " +
+                         "This replaces all existing data in the current database.",
+                question: "Do you really want to copy and replace?",
+                cancel: "Cancel",
+                proceed: "Copy and replace"
+            }).then(function(confirmed){
+                if (confirmed != true){
+                    return;
+                }
                 var databaseSettings = self.buildDatabaseSettings();
                 self.apiClient.callCopyDatabase(databaseSettings, function(responseData) {
                     self.spoolItemTableHelper.reloadItems();
@@ -347,8 +362,7 @@ $(function() {
                         self.handleDatabaseMetaDataResponse(responseData);
                     });
                 });
-
-            }
+            });
         }
 
         // - external database scheme upgrade (issue #30/#49 follow-up: scheme V8, auto-upgrade only runs for local SQLite)
@@ -455,16 +469,27 @@ $(function() {
         self.upgradeDatabaseSchemeAction = function(){
             var isExternal = self.pluginSettings.useExternal() == true;
             var confirmMessage = isExternal
-                ? "Upgrade the external database scheme now?\n\n" +
-                  "A SQL dump backup is downloaded first. " +
+                ? "A SQL dump backup is downloaded first. " +
                   "If the backup download fails, the upgrade is aborted."
-                : "Upgrade the local database scheme now?\n\n" +
-                  "A copy of the database file is downloaded first. " +
+                : "A copy of the database file is downloaded first. " +
                   "If the backup download fails, the upgrade is aborted.";
-            var confirmed = confirm(confirmMessage);
-            if (confirmed != true){
-                return;
-            }
+
+            SPOOLMANAGER_DIALOGS.confirm({
+                title: isExternal ? "Upgrade external database scheme" : "Upgrade local database scheme",
+                message: confirmMessage,
+                question: "Upgrade the database scheme now?",
+                cancel: "Cancel",
+                proceed: "Upgrade"
+            }).then(function(confirmed){
+                if (confirmed != true){
+                    return;
+                }
+                self._runDatabaseSchemeUpgrade(isExternal);
+            });
+        };
+
+        // Actual upgrade routine, split off so the confirmation above can stay asynchronous.
+        self._runDatabaseSchemeUpgrade = function(isExternal){
             self.resetDatabaseMessages();
             self.schemeUpgradeResultText("");
             self.schemeUpgradeInProgress(true);
@@ -479,10 +504,18 @@ $(function() {
                         self.handleDatabaseMetaDataResponse(responseData);
                     }
                     // a full reload makes sure all cached viewmodels (sidebar, dialogs) pick up the repaired database
-                    if (confirm("Database scheme upgraded to version " + result["toVersion"] + ".\n\n" +
-                                "A page reload is recommended. Reload now?")){
-                        location.reload();
-                    }
+                    SPOOLMANAGER_DIALOGS.confirm({
+                        title: "Database scheme upgraded",
+                        message: "The database scheme was upgraded to version " +
+                                 SPOOLMANAGER_DIALOGS.escapeHtml(result["toVersion"]) + ".",
+                        question: "A page reload is recommended. Reload now?",
+                        cancel: "Later",
+                        proceed: "Reload now"
+                    }).then(function(reloadConfirmed){
+                        if (reloadConfirmed == true){
+                            location.reload();
+                        }
+                    });
                     return;
                 } else {
                     var errorMessage = (result != null && result["errorMessage"] != null)
@@ -583,10 +616,15 @@ $(function() {
         self.performDBRestoreFromUpload = function(){
             if (self.dbRestoreFile === undefined) return;
 
-            if (self.confirmReplaceIfNeeded(self.dbRestoreMode()) != true){
-                return;
-            }
+            self.confirmReplaceIfNeeded(self.dbRestoreMode()).then(function(confirmed){
+                if (confirmed != true){
+                    return;
+                }
+                self._runDBRestoreFromUpload();
+            });
+        }
 
+        self._runDBRestoreFromUpload = function(){
             self.resetDatabaseMessages();
             self.dbRestoreResultText(undefined);
             self.dbRestoreInProgress(true);
@@ -603,8 +641,18 @@ $(function() {
                         self.dbRestoreResultText("Database file restore successful: " + data.importedSpoolCount + " spool(s) (" + self.dbRestoreMode() + ").");
                         self.spoolItemTableHelper.reloadItems();
                         // a replace swaps the whole db file - a reload makes cached viewmodels pick it up
-                        if (self.dbRestoreMode() == "replace" && confirm("Database file restored. A page reload is recommended. Reload now?")){
-                            location.reload();
+                        if (self.dbRestoreMode() == "replace"){
+                            SPOOLMANAGER_DIALOGS.confirm({
+                                title: "Database file restored",
+                                message: "The database file was restored successfully.",
+                                question: "A page reload is recommended. Reload now?",
+                                cancel: "Later",
+                                proceed: "Reload now"
+                            }).then(function(reloadConfirmed){
+                                if (reloadConfirmed == true){
+                                    location.reload();
+                                }
+                            });
                         }
                     } else {
                         var errorMessage = "Database file restore failed.";
@@ -631,10 +679,15 @@ $(function() {
         self.performSQLImportFromUpload = function(){
             if (self.sqlDumpFile === undefined) return;
 
-            if (self.confirmReplaceIfNeeded(self.sqlImportMode()) != true){
-                return;
-            }
+            self.confirmReplaceIfNeeded(self.sqlImportMode()).then(function(confirmed){
+                if (confirmed != true){
+                    return;
+                }
+                self._runSQLImportFromUpload();
+            });
+        }
 
+        self._runSQLImportFromUpload = function(){
             self.resetDatabaseMessages();
             self.sqlImportResultText(undefined);
             self.sqlImportInProgress(true);
@@ -744,25 +797,37 @@ $(function() {
             return (count == null || count == "") ? "?" : count;
         };
 
-        // Confirms a replace import (shows how many spools will be deleted). Returns true to proceed.
+        // Confirms a replace import (shows how many spools will be deleted).
+        // Resolves with true when the import may proceed - non-replace modes resolve immediately.
         self.confirmReplaceIfNeeded = function(importMode){
             if (importMode != "replace"){
-                return true;
+                return Promise.resolve(true);
             }
             var dbName = self.databaseInUse().toLowerCase();
-            return confirm("REPLACE import: this will DELETE all " + self.activeDatabaseSpoolCount() +
-                           " spool(s) in the " + dbName + " database and replace them with the uploaded file.\n\n" +
-                           "A backup is created and downloaded first. Continue?");
+            return SPOOLMANAGER_DIALOGS.confirmDanger({
+                title: "REPLACE import",
+                message: "All " + self.activeDatabaseSpoolCount() + " spool(s) in the " +
+                         SPOOLMANAGER_DIALOGS.escapeHtml(dbName) + " database will be DELETED and replaced " +
+                         "with the contents of the uploaded file. A backup is created and downloaded first.",
+                question: "Do you really want to replace all spools?",
+                cancel: "Cancel import",
+                proceed: "Replace all spools"
+            });
         };
 
         self.performCSVImportFromUpload = function() {
             if (self.csvImportUploadData === undefined) return;
 
             var importMode = self.pluginSettings.importCSVMode();
-            if (self.confirmReplaceIfNeeded(importMode) != true){
-                return;
-            }
+            self.confirmReplaceIfNeeded(importMode).then(function(confirmed){
+                if (confirmed != true){
+                    return;
+                }
+                self._runCSVImportFromUpload();
+            });
+        };
 
+        self._runCSVImportFromUpload = function(){
             self.csvImportInProgress(true);
 
             // create + download the pre-import backup first; only import after it succeeded
@@ -1262,7 +1327,11 @@ $(function() {
 
         self.editSpoolFromSidebar = function(toolIndex, spoolItem){
             if (spoolItem == null){
-                alert("Something is wrong. No Spool is selected to edit from sidebar!")
+                SPOOLMANAGER_DIALOGS.notify({
+                    title: "No spool selected",
+                    message: "There is no spool selected for this tool, so there is nothing to edit.",
+                    type: "error"
+                });
             }
             self.showSpoolDialogAction(spoolItem);
         }
@@ -1295,10 +1364,20 @@ $(function() {
 
         //////////////////////////////////////////////////////////////////////////////////////////////////// TABLE / TAB
 
+        // Shared hint for the two entry points that are blocked by an outdated database scheme.
+        self._notifySchemeUpgradeNeeded = function(){
+            SPOOLMANAGER_DIALOGS.notify({
+                title: "Database scheme is outdated",
+                message: "Saving would fail. Open Plugin Settings &rarr; SpoolManager &rarr; Storage " +
+                         "and press 'Upgrade database scheme' first.",
+                type: "error"
+            });
+        };
+
         self.addNewSpool = function(){
             if (self.schemeUpgradeNeeded() == true){
                 // saving would fail anyway, guide the user to the upgrade instead
-                alert("The database scheme is outdated. Open Plugin Settings -> SpoolManager -> Storage and press 'Upgrade database scheme' first!");
+                self._notifySchemeUpgradeNeeded();
                 return;
             }
             self.spoolDialog.showDialog(null, closeDialogHandler);
@@ -1307,7 +1386,7 @@ $(function() {
         // Guided alternative to the dialog above, reached through the dropdown next to "+ Add Spool".
         self.addNewSpoolViaWizard = function(){
             if (self.schemeUpgradeNeeded() == true){
-                alert("The database scheme is outdated. Open Plugin Settings -> SpoolManager -> Storage and press 'Upgrade database scheme' first!");
+                self._notifySchemeUpgradeNeeded();
                 return;
             }
             self.addSpoolWizard.showDialog(closeDialogHandler);
@@ -1464,102 +1543,133 @@ $(function() {
         const newStartPrintFunction = function confirmSpoolSelectionBeforeStartPrint() {
                 // api-call
                 self.apiClient.allowedToPrint(function(responseData){
-                    var result = responseData.result,
-                        check, itemList;
+                    var result = responseData.result;
 
+                    // The three checks below used to be blocking confirm() calls in sequence.
+                    // They are now promise steps: every step resolves with true when the print may
+                    // continue, and the chain only reaches startPrintConfirmed() when all of them did.
+                    // Cancelling ANY step aborts the print start - same semantics as the old `return`.
                     var warning = "";
                     var warning2 = "";
                     if (responseData.metaDataMissing) {
-                        warning = "ATTENTION: Needed filament could not be calculated (missing metadata - wait for the uploaded file to be processed)\n\n";
+                        warning = "<strong>ATTENTION:</strong> Needed filament could not be calculated " +
+                                  "(missing metadata - wait for the uploaded file to be processed).<br><br>";
                         warning2 = " (maybe)"
                     }
                     if (responseData.attributesMissing) {
-                        warning = "ATTENTION: Needed filament could not be calculated (missing spool-fields - edit your spool)\n\n";
+                        warning = "<strong>ATTENTION:</strong> Needed filament could not be calculated " +
+                                  "(missing spool-fields - edit your spool).<br><br>";
                     }
 
-                    if (result.noSpoolSelected.length) {
-                        itemList = [];
-                        for (item of result.noSpoolSelected) {
-                            itemList.push('Tool '+item.toolIndex)
-                        }
-                        if (itemList.length === 1) {
-                            check = confirm(
-                                warning +
-                                'There is no spool selected for ' + itemList[0] + ' despite it being used' + warning2 + ' by this print.\n\n' +
-                                'Do you want to start the print without a selected spool?'
-                            );
-                        } else {
-                            check = confirm(
-                                warning +
-                                'There are no spools selected for the following tools despite them being used' + warning2 + ' by this print:\n' +
-                                '- '+ itemList.join('\n- ') + '\n\n' +
-                                'Do you want to start the print without selected spools?'
-                            );
-                        }
-                        if (!check) {
-                            return;
-                        }
-                    }
-
-                    buildSpoolLabel = function(item){
+                    var buildSpoolLabel = function(item){
                         var label =  item.toolIndex+": '" + item.material + " - " + item.spoolName;
 
                         if (item.remainingWeight != null && typeof item.remainingWeight === 'number'){
                             label = label + " ("+ self.formatWeightForDisplay(item.remainingWeight) +")";
                         }
                         label = label + "'";
-                        return label;
+                        return SPOOLMANAGER_DIALOGS.escapeHtml(label);
                     }
 
-                    if (result.filamentNotEnough.length) {
-                        itemList = [];
-                        for (item of result.filamentNotEnough) {
-                            var spoolLabel = buildSpoolLabel(item);
-                            // itemList.push("'" + item.spoolName + "' (tool "+item.toolIndex+")");
-                            itemList.push(spoolLabel);
+                    var askNoSpoolSelected = function(){
+                        if (!result.noSpoolSelected.length) {
+                            return Promise.resolve(true);
                         }
+                        var itemList = [];
+                        for (item of result.noSpoolSelected) {
+                            itemList.push(SPOOLMANAGER_DIALOGS.escapeHtml('Tool ' + item.toolIndex))
+                        }
+                        var message;
+                        var question;
                         if (itemList.length === 1) {
-                            check = confirm(
-                                warning +
-                                'The selected spool for tool ' + itemList[0] + ' does not have enough remaining filament'+warning2+'.\n\n' +
-                                'Do you want to start the print anyway?'
-                            );
+                            message = warning + 'There is no spool selected for ' + itemList[0] +
+                                      ' despite it being used' + warning2 + ' by this print.';
+                            question = 'Do you want to start the print without a selected spool?';
                         } else {
-                            check = confirm(
-                                warning +
-                                'The following selected spools do not have enough remaining filament'+warning2+':\n' +
-                                '- '+ itemList.join('\n- ') + '\n\n' +
-                                'Do you want to start the print anyway?'
-                            );
+                            message = warning + 'There are no spools selected for the following tools despite them being used' +
+                                      warning2 + ' by this print:' + SPOOLMANAGER_DIALOGS.buildHtmlList(itemList);
+                            question = 'Do you want to start the print without selected spools?';
                         }
-                        if (!check) {
-                            return;
-                        }
-                    }
+                        return SPOOLMANAGER_DIALOGS.confirm({
+                            title: "No spool selected",
+                            message: message,
+                            question: question,
+                            cancel: "Don't start print",
+                            proceed: "Start anyway"
+                        });
+                    };
 
-                    if (result.reminderSpoolSelection.length) {
-                        itemList = [];
+                    var askFilamentNotEnough = function(){
+                        if (!result.filamentNotEnough.length) {
+                            return Promise.resolve(true);
+                        }
+                        var itemList = [];
+                        for (item of result.filamentNotEnough) {
+                            itemList.push(buildSpoolLabel(item));
+                        }
+                        var message;
+                        if (itemList.length === 1) {
+                            message = warning + 'The selected spool for tool ' + itemList[0] +
+                                      ' does not have enough remaining filament' + warning2 + '.';
+                        } else {
+                            message = warning + 'The following selected spools do not have enough remaining filament' +
+                                      warning2 + ':' + SPOOLMANAGER_DIALOGS.buildHtmlList(itemList);
+                        }
+                        return SPOOLMANAGER_DIALOGS.confirm({
+                            title: "Not enough filament",
+                            message: message,
+                            question: 'Do you want to start the print anyway?',
+                            cancel: "Don't start print",
+                            proceed: "Start anyway"
+                        });
+                    };
+
+                    var askReminderSpoolSelection = function(){
+                        if (!result.reminderSpoolSelection.length) {
+                            return Promise.resolve(true);
+                        }
+                        var itemList = [];
                         // build message for each tool
                         for (item of result.reminderSpoolSelection) {
+                            var offsets = [];
+                            if (responseData.toolOffsetEnabled && item.toolOffset != null) offsets.push("Tool Offset: " + item.toolOffset + '\u00B0');
+                            if (responseData.bedOffsetEnabled && item.bedOffset != null) offsets.push("Bed Offset: " + item.bedOffset + '\u00B0');
+                            if (responseData.enclosureOffsetEnabled && item.enclosureOffset != null) offsets.push("Enclosure Offset: " + item.enclosureOffset + '\u00B0');
+
                             var toolMessage = buildSpoolLabel(item);
-                            if (responseData.toolOffsetEnabled && item.toolOffset != null) toolMessage += "\n--  Tool Offset:  "+item.toolOffset+'\u00B0';
-                            if (responseData.bedOffsetEnabled && item.bedOffset != null) toolMessage += "\n--  Bed Offset:  "+item.bedOffset+'\u00B0';
-                            if (responseData.enclosureOffsetEnabled && item.enclosureOffset != null) toolMessage += "\n--  Enclosure Offset:  "+item.enclosureOffset+'\u00B0';
+                            if (offsets.length > 0){
+                                toolMessage += SPOOLMANAGER_DIALOGS.buildHtmlList(offsets.map(function(offset){
+                                    return SPOOLMANAGER_DIALOGS.escapeHtml(offset);
+                                }));
+                            }
                             itemList.push(toolMessage);
                         }
-                        check = confirm(
-                            "Do you want to start the print with following selected spools?\n" +
-                            "- "+ itemList.join("\n- ")
-                        );
+                        return SPOOLMANAGER_DIALOGS.confirm({
+                            title: "Confirm spool selection",
+                            message: "The print will use the following spools:" + SPOOLMANAGER_DIALOGS.buildHtmlList(itemList),
+                            question: "Do you want to start the print with these spools?",
+                            cancel: "Don't start print",
+                            proceed: "Start print"
+                        });
+                    };
 
-                        if (!check) {
-                            return;
-                        }
-                    }
-                    // we are ready to go. Inform the backend and after that START PRINT
-                    self.apiClient.startPrintConfirmed(function(responseData){
-                        origStartPrintFunction();
-                    });
+                    askNoSpoolSelected()
+                        .then(function(mayContinue){
+                            return mayContinue == true ? askFilamentNotEnough() : false;
+                        })
+                        .then(function(mayContinue){
+                            return mayContinue == true ? askReminderSpoolSelection() : false;
+                        })
+                        .then(function(mayContinue){
+                            if (mayContinue != true){
+                                // user cancelled one of the steps - do NOT start the print
+                                return;
+                            }
+                            // we are ready to go. Inform the backend and after that START PRINT
+                            self.apiClient.startPrintConfirmed(function(responseData){
+                                origStartPrintFunction();
+                            });
+                        });
                 });
         };
         // overwrite loadFile

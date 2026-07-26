@@ -1,8 +1,9 @@
 
 <!--###############################################################  Spool EDIT Dialog: id="dialog_spool_edit -->
-<div id="dialog_spool_edit" class="modal fade large modal-wide">
+<div id="dialog_spool_edit" class="modal hide fade large modal-wide">
     <div class="modal-header">
-        <h4 class="modal-title" ></h4>
+        <a href="#" class="close" data-dismiss="modal" aria-hidden="true">&times;</a>
+        <h3 class="modal-title" data-bind="text: spoolDialog.isExistingSpool() ? 'Edit Spool' : 'Add Spool'"></h3>
         <div class="row">
             <div class="myspan1">
                 <span>
@@ -809,8 +810,8 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
 <!--                        data-bind="click: spoolDialog.closeSpoolItemDialog"-->
                     <span class="spm-save-blocked-hint" data-bind="visible: spoolDialog.invalidNumberFields().length > 0,
                                                                     attr: {title: 'Invalid value in: ' + spoolDialog.invalidNumberFieldsLabel()}">Invalid number entered</span>
-                    <button class="btn "  data-dismiss="modal"  style="text-align:right">Close</button>
-                    <button class="btn btn-primary" data-bind="enable: spoolDialog.isFormValidForSubmit(), click: spoolDialog.saveSpoolItem" style="text-align:right">Save</button>
+                    <button type="button" class="btn" data-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" data-bind="enable: spoolDialog.isFormValidForSubmit(), click: spoolDialog.saveSpoolItem">Save</button>
                 </span>
             </div>
         </div>
@@ -821,10 +822,10 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
 
 
 
-<div id="dialog_template_spool_selection" class="modal hide fade-in">
+<div id="dialog_template_spool_selection" class="modal hide fade">
     <div class="modal-header">
         <a href="#" class="close" data-dismiss="modal" aria-hidden="true">&times;</a>
-        <h3>Select Template Spool</h3>
+        <h3 class="modal-title">Select Template Spool</h3>
     </div>
     <div class="modal-body">
         <spm-select-spool-table params="allSpoolsKOArray: spoolDialog.templateSpools,
@@ -835,15 +836,15 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                         "></spm-select-spool-table>
     </div>
     <div class="modal-footer">
-        <a href="#" class="btn" data-dismiss="modal" aria-hidden="true">Close</a>
+        <button type="button" class="btn" data-dismiss="modal" aria-hidden="true">Close</button>
     </div>
 </div>
 
 <!--###############################################################  Simple-View warning: id="dialog_simplemode_warning" -->
-<div id="dialog_simplemode_warning" class="modal hide fade-in">
+<div id="dialog_simplemode_warning" class="modal hide fade">
     <div class="modal-header">
         <a href="#" class="close" data-dismiss="modal" aria-hidden="true">&times;</a>
-        <h3><i class="fas fa-exclamation-triangle" style="color:#e0a049;"></i>&nbsp; Hidden fields in Simple view</h3>
+        <h3 class="modal-title"><i class="fas fa-exclamation-triangle spm-dialog-icon-warning"></i>&nbsp; Hidden fields in Simple view</h3>
     </div>
     <div class="modal-body">
         <p>This template contains data in fields that are <strong>not shown</strong> in the Simple view:</p>
@@ -853,8 +854,8 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
         <p><small class="text-info">The data is kept and saved either way &mdash; switching to the Full view only makes these fields visible so you can review or edit them.</small></p>
     </div>
     <div class="modal-footer">
-        <a href="#" class="btn" data-bind="click: spoolDialog.stayInSimpleViewFromWarning">Stay in Simple view</a>
-        <a href="#" class="btn btn-primary" data-bind="click: spoolDialog.switchToFullViewFromWarning">Switch to Full view</a>
+        <button type="button" class="btn" data-bind="click: spoolDialog.stayInSimpleViewFromWarning">Stay in Simple view</button>
+        <button type="button" class="btn btn-primary" data-bind="click: spoolDialog.switchToFullViewFromWarning">Switch to Full view</button>
     </div>
 </div>
 
