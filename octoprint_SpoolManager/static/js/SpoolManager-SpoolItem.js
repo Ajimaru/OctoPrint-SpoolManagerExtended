@@ -22,7 +22,7 @@ let SpoolItem;
     var SPOOL_DIALOG_SELECTOR = SPOOLMANAGER_CONSTANTS.DOM_SELECTORS.SPOOL_DIALOG;
     var normalizeMaterialKey = SPOOLMANAGER_UTILS.normalizeMaterialKey;
 
-    var DEFAULT_COLOR = "#ff0000";
+    var DEFAULT_COLOR = SPOOLMANAGER_CONSTANTS.COLORS.DEFAULT;
 
     function _getValueOrZero(x) {
         if (!x){
@@ -205,24 +205,16 @@ let SpoolItem;
                 if (applyingColor == true){
                     return;
                 }
-                if (spoolItemInstance.isRainbow() == true){
-                    spoolItemInstance.color("rainbow");
-                    return;
-                }
-                // transparent without a base tint: no hex value at all
-                if (spoolItemInstance.isTransparent() == true && spoolItemInstance.transparentUntinted() == true){
-                    spoolItemInstance.color("transparent");
-                    return;
-                }
                 var colors = [];
                 for (var i = 0; i < spoolItemInstance.colorCount(); i++){
                     colors.push(pickerColors[i]() || DEFAULT_COLOR);
                 }
-                var composedColor = colors.join(";");
-                if (spoolItemInstance.isTransparent() == true){
-                    composedColor = "transparent:" + composedColor;
-                }
-                spoolItemInstance.color(composedColor);
+                spoolItemInstance.color(SPOOLMANAGER_UTILS.composeSpoolColor({
+                    isRainbow: spoolItemInstance.isRainbow() == true,
+                    isTransparent: spoolItemInstance.isTransparent() == true,
+                    isUntinted: spoolItemInstance.transparentUntinted() == true,
+                    colors: colors
+                }));
             };
             // picking a real base color after "translucent" turns it into a tinted transparent
             var onBaseColorPicked = function(newValue){
@@ -263,35 +255,18 @@ let SpoolItem;
             this.applyColorToEditor = function(colorValue){
                 applyingColor = true;
                 try {
-                    if (("" + colorValue).toLowerCase() === "rainbow"){
-                        spoolItemInstance.isRainbow(true);
-                        spoolItemInstance.isTransparent(false);
-                        spoolItemInstance.transparentUntinted(false);
+                    var parts = SPOOLMANAGER_UTILS.parseSpoolColor(colorValue);
+                    spoolItemInstance.isRainbow(parts.isRainbow);
+                    spoolItemInstance.isTransparent(parts.isTransparent);
+                    spoolItemInstance.transparentUntinted(parts.isUntinted);
+                    if (parts.isRainbow){
                         spoolItemInstance.colorCount(1);
                         pickerColors[0](DEFAULT_COLOR);
                     } else {
-                        var plainColorValue = "" + colorValue;
-                        var transparent = plainColorValue.toLowerCase().indexOf("transparent") === 0;
-                        // "transparent" without a ":#hex" suffix = untinted
-                        var untinted = false;
-                        if (transparent){
-                            plainColorValue = plainColorValue.substr("transparent".length);
-                            if (plainColorValue.indexOf(":") === 0){
-                                plainColorValue = plainColorValue.substr(1);
-                            }
-                            if (plainColorValue.length === 0){
-                                untinted = true;
-                                plainColorValue = DEFAULT_COLOR;
-                            }
-                        }
-                        var colors = plainColorValue.split(";");
-                        spoolItemInstance.isRainbow(false);
-                        spoolItemInstance.isTransparent(transparent);
-                        spoolItemInstance.transparentUntinted(untinted);
-                        spoolItemInstance.colorCount(Math.min(colors.length, 3));
+                        spoolItemInstance.colorCount(Math.min(parts.colors.length, 3));
                         for (var i = 0; i < 3; i++){
-                            if (i < colors.length && colors[i]){
-                                pickerColors[i](colors[i]);
+                            if (i < parts.colors.length && parts.colors[i]){
+                                pickerColors[i](parts.colors[i]);
                             }
                         }
                     }
@@ -399,15 +374,15 @@ let SpoolItem;
         this.color(rawColor);
         // if no custom color name present, use predefined name
         if (updateData.colorName == null || updateData.colorName.length == 0){
+            var colorParts = SPOOLMANAGER_UTILS.parseSpoolColor(rawColor);
             var preDefinedColorName = false;
-            if (("" + rawColor).toLowerCase() === "rainbow"){
+            if (colorParts.isRainbow){
                 preDefinedColorName = "Rainbow";
-            } else if (("" + rawColor).toLowerCase().indexOf("transparent") === 0){
-                var baseColor = ("" + rawColor).substr("transparent".length).replace(/^:/, "").split(";")[0];
-                var baseName = baseColor ? tinycolor(baseColor).toName() : false;
+            } else if (colorParts.isTransparent){
+                var baseName = colorParts.isUntinted ? false : tinycolor(colorParts.colors[0]).toName();
                 preDefinedColorName = baseName != false ? "Transparent " + baseName : "Transparent";
             } else {
-                preDefinedColorName = tinycolor(("" + rawColor).split(";")[0]).toName();
+                preDefinedColorName = tinycolor(colorParts.colors[0]).toName();
             }
             if (preDefinedColorName != false){
                 this.colorName(preDefinedColorName);

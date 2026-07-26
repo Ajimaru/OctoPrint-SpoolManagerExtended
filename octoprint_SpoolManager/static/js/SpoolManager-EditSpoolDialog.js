@@ -165,15 +165,8 @@ function SpoolManagerEditSpoolDialog(){
     self.spoolItemForEditing = null;
     self.templateSpools = ko.observableArray([]);
 
-    // static options for the "Finish" dropdown
-    self.finishOptions = [
-        { text: "Silk", value: "silk" },
-        { text: "Matt", value: "matt" },
-        { text: "Marble", value: "marble" },
-        { text: "Metal", value: "metal" },
-        { text: "Glow", value: "glow" },
-        { text: "Custom…", value: "custom" }
-    ];
+    // static options for the "Finish" dropdown (shared with the Add Spool Wizard)
+    self.finishOptions = SPOOLMANAGER_CONSTANTS.FINISH_OPTIONS;
 
     // Template-combobox on the displayname field (issue #48)
     self.templateComboVisible = ko.observable(false);
@@ -385,6 +378,155 @@ function SpoolManagerEditSpoolDialog(){
     });
 
 
+    /////////////////////////////////////////////////////////////////////////////////////////////////////////// OCTOSCALE
+
+    // Shared weighing/tag-writing helpers, created in initBinding once apiClient exists.
+    self.octoScaleWeighing = null;
+    self.octoScaleTagWriter = null;
+
+    this.isOctoScaleEnabled = ko.pureComputed(function(){
+        if (self.pluginSettings == null || self.pluginSettings.octoScaleEnabled == null){
+            return false;
+        }
+        return self.pluginSettings.octoScaleEnabled() == true;
+    });
+
+    // A reading off the scale carries no information about what the user meant by it, and the two
+    // possible meanings write to different fields:
+    //   "total"     - setting up a spool: this is what it weighs full  -> totalCombinedWeight
+    //   "remaining" - weighing it again: this is what is left          -> usedWeight (see below)
+    // This used to be guessed from isSpoolInUse(), which gets it wrong in exactly the case that
+    // matters: on the *first* re-weigh usedWeight is still 0, so a spool being checked for the
+    // first time was treated as one being set up - silently rewriting its initial weight.
+    // Hence two explicit buttons instead of a guess.
+
+    this.toggleOctoScaleWeighing = function(){
+        if (self.octoScaleWeighing != null){
+            self.octoScaleWeighing.toggle();
+        }
+    };
+
+    // Values are read from / written to the spool item directly, never through the *Display
+    // observables: those convert to the configured display unit, while the scale and the item
+    // both work in grams.
+    self._measuredGrams = function(){
+        if (self.octoScaleWeighing == null){
+            return null;
+        }
+        return self.octoScaleWeighing.currentWeight();
+    };
+
+    self._numberOrNull = function(observable){
+        var value = parseFloat(observable());
+        return isNaN(value) ? null : value;
+    };
+
+    // Interpreting a gross reading as "what is left" needs both reference values: without the
+    // empty spool weight the filament share is unknown, without the initial weight there is
+    // nothing to subtract the remainder from. Same rule the backend enforces in
+    // _applyMeasuredGrossWeight() (api/SpoolManagerAPI.py).
+    this.canApplyAsRemaining = ko.pureComputed(function(){
+        if (self.spoolItemForEditing == null){
+            return false;
+        }
+        var spoolWeight = self._numberOrNull(self.spoolItemForEditing.spoolWeight);
+        var totalWeight = self._numberOrNull(self.spoolItemForEditing.totalWeight);
+        return spoolWeight != null && spoolWeight > 0 && totalWeight != null && totalWeight > 0;
+    });
+
+    this.remainingBlockReason = ko.pureComputed(function(){
+        if (self.spoolItemForEditing == null || self.canApplyAsRemaining()){
+            return "";
+        }
+        var spoolWeight = self._numberOrNull(self.spoolItemForEditing.spoolWeight);
+        if (spoolWeight == null || spoolWeight <= 0){
+            return "Enter the empty spool weight to use a reading as the remaining amount.";
+        }
+        return "Enter the initial filament amount to use a reading as the remaining amount.";
+    });
+
+    // Shows the arithmetic before the user commits to it, in grams.
+    this.measuredRemainingPreview = ko.pureComputed(function(){
+        if (self.spoolItemForEditing == null || !self.canApplyAsRemaining()){
+            return "";
+        }
+        var grams = self._measuredGrams();
+        if (grams == null){
+            return "";
+        }
+        var spoolWeight = self._numberOrNull(self.spoolItemForEditing.spoolWeight);
+        var totalWeight = self._numberOrNull(self.spoolItemForEditing.totalWeight);
+        var remaining = Math.max(0, Math.min(grams - spoolWeight, totalWeight));
+        var used = totalWeight - remaining;
+        return roundWithPrecision(grams, 1) + " g - " + roundWithPrecision(spoolWeight, 1) + " g empty = "
+            + roundWithPrecision(remaining, 1) + " g left (" + roundWithPrecision(used, 1) + " g used)";
+    });
+
+    this.applyMeasuredAsTotalWeight = function(){
+        var grams = self._measuredGrams();
+        if (grams == null){
+            return;
+        }
+        self.spoolItemForEditing.totalCombinedWeight(roundWithPrecision(grams, 1));
+    };
+
+    // Mirrors _applyMeasuredGrossWeight() in api/SpoolManagerAPI.py - keep the two in step.
+    // Two reasons this writes usedWeight rather than a "remaining" field:
+    //  - remainingWeight is derived: DatabaseManager.saveSpool() recomputes it as
+    //    totalWeight - usedWeight on every save, so a value assigned to it is discarded.
+    //  - the dialog's own auto-calculation only derives usage from remainingCombinedWeight while
+    //    drivenScope is FILAMENT. Computing usedWeight here works whatever scope the user picked,
+    //    and leaves their scope setting alone.
+    this.applyMeasuredAsRemainingWeight = function(){
+        var grams = self._measuredGrams();
+        if (grams == null || !self.canApplyAsRemaining()){
+            return;
+        }
+
+        var spoolWeight = self._numberOrNull(self.spoolItemForEditing.spoolWeight);
+        var totalWeight = self._numberOrNull(self.spoolItemForEditing.totalWeight);
+
+        var remaining = grams - spoolWeight;
+        if (remaining < 0){
+            // scale not tared, or the stored empty spool weight is wrong - clamp rather than
+            // pushing a negative filament amount into the fields
+            console.warn("SpoolManager: measured " + grams + " g is below the empty spool weight "
+                + spoolWeight + " g - clamping remaining filament to 0.");
+            remaining = 0;
+        }
+        if (remaining > totalWeight){
+            console.warn("SpoolManager: measured remaining filament " + remaining
+                + " g exceeds the initial amount " + totalWeight + " g - clamping to the initial amount.");
+            remaining = totalWeight;
+        }
+
+        var used = roundWithPrecision(totalWeight - remaining, 1);
+        self.spoolItemForEditing.usedWeight(used);
+
+        // keep the length in step, otherwise the UI reports a spool as e.g. 90% used by weight
+        // and 0% used by length at the same time
+        if (self.areDensityAndDiameterValid()){
+            self.spoolItemForEditing.usedLength(self.convertToLength(
+                used,
+                parseFloat(self.spoolItemForEditing.density()),
+                parseFloat(self.spoolItemForEditing.diameter())
+            ));
+        }
+    };
+
+    this.startTagWriting = function(){
+        if (self.octoScaleTagWriter == null || self.isExistingSpool() != true){
+            return;
+        }
+        self.octoScaleTagWriter.start(self.spoolItemForEditing.databaseId());
+    };
+
+    this.stopTagWriting = function(){
+        if (self.octoScaleTagWriter != null){
+            self.octoScaleTagWriter.stop();
+        }
+    };
+
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////// HELPER
 
     // Validation shape adopted from mdziekon/OctoPrint-SpoolManager PR #11 (GH-10);
@@ -429,8 +571,9 @@ function SpoolManagerEditSpoolDialog(){
         );
     }
 
+    // Mandatory-field rules live in SPOOLMANAGER_UTILS so the wizard applies exactly the same ones.
     self.isDisplayNamePresent = function(){
-        return ((self.spoolItemForEditing.displayName() || "").trim().length > 0);
+        return SPOOLMANAGER_UTILS.isDisplayNamePresent(self.spoolItemForEditing);
     }
 
     self.addColorClicked = function(){
@@ -448,11 +591,11 @@ function SpoolManagerEditSpoolDialog(){
     }
 
     self.isColorNamePresent = function(){
-        return ((self.spoolItemForEditing.colorName() || "").trim().length > 0);
+        return SPOOLMANAGER_UTILS.isColorNamePresent(self.spoolItemForEditing);
     }
 
     self.isTotalCombinedWeightPresent = function(){
-        return (("" + (self.spoolItemForEditing.totalCombinedWeight() || "")).trim().length > 0);
+        return SPOOLMANAGER_UTILS.isTotalCombinedWeightPresent(self.spoolItemForEditing);
     }
 
     // builds (or refreshes) an SVG checkerboard <pattern> in the filament svg's
@@ -505,15 +648,15 @@ function SpoolManagerEditSpoolDialog(){
     };
 
     this._reColorFilamentIcon = function(newColor){
-        var colorValue = "" + newColor;
+        var colorParts = SPOOLMANAGER_UTILS.parseSpoolColor(newColor);
         var rectColors;
         var strokeColor;
-        if (colorValue.toLowerCase() === "rainbow"){
+        if (colorParts.isRainbow){
             rectColors = ["#ff2d2d", "#ff9a00", "#ffe600", "#16c172", "#2f7bff", "#a044ff"];
             strokeColor = rectColors[0];
-        } else if (colorValue.toLowerCase().indexOf("transparent") === 0){
+        } else if (colorParts.isTransparent){
             // translucent: render the filament as a checkerboard, optionally tinted
-            var tint = colorValue.substr("transparent".length).replace(/^:/, "").split(";")[0];
+            var tint = colorParts.isUntinted ? "" : colorParts.colors[0];
             var patternRef = self._ensureTranslucentPattern(tint || null);
             var svgIconT = $("#svg-filament");
             svgIconT.children("rect").each(function(){
@@ -524,7 +667,7 @@ function SpoolManagerEditSpoolDialog(){
             });
             return;
         } else {
-            var colors = colorValue.split(";");
+            var colors = colorParts.colors;
             if (colors.length === 1){
                 // single color: alternate with a slightly darkened shade
                 rectColors = [colors[0], tinycolor(colors[0]).darken(12).toString()];
@@ -556,6 +699,18 @@ function SpoolManagerEditSpoolDialog(){
 
         self.spoolDialog = $("#dialog_spool_edit");
         self.templateSpoolDialog = $("#dialog_template_spool_selection");
+
+        // OctoScale: weighing and NFC tag writing straight from the dialog, so a spool can be
+        // weighed or tagged without going through the wizard. Shared implementation, see
+        // SpoolManager-OctoScale.js.
+        self.octoScaleWeighing = new SpoolManagerOctoScaleWeighing(apiClient);
+        self.octoScaleTagWriter = new SpoolManagerOctoScaleTagWriter(apiClient);
+
+        // closing the dialog (Save, Close, Esc) must not leave the device pollers running
+        self.spoolDialog.on("hidden", function(){
+            self.octoScaleWeighing.stop();
+            self.octoScaleTagWriter.stop();
+        });
 
         // Adopted from mdziekon/OctoPrint-SpoolManager PR #11 (GH-10): note editor is created
         // via the static factory instead of instantiating Quill inline
@@ -597,25 +752,21 @@ function SpoolManagerEditSpoolDialog(){
         self._reColorFilamentIcon(self.spoolItemForEditing.color());
         self.spoolItemForEditing.color.subscribe(function(newColor){
             self._reColorFilamentIcon(newColor);
-            if (("" + newColor).toLowerCase() === "rainbow"){
+            var colorParts = SPOOLMANAGER_UTILS.parseSpoolColor(newColor);
+            if (colorParts.isRainbow){
                 self.spoolItemForEditing.colorName("Rainbow");
                 return;
             }
-            var plainColor = "" + newColor;
-            var transparentPrefix = "";
-            if (plainColor.toLowerCase().indexOf("transparent") === 0){
-                transparentPrefix = "Transparent";
-                plainColor = plainColor.substr("transparent".length).replace(/^:/, "");
-                if (plainColor.length === 0){
-                    self.spoolItemForEditing.colorName(transparentPrefix);
-                    return;
-                }
+            var transparentPrefix = colorParts.isTransparent ? "Transparent" : "";
+            if (colorParts.isTransparent && colorParts.isUntinted){
+                self.spoolItemForEditing.colorName(transparentPrefix);
+                return;
             }
-            if (plainColor.indexOf(";") !== -1){
+            if (colorParts.colors.length > 1){
                 // multi-color: keep the name the user typed
                 return;
             }
-            var colorName = tinycolor(plainColor).toName();
+            var colorName = tinycolor(colorParts.colors[0]).toName();
             if (colorName != false){
                 self.spoolItemForEditing.colorName(transparentPrefix ? transparentPrefix + " " + colorName : colorName);
             } else if (transparentPrefix){
