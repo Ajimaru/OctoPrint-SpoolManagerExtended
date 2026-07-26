@@ -209,7 +209,9 @@ class MqttManager(object):
 	def handleEvent(self, eventKey, eventPayload):
 		if not self.isOperational():
 			return
-		if eventKey in (EventBusKeys.EVENT_BUS_SPOOL_SELECTED, EventBusKeys.EVENT_BUS_SPOOL_WEIGHT_UPDATED_AFTER_PRINT):
+		if eventKey in (EventBusKeys.EVENT_BUS_SPOOL_SELECTED,
+						EventBusKeys.EVENT_BUS_SPOOL_WEIGHT_UPDATED_AFTER_PRINT,
+						EventBusKeys.EVENT_BUS_SPOOL_WEIGHT_MEASURED):
 			toolIndex = eventPayload.get("toolId")
 			if toolIndex is not None:
 				self.publishToolState(toolIndex, eventPayload)

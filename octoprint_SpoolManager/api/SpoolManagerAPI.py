@@ -68,6 +68,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         "offsetEnclosureTemperature": "Offset enclosure temperature",
         "totalWeight": "Filament amount (initial)",
         "spoolWeight": "Empty spool weight",
+        "grossWeight": "Measured weight",
         "remainingWeight": "Filament amount (remaining)",
         "totalLength": "Filament length (initial)",
         "usedLength": "Filament length (used)",
@@ -131,7 +132,14 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # TextField payloads: sanity cap at the MySQL TEXT limit so all backends behave the same
         maxTextLength = 65535
 
-        labelsJson = json.dumps(self._getValueFromJSONOrNone("labels", jsonData))
+        # fall back to an empty list rather than dumping None: that would store the *string*
+        # "null", and loadCatalogLabels() does json.loads() + iterates the result, so a single
+        # such row breaks the label catalog (and with it the spool search) for the whole table.
+        # The edit dialog always sends an array, so this only bites API clients that omit it.
+        labels = self._getValueFromJSONOrNone("labels", jsonData)
+        if (labels == None):
+            labels = []
+        labelsJson = json.dumps(labels)
         if (len(labelsJson) > maxTextLength):
             validationErrors.append(self._fieldLabel("labels") + " must not be longer than " + str(maxTextLength) + " characters")
         spoolModel.labels = labelsJson
@@ -296,7 +304,12 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             return None
         radius = diameter / 2.0
         volume = (usedWeight) / density
-        length = (volume * 1000) / PI * radius * radius
+        # length = volume / cross-section. The divisor needs the parentheses: without them
+        # Python evaluates left to right and multiplies by the radii instead of dividing,
+        # which produced lengths ~1.7x too small. Cross-check: 1000 g of PLA-ish filament
+        # (density 1.04, diameter 1.75) yields 399761 mm, matching the totalLength the rest
+        # of the plugin computes for such a spool.
+        length = (volume * 1000) / (PI * radius * radius)
         lengthRounded = int(round(length))
         return lengthRounded;
 
@@ -612,6 +625,203 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         return flask.jsonify({
             "spool": Transformer.transformSpoolModelToDict(spoolModel)
         })
+
+    #####################################################################################################   MEASURED WEIGHT (SCALE)
+
+    # Translate a gross reading from a scale (spool core + filament) into the fields the database
+    # actually stores. Two things make this less obvious than it looks:
+    #  - remainingWeight is *derived*: DatabaseManager.saveSpool() recomputes it as
+    #    totalWeight - usedWeight on every save, so assigning it here would be thrown away.
+    #    The measurement therefore has to be written through usedWeight.
+    #  - a mis-tared or overloaded scale must never push negative weights into the database,
+    #    hence the clamping below.
+    # Returns the resolved remaining weight, or None if the spool lacks the reference values.
+    def _applyMeasuredGrossWeight(self, spoolModel, grossWeight, spoolWeightOverride, validationErrors):
+        spoolWeight = spoolWeightOverride if spoolWeightOverride != None else spoolModel.spoolWeight
+        if (spoolWeight == None):
+            # without the empty spool weight a gross reading carries no usable information
+            validationErrors.append(self._fieldLabel("spoolWeight") + " is not set for this spool, so a gross weight cannot be interpreted")
+            return None
+        if (spoolModel.totalWeight == None):
+            validationErrors.append(self._fieldLabel("totalWeight") + " is not set for this spool, so a gross weight cannot be interpreted")
+            return None
+
+        spoolModel.spoolWeight = spoolWeight
+
+        remainingWeight = grossWeight - spoolWeight
+        if (remainingWeight < 0):
+            # scale not tared, or the wrong spool weight stored - clamp instead of storing nonsense
+            self._logger.warning(
+                "Measured gross weight %s g is below the empty spool weight %s g - clamping remaining filament to 0."
+                % (str(grossWeight), str(spoolWeight)))
+            remainingWeight = 0.0
+        if (remainingWeight > spoolModel.totalWeight):
+            # more filament than the spool ever held - clamp so usedWeight cannot go negative
+            self._logger.warning(
+                "Measured remaining filament %s g exceeds the initial amount %s g - clamping to the initial amount."
+                % (str(remainingWeight), str(spoolModel.totalWeight)))
+            remainingWeight = spoolModel.totalWeight
+
+        spoolModel.usedWeight = spoolModel.totalWeight - remainingWeight
+
+        # keep the length fields in step with the weights, otherwise the UI shows a spool as
+        # 38% used by weight and 0% used by length at the same time. Needs density+diameter;
+        # if either is missing the helper logs and returns None, and we leave the old value alone.
+        usedLength = self._calculateUsedLength(spoolModel.usedWeight, spoolModel.density, spoolModel.diameter)
+        if (usedLength != None):
+            spoolModel.usedLength = usedLength
+
+        return remainingWeight
+
+    # Tool index this spool is currently loaded into, or None. Only used to enrich the event
+    # payload so MQTT/HA can republish the tool state for a spool that is currently in use.
+    def _findSelectedToolIndexForSpool(self, databaseId):
+        databaseIds = self._settings.get([SettingsKeys.SETTINGS_KEY_SELECTED_SPOOLS_DATABASE_IDS])
+        if (databaseIds == None):
+            return None
+        for toolIndex, selectedDatabaseId in enumerate(databaseIds):
+            if (selectedDatabaseId == databaseId):
+                return toolIndex
+        return None
+
+    @octoprint.plugin.BlueprintPlugin.route("/spool/<int:databaseId>/measuredWeight", methods=["PUT"])
+    @no_firstrun_access
+    def updateMeasuredWeight(self, databaseId):
+        # Write back a weight measured by an external scale (e.g. an ESP32 + load cell).
+        # Deliberately *not* handled by /saveSpool: that route is a full replace built for the
+        # edit dialog and nulls every field the caller omits, which a scale has no way to supply.
+        self._logger.info("API update measured weight for spool with database id '" + str(databaseId) + "'")
+        jsonData = request.json
+        if (jsonData == None):
+            return make_response(jsonify({"validationErrors": ["Request body must be JSON"]}), 400)
+
+        validationErrors = []
+        grossWeight = self._toFloatFromJSONOrNone("grossWeight", jsonData, validationErrors, minValue=0)
+        # optional: correct the stored empty spool weight in the same call, handy when a
+        # brand new spool is weighed for the first time
+        spoolWeightOverride = self._toFloatFromJSONOrNone("spoolWeight", jsonData, validationErrors, minValue=0)
+        if (grossWeight == None and not validationErrors):
+            validationErrors.append(self._fieldLabel("grossWeight") + " must not be empty")
+        if (validationErrors):
+            self._logger.warning("Update measured weight rejected, validation errors: " + str(validationErrors))
+            return make_response(jsonify({"validationErrors": validationErrors}), 400)
+
+        self._databaseManager.connectoToDatabase()
+        spoolModel = self._databaseManager.loadSpool(databaseId, withReusedConnection=True)
+        if (spoolModel == None):
+            self._databaseManager.closeDatabase()
+            abort(404)
+
+        remainingWeight = self._applyMeasuredGrossWeight(spoolModel, grossWeight, spoolWeightOverride, validationErrors)
+        if (validationErrors):
+            self._databaseManager.closeDatabase()
+            self._logger.warning("Update measured weight rejected, validation errors: " + str(validationErrors))
+            return make_response(jsonify({"validationErrors": validationErrors}), 400)
+
+        # a scale calling this gets the 409 below; a popup in the browser would be noise for
+        # a conflict the user did not cause and cannot act on from here
+        savedDatabaseId = self._databaseManager.saveSpool(spoolModel, withReusedConnection=True, suppressConflictMessage=True)
+        self._databaseManager.closeDatabase()
+
+        if (savedDatabaseId == None):
+            # saveSpool returns None on a version conflict or a deleted row - without this
+            # check we would answer 200 while nothing was written.
+            self._logger.warning("Could not store measured weight for spool with database id '" + str(databaseId) + "'")
+            return make_response(jsonify({
+                "error": "Could not store the measured weight, the spool was modified or deleted in the meantime."
+            }), 409)
+
+        eventPayload = {
+            "databaseId": spoolModel.databaseId,
+            "spoolName": spoolModel.displayName,
+            "material": spoolModel.material,
+            "colorName": spoolModel.colorName,
+            "grossWeight": grossWeight,
+            "remainingWeight": remainingWeight,
+            "usedWeight": spoolModel.usedWeight
+        }
+        toolIndex = self._findSelectedToolIndexForSpool(spoolModel.databaseId)
+        if (toolIndex != None):
+            # spool is currently loaded -> MQTT can republish this tool's state
+            eventPayload["toolId"] = toolIndex
+        self._sendPayload2EventBus(EventBusKeys.EVENT_BUS_SPOOL_WEIGHT_MEASURED, eventPayload)
+
+        # data for the sidebar
+        self.checkRemainingFilament()
+
+        return flask.jsonify({
+            "spool": Transformer.transformSpoolModelToDict(spoolModel)
+        })
+
+    #####################################################################################################   CREATE SPOOL (SCALE)
+
+    @octoprint.plugin.BlueprintPlugin.route("/spool", methods=["POST"])
+    @no_firstrun_access
+    def createSpool(self):
+        # Create a spool and answer with its new database id, so an external device (scale, NFC
+        # writer) can put that id on a tag right away. /saveSpool could create spools too, but it
+        # answers with an empty body - the caller would have to guess the id it just created.
+        self._logger.info("API create spool")
+        jsonData = request.json
+        if (jsonData == None):
+            return make_response(jsonify({"validationErrors": ["Request body must be JSON"]}), 400)
+
+        spoolModel = SpoolModel()
+        # a create is exactly the full-replace case this mapper was written for, so it also
+        # applies the same required-field rules as the edit dialog
+        validationErrors = self._updateSpoolModelFromJSONData(spoolModel, jsonData)
+        # ignore any client supplied id/version, this row does not exist yet
+        spoolModel.databaseId = None
+        spoolModel.version = None
+
+        # totalLength is derived from totalWeight in the edit dialog's JS and only ever reaches
+        # the backend as a submitted field. An API client has no such conversion, so derive it
+        # here when it was not supplied - otherwise every length based display stays empty.
+        if (spoolModel.totalLength == None):
+            totalLength = self._calculateUsedLength(spoolModel.totalWeight, spoolModel.density, spoolModel.diameter)
+            if (totalLength != None):
+                spoolModel.totalLength = totalLength
+
+        # optional convenience: let a scale send its gross reading directly instead of
+        # pre-calculating usedWeight itself
+        grossWeight = self._toFloatFromJSONOrNone("grossWeight", jsonData, validationErrors, minValue=0)
+        remainingWeight = None
+        if (grossWeight != None and not validationErrors):
+            remainingWeight = self._applyMeasuredGrossWeight(spoolModel, grossWeight, None, validationErrors)
+
+        if (validationErrors):
+            self._logger.warning("Create spool rejected, validation errors: " + str(validationErrors))
+            return make_response(jsonify({"validationErrors": validationErrors}), 400)
+
+        self._databaseManager.connectoToDatabase()
+        savedDatabaseId = self._databaseManager.saveSpool(spoolModel, withReusedConnection=True)
+        if (savedDatabaseId == None):
+            self._databaseManager.closeDatabase()
+            self._logger.error("Could not create spool")
+            return make_response(jsonify({"error": "Could not create the spool."}), 500)
+
+        # resolve display name variables ({id} is only known after the initial save), but never inside templates
+        if (spoolModel.isTemplate != True):
+            if (self._resolveDisplayNameVariables(spoolModel)):
+                self._databaseManager.saveSpool(spoolModel, withReusedConnection=True)
+        self._databaseManager.closeDatabase()
+
+        eventPayload = {
+            "databaseId": spoolModel.databaseId,
+            "spoolName": spoolModel.displayName,
+            "material": spoolModel.material,
+            "colorName": spoolModel.colorName,
+            "remainingWeight": spoolModel.remainingWeight
+        }
+        self._sendPayload2EventBus(EventBusKeys.EVENT_BUS_SPOOL_ADDED, eventPayload)
+
+        # data for the sidebar
+        self.checkRemainingFilament()
+
+        return make_response(jsonify({
+            "databaseId": spoolModel.databaseId,
+            "spool": Transformer.transformSpoolModelToDict(spoolModel)
+        }), 201)
 
     #####################################################################################################   SELECT SPOOL BY QR
 
@@ -1737,7 +1947,14 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             self._logger.info("Load spool for update with database id '"+str(databaseId)+"'")
             spoolModel = self._databaseManager.loadSpool(databaseId, withReusedConnection=True)
             if (spoolModel == None):
+                # the row is gone - answering 200 here would let the dialog close as if the
+                # edit had been stored, and saveSpool(None) below would fail anyway
+                self._databaseManager.closeDatabase()
                 self._logger.warning("Save spool failed. Inital loading not possible, maybe already deleted.")
+                return make_response(jsonify({
+                    "conflict": "deleted",
+                    "error": "This spool no longer exists, it was deleted in the meantime."
+                }), 409)
             else:
                 validationErrors = self._updateSpoolModelFromJSONData(spoolModel, jsonData)
         else:
@@ -1751,7 +1968,25 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             self._logger.warning("Save spool rejected, validation errors: " + str(validationErrors))
             return make_response(jsonify({"validationErrors": validationErrors}), 400)
 
-        newDatabaseId = self._databaseManager.saveSpool(spoolModel, withReusedConnection=True)
+        # the conflict is reported below as a 409 that the edit dialog turns into a proper
+        # choice, so the generic socket popup would only be a second error to dismiss
+        newDatabaseId = self._databaseManager.saveSpool(spoolModel, withReusedConnection=True, suppressConflictMessage=True)
+
+        if (newDatabaseId == None):
+            # saveSpool signals a version conflict only via a socket message and returns None.
+            # Answering 200 here made the dialog close as if everything had been stored, so the
+            # user silently lost the edit - now the client gets a 409 plus the current server
+            # state and can offer to reload or overwrite.
+            currentSpoolModel = self._databaseManager.loadSpool(databaseId, withReusedConnection=True) if databaseId != None else None
+            self._databaseManager.closeDatabase()
+            self._logger.warning("Save spool failed for database id '" + str(databaseId) + "', concurrent modification.")
+            responseBody = {
+                "conflict": "version",
+                "error": "This spool was modified elsewhere while you were editing it."
+            }
+            if (currentSpoolModel != None):
+                responseBody["spool"] = Transformer.transformSpoolModelToDict(currentSpoolModel)
+            return make_response(jsonify(responseBody), 409)
 
         # resolve display name variables ({id} is only known after the initial save), but never inside templates
         if (databaseId == None and spoolModel.isTemplate != True):
