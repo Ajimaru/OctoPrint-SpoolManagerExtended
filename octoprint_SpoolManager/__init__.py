@@ -1142,6 +1142,7 @@ class SpoolmanagerPlugin(
                 "js/SpoolManager-SpoolSelectionTableComp.js",
                 "js/SpoolManager-OctoScale.js",
                 "js/SpoolManager-EditSpoolDialog.js",
+                "js/SpoolManager-AddSpoolWizard.js",
                 "js/SpoolManager-ImportDialog.js",
                 "js/SpoolManager-DatabaseConnectionProblemDialog.js"
             ],

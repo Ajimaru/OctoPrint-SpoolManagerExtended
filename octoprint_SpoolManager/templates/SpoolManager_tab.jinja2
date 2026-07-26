@@ -55,10 +55,19 @@
                             <li><a href="#" data-bind="click: function(){ generateInventoryReport('xlsx'); }"><i class="fas fa-file-excel"></i> XLSX</a></li>
                         </ul>
                     </div>
-                    <button class="btn"
-                            data-bind="click: addNewSpool,
-                                       enable: schemeUpgradeNeeded() == false,
-                                       attr: { title: schemeUpgradeNeeded() ? 'Upgrade the database scheme first (Plugin Settings -> Storage)' : 'Add new Spool' }"><i class="fa fa-plus"></i> Add Spool</button>
+                    <div class="btn-group">
+                        <button class="btn"
+                                data-bind="click: addNewSpool,
+                                           enable: schemeUpgradeNeeded() == false,
+                                           attr: { title: schemeUpgradeNeeded() ? 'Upgrade the database scheme first (Plugin Settings -> Storage)' : 'Add new Spool' }"><i class="fa fa-plus"></i> Add Spool</button>
+                        <button class="btn dropdown-toggle" data-toggle="dropdown"
+                                data-bind="enable: schemeUpgradeNeeded() == false"
+                                title="More ways to add a spool"><b class="caret"></b></button>
+                        <ul class="dropdown-menu">
+                            <li><a href="#" data-bind="click: addNewSpool"><i class="fa fa-plus"></i> Add Spool</a></li>
+                            <li><a href="#" data-bind="click: addNewSpoolViaWizard"><i class="fas fa-magic"></i> Add Spool Wizard</a></li>
+                        </ul>
+                    </div>
                 </div>
             </div>
 

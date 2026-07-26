@@ -79,6 +79,7 @@ $(function() {
 
         self.apiClient = new SpoolManagerAPIClient(PLUGIN_ID, BASEURL);
         self.spoolDialog = new SpoolManagerEditSpoolDialog();
+        self.addSpoolWizard = new SpoolManagerAddSpoolWizard();
 
 
         //////////////////////////////////////////////////////////////////////////////////////////////// HELPER FUNCTION
@@ -1303,6 +1304,15 @@ $(function() {
             self.spoolDialog.showDialog(null, closeDialogHandler);
         }
 
+        // Guided alternative to the dialog above, reached through the dropdown next to "+ Add Spool".
+        self.addNewSpoolViaWizard = function(){
+            if (self.schemeUpgradeNeeded() == true){
+                alert("The database scheme is outdated. Open Plugin Settings -> SpoolManager -> Storage and press 'Upgrade database scheme' first!");
+                return;
+            }
+            self.addSpoolWizard.showDialog(closeDialogHandler);
+        }
+
         // Downloads an inventory report (pdf/csv/xlsx) honoring the current tab filter/sort state.
         self.generateInventoryReport = function(reportFormat){
             var tableQuery = self.spoolItemTableHelper.buildTableQuery();
@@ -1383,9 +1393,12 @@ $(function() {
                 self.spoolItemTableHelper.updateCatalogs(allCatalogs);
                 // assign all catalogs to editview
                 self.spoolDialog.updateCatalogs(allCatalogs);
+                self.addSpoolWizard.updateCatalogs(allCatalogs);
 
                 templateSpoolsData = responseData["templateSpools"];
                 self.spoolDialog.updateTemplateSpools(templateSpoolsData);
+                // the wizard reuses the SpoolItems the dialog just built from the same data
+                self.addSpoolWizard.updateTemplateSpools(self.spoolDialog.templateSpools());
 
                 var dataRows = ko.utils.arrayMap(allSpoolItems, function (spoolData) {
                     var result = self.spoolDialog.createSpoolItemForTable(spoolData);
@@ -1657,6 +1670,7 @@ $(function() {
             self.loadSidebarSpoolWidgetsData();
             // Edit Spool Dialog Binding
             self.spoolDialog.initBinding(self.apiClient, self.pluginSettings, self.printerProfilesViewModel, self.printerStateViewModel);
+            self.addSpoolWizard.initBinding(self.apiClient, self.pluginSettings);
             // Import Dialog
             self.csvImportDialog.init(self.apiClient);
             // Database connection problem dialog
@@ -1692,6 +1706,7 @@ $(function() {
 
         self.onAfterBinding = function() {
             self.spoolDialog.afterBinding();
+            self.addSpoolWizard.afterBinding();
             self.downloadDatabaseUrl(self.apiClient.getDownloadDatabaseUrl());
 
 // testing            self.spoolDialog.showDialog(null, closeDialogHandler);
