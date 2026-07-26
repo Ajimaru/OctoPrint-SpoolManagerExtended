@@ -141,13 +141,62 @@
 
 
 
-/*.modal.modal-wide .modal-dialog {*/
-/*  width: 90%;*/
-/*}*/
+/* ---------------------------------------------------------------- Dialog chrome
+   Shared rules for the plugin's own modals. OctoPrint ships Bootstrap 2, so a modal is
+   .modal > .modal-header/.modal-body/.modal-footer - there is NO .modal-dialog/.modal-content
+   wrapper (the previous rules here targeted those Bootstrap 3 elements and never applied). */
 
-/*.modal-wide .modal-body {*/
-/*  overflow-y: auto;*/
-/*}*/
+/* Wide variant used by the spool edit dialog. Bootstrap 2 centers modals with a fixed
+   width + negative margin, so both have to be overridden together. */
+.modal.modal-wide {
+    width: 90%;
+    max-width: 1100px;
+    margin-left: -45%;
+}
+
+@media (max-width: 979px) {
+    .modal.modal-wide {
+        width: auto;
+        margin-left: 0;
+        left: 10px;
+        right: 10px;
+    }
+}
+
+/* Keep long dialogs inside the viewport instead of growing past the screen edge */
+.modal-wide .modal-body,
+#dialog_addSpoolWizard .modal-body {
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+/* Lists inside confirmation dialogs and toasts (SPOOLMANAGER_DIALOGS.buildHtmlList) */
+.spm-dialog-list {
+    margin: 0.5em 0 0 1.5em;
+}
+
+.spm-dialog-list li {
+    line-height: 1.5;
+}
+
+/* Error text inside a dialog body (replaces the obsolete <font color="red">) */
+.spm-dialog-error {
+    color: #b94a48;
+    text-align: center;
+}
+
+.spm-dialog-icon-warning {
+    color: #e0a049;
+}
+
+/* The wizard's step area; the markup used these classes without any rule existing */
+.spm-wizard-progress {
+    margin-top: 8px;
+}
+
+.spm-wizard-body {
+    min-height: 260px;
+}
 
 /*//////////// TESTZONE*/
 /*.multiselect {*/

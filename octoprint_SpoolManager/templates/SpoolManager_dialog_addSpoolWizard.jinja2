@@ -1,6 +1,10 @@
-<div id="dialog_addSpoolWizard" class="modal fade" data-bind="with: addSpoolWizard">
+<div id="dialog_addSpoolWizard" class="modal hide fade" data-bind="with: addSpoolWizard">
     <div class="modal-header">
-        <h3>
+        <!-- no data-dismiss: cancelDialog resets the wizard state, a plain dismiss would leave
+             the collected step data behind. Hidden in the NFC step, same as the Cancel button. -->
+        <a href="#" class="close" aria-hidden="true"
+           data-bind="click: cancelDialog, visible: currentStepId() !== 'nfc'">&times;</a>
+        <h3 class="modal-title">
             {{ _('Add Spool Wizard') }}
             <small data-bind="text: currentStepTitle"></small>
         </h3>
