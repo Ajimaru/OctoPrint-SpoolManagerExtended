@@ -1187,6 +1187,7 @@ class SpoolmanagerPlugin(
 
     def register_custom_events(*args, **kwargs):
         return [EventBusKeys.EVENT_BUS_SPOOL_WEIGHT_UPDATED_AFTER_PRINT,
+                EventBusKeys.EVENT_BUS_SPOOL_WEIGHT_MEASURED,
                 EventBusKeys.EVENT_BUS_SPOOL_SELECTED,
                 EventBusKeys.EVENT_BUS_SPOOL_DESELECTED,
                 EventBusKeys.EVENT_BUS_SPOOL_ADDED,
