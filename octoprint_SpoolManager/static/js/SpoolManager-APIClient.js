@@ -296,6 +296,103 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
             });
     }
 
+    ////////////////////////////////////////////////////////////////////////////////////////////////// CREATE Spool-Item
+    // Unlike callSaveSpool this answers with the new database id, which the wizard needs to
+    // write an NFC tag right after creating the spool.
+    this.callCreateSpool = function (spoolItem, responseHandler){
+        var jsonPayload = ko.toJSON(spoolItem);
+
+        _callApi(_buildPluginUrl("spool"), { method: "POST", body: jsonPayload },
+            function( data ){
+                responseHandler(true, data);
+            },
+            function( body, rawText, response ){
+                var validationErrors = null;
+                if (body && body.validationErrors){
+                    validationErrors = body.validationErrors;
+                } else {
+                    // No JSON body: usually OctoPrint itself rejecting the request before the
+                    // plugin sees it. The most common case is an expired session, whose CSRF
+                    // token check fails with a plain HTTP 400 - without naming it here the UI
+                    // could only report "could not be created" and the user has no way to guess
+                    // that reloading the page fixes it.
+                    var status = response ? response.status : 0;
+                    if (status === 400 || status === 403){
+                        validationErrors = ["The request was rejected by OctoPrint (HTTP " + status
+                            + "). This usually means the browser session expired - please reload the page and try again."];
+                    } else if (status !== 0){
+                        validationErrors = ["The server answered with HTTP " + status
+                            + (rawText ? ": " + ("" + rawText).substring(0, 200) : "")];
+                    } else {
+                        validationErrors = ["No connection to OctoPrint."];
+                    }
+                }
+                responseHandler(false, body, validationErrors);
+            });
+    }
+
+    /////////////////////////////////////////////////////////////////////////////////////////////////////////// OCTOSCALE
+    // All OctoScale calls are proxied through the plugin backend: the device speaks plain HTTP
+    // without CORS headers, so the browser cannot reach it directly from an HTTPS OctoPrint.
+    // Every handler gets (data) where data.success tells whether the device answered.
+
+    this.testOctoScaleConnection = function (octoScaleUrl, responseHandler){
+        var jsonPayload = JSON.stringify({ octoScaleUrl: octoScaleUrl });
+
+        _callApi(_buildPluginUrl("octoscale/testConnection"), { method: "PUT", body: jsonPayload },
+            function( data ){
+                responseHandler(data || { success: false, error: "No answer from the plugin backend." });
+            },
+            function( body, rawText ){
+                responseHandler(body || { success: false, error: rawText || "The connection test failed." });
+            });
+    }
+
+    this.getOctoScaleWeight = function (responseHandler){
+        _callApi(_buildPluginUrl("octoscale/weight"), { method: "GET" },
+            function( data ){
+                responseHandler(data || { success: false, error: "No answer from the plugin backend." });
+            },
+            function( body, rawText ){
+                responseHandler(body || { success: false, error: rawText || "Could not read the weight." });
+            });
+    }
+
+    this.tareOctoScale = function (responseHandler){
+        _callApi(_buildPluginUrl("octoscale/tare"), { method: "POST" },
+            function( data ){
+                responseHandler(data || { success: false, error: "No answer from the plugin backend." });
+            },
+            function( body, rawText ){
+                responseHandler(body || { success: false, error: rawText || "Could not tare the scale." });
+            });
+    }
+
+    this.getOctoScaleNfcStatus = function (responseHandler){
+        _callApi(_buildPluginUrl("octoscale/nfc"), { method: "GET" },
+            function( data ){
+                responseHandler(data || { success: false, error: "No answer from the plugin backend." });
+            },
+            function( body, rawText ){
+                responseHandler(body || { success: false, error: rawText || "Could not read the NFC status." });
+            });
+    }
+
+    this.writeOctoScaleTag = function (databaseId, tagFormat, responseHandler){
+        var payload = { databaseId: databaseId };
+        if (tagFormat){
+            payload.tagFormat = tagFormat;
+        }
+
+        _callApi(_buildPluginUrl("octoscale/writeTag"), { method: "POST", body: JSON.stringify(payload) },
+            function( data ){
+                responseHandler(data || { success: false, error: "No answer from the plugin backend." });
+            },
+            function( body, rawText ){
+                responseHandler(body || { success: false, error: rawText || "Could not write the tag." });
+            });
+    }
+
     ////////////////////////////////////////////////////////////////////////////////////////////////// DELETE Spool-Item
     this.callDeleteSpool = function (databaseId, responseHandler){
         _callApi(_buildPluginUrl("deleteSpool/" + databaseId), { method: "DELETE" },

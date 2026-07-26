@@ -18,23 +18,20 @@ window.spmSpoolColorCss = function(color) {
     if (!colorValue) {
         return "";
     }
-    colorValue = "" + colorValue;
-    if (colorValue.toLowerCase() === "rainbow") {
+    // value format is parsed in one place only, see SPOOLMANAGER_UTILS.parseSpoolColor
+    var colorParts = SPOOLMANAGER_UTILS.parseSpoolColor(colorValue);
+    if (colorParts.isRainbow) {
         return "linear-gradient(135deg, #ff2d2d 0%, #ff9a00 20%, #ffe600 40%, #16c172 60%, #2f7bff 80%, #a044ff 100%)";
     }
     var checkerboard = "repeating-conic-gradient(#c8c8c8 0% 25%, #ffffff 0% 50%) 50% / 8px 8px";
-    if (colorValue.toLowerCase() === "transparent") {
+    if (colorParts.isTransparent && colorParts.isUntinted) {
         return checkerboard;
     }
-    var transparentTint = null;
-    if (colorValue.toLowerCase().indexOf("transparent:") === 0) {
-        transparentTint = colorValue.substr("transparent:".length);
-        colorValue = transparentTint;
-    }
-    var colors = colorValue.split(";");
+    var transparentTint = colorParts.isTransparent ? colorParts.colors[0] : null;
+    var colors = colorParts.colors;
     var singleOrGradient;
     if (colors.length === 1) {
-        singleOrGradient = colorValue;
+        singleOrGradient = colors[0];
     } else {
         var stops = [];
         var step = 100 / colors.length;
@@ -299,6 +296,31 @@ $(function() {
                   self.showLocalBusyIndicator(false);
                   self.showExternalBusyIndicator(false);
              });
+        }
+
+        // - OctoScale connection test (settings dialog)
+        self.octoScaleTestBusy = ko.observable(false);
+        self.octoScaleTestSuccess = ko.observable(false);
+        self.octoScaleTestFailed = ko.observable(false);
+        self.octoScaleTestResultMessage = ko.observable("");
+
+        self.testOctoScaleConnection = function(){
+            self.octoScaleTestSuccess(false);
+            self.octoScaleTestFailed(false);
+            self.octoScaleTestResultMessage("");
+            self.octoScaleTestBusy(true);
+
+            // the URL comes from the input field, so an address can be tested before it is saved
+            self.apiClient.testOctoScaleConnection(self.pluginSettings.octoScaleUrl(), function(responseData){
+                self.octoScaleTestBusy(false);
+                if (responseData && responseData.success === true){
+                    self.octoScaleTestSuccess(true);
+                    self.octoScaleTestResultMessage(responseData.version ? "(" + responseData.version + ")" : "");
+                } else {
+                    self.octoScaleTestFailed(true);
+                    self.octoScaleTestResultMessage((responseData && responseData.error) ? responseData.error : "Connection failed.");
+                }
+            });
         }
 
         self.deleteDatabaseAction = function(databaseType) {
