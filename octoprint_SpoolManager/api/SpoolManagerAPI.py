@@ -1541,6 +1541,40 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             "metadata": metaDataResult
         })
 
+    #######################################################################################   DATABASE INFO (IDENTITY, NO CREDENTIALS)
+    @octoprint.plugin.BlueprintPlugin.route("/databaseInfo", methods=["GET"])
+    @no_firstrun_access
+    def getDatabaseInfo(self):
+        # Returns a DB IDENTITY (no password!) so an external client (e.g. OctoScale)
+        # can detect which OctoPrint instances share the same spool DB: same dbId ==
+        # shared DB == interchangeable as a lookup fallback for each other.
+        databaseSettings = self._databaseManager.getDatabaseSettings()
+
+        dbId = None
+        isExternal = False
+        if databaseSettings is not None:
+            isExternal = databaseSettings.useExternal
+            if isExternal:
+                host = (databaseSettings.host or "").strip()
+                # A DB host of localhost/127.0.0.1 is only unique *within* this machine.
+                # To make the dbId comparable across OctoPrint hosts, resolve it to the
+                # address this very request came in on (i.e. how this instance is
+                # reachable from outside). Two instances on the SAME machine sharing one
+                # local DB then still produce the SAME dbId; instances on DIFFERENT
+                # machines each with their own local DB get DIFFERENT ones.
+                if host.lower() in ("localhost", "127.0.0.1", "::1", ""):
+                    host = flask.request.host.split(":")[0]
+                # host:port/name identifies the external DB uniquely (without credentials)
+                dbId = "%s://%s:%s/%s" % (
+                    databaseSettings.type, host,
+                    databaseSettings.port, databaseSettings.name
+                )
+
+        return flask.jsonify({
+            "external": isExternal,
+            "dbId": dbId,  # None -> local SQLite or unknown, never share with others
+        })
+
     #######################################################################################   UPGRADE DATABASE SCHEME
     @octoprint.plugin.BlueprintPlugin.route("/upgradeDatabaseScheme", methods=["PUT"])
     @no_firstrun_access
