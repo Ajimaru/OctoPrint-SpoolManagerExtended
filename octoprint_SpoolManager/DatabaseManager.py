@@ -1821,7 +1821,12 @@ class DatabaseManager(object):
 
         return myQuery
 
-    def saveSpool(self, spoolModel, withReusedConnection=False):
+    # suppressConflictMessage: the HTTP API reports concurrent-modification conflicts itself
+    # (409 + a dialog that offers reload/overwrite). Without this flag the caller would get the
+    # 409 *and* this socket popup, so the user has to dismiss a second, redundant error.
+    # Callers without an HTTP response - print usage booking, CSV import - leave it False,
+    # because there the popup is the only feedback the user ever gets.
+    def saveSpool(self, spoolModel, withReusedConnection=False, suppressConflictMessage=False):
 
         def databaseCallMethode():
             # databaseId = model.get_id()
@@ -1848,15 +1853,17 @@ class DatabaseManager(object):
                         # we need to update and we need to make sure nobody else modify the data
                         currentSpoolModel = self.loadSpool(databaseId, withReusedConnection)
                         if (currentSpoolModel == None):
-                            self._passMessageToClient("error", "DatabaseManager",
-                                                      "Could not update the Spool, because it is already deleted!")
+                            if (suppressConflictMessage == False):
+                                self._passMessageToClient("error", "DatabaseManager",
+                                                          "Could not update the Spool, because it is already deleted!")
                             return
                         else:
                             versionFromUI = spoolModel.version if spoolModel.version != None else 1
                             versionFromDatabase = currentSpoolModel.version if currentSpoolModel.version != None else 1
                             if (versionFromUI != versionFromDatabase):
-                                self._passMessageToClient("error", "DatabaseManager",
-                                                          "Could not update the Spool, because someone already modified the spool. Do a manuel reload!")
+                                if (suppressConflictMessage == False):
+                                    self._passMessageToClient("error", "DatabaseManager",
+                                                              "Could not update the Spool, because someone already modified the spool. Do a manuel reload!")
                                 return
                         # okay fits, increate version
                         newVersion = versionFromUI + 1
@@ -1942,7 +1949,16 @@ class DatabaseManager(object):
             for spool in myQuery:
                 value = spool.labels
                 if (value != None):
-                    spoolLabels = json.loads(value)
+                    # a row holding the string "null" (or any non-list payload) used to raise
+                    # here and take the whole label catalog down, which disables the spool
+                    # search in the UI. Skip such rows instead of failing the entire query.
+                    try:
+                        spoolLabels = json.loads(value)
+                    except ValueError:
+                        self._logger.warning("Ignoring unparsable labels value '" + str(value) + "'")
+                        continue
+                    if (isinstance(spoolLabels, list) == False):
+                        continue
                     for singleLabel in spoolLabels:
                         result.add(singleLabel)
             return result

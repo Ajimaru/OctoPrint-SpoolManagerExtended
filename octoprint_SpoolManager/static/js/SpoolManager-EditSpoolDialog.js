@@ -1130,6 +1130,99 @@ function SpoolManagerEditSpoolDialog(){
         self.spoolItemForEditing.isSpoolVisible(true);
     };
 
+    // Fields worth naming in the conflict dialog. Weights first: a scale writing back a
+    // measurement is the common source of a concurrent change.
+    self._conflictRelevantFields = [
+        { key: "remainingWeight", label: "Remaining weight" },
+        { key: "usedWeight",      label: "Used weight" },
+        { key: "totalWeight",     label: "Total weight" },
+        { key: "spoolWeight",     label: "Empty spool weight" },
+        { key: "displayName",     label: "Display name" },
+        { key: "colorName",       label: "Color" },
+        { key: "material",        label: "Material" }
+    ];
+
+    // Compares what the dialog holds against the server's current state and returns a
+    // human readable list of the differences ("Remaining weight: 612.4 -> 0.0").
+    self._describeConflictChanges = function(currentSpool){
+        var changes = [];
+        if (currentSpool == null){
+            return changes;
+        }
+        self._conflictRelevantFields.forEach(function(field){
+            var mine = self.spoolItemForEditing[field.key];
+            if (typeof mine !== "function"){
+                return;
+            }
+            var myValue = mine();
+            var serverValue = currentSpool[field.key];
+            // both sides are compared as strings: the API returns numbers formatted as
+            // strings, while the observables may hold real numbers
+            var myText = (myValue == null) ? "" : String(myValue);
+            var serverText = (serverValue == null) ? "" : String(serverValue);
+            if (myText !== serverText && (myText.length > 0 || serverText.length > 0)){
+                changes.push(field.label + ": " + (serverText || "-") + " (server) vs. " + (myText || "-") + " (yours)");
+            }
+        });
+        return changes;
+    };
+
+    self._handleSaveConflict = function(conflict){
+        if (conflict.type === "deleted"){
+            // nothing left to save into - the only sane outcome is to close and refresh
+            showConfirmationDialog({
+                title: "Spool no longer exists",
+                message: conflict.message || "This spool was deleted while you were editing it.",
+                question: "Your changes cannot be saved. Close the dialog and refresh the list?",
+                cancel: "Keep dialog open",
+                proceed: "Close and refresh",
+                proceedClass: "primary",
+                onproceed: function(){
+                    self.spoolItemForEditing.isSpoolVisible(false);
+                    self.spoolDialog.modal('hide');
+                    self.closeDialogHandler(true);
+                },
+                nofade: true
+            });
+            return;
+        }
+
+        var currentSpool = conflict.currentSpool;
+        var changes = self._describeConflictChanges(currentSpool);
+        var message = conflict.message || "This spool was modified elsewhere while you were editing it.";
+        if (changes.length > 0){
+            message += "\n\nDifferences:\n- " + changes.join("\n- ");
+        }
+
+        showConfirmationDialog({
+            title: "Spool was modified elsewhere",
+            message: message,
+            question: "Your changes have NOT been saved yet. What should happen?",
+            cancel: "Keep editing",
+            proceed: ["Discard mine, reload", "Overwrite with mine"],
+            proceedClass: "primary",
+            onproceed: function(buttonIndex){
+                if (buttonIndex === 0){
+                    // take the server state into the dialog, dropping the local edits
+                    if (currentSpool != null){
+                        self._updateActiveSpoolItem(currentSpool);
+                    } else {
+                        self.spoolDialog.modal('hide');
+                        self.closeDialogHandler(true);
+                    }
+                    return;
+                }
+                // adopt the server's version so the optimistic lock passes, then save again.
+                // Deliberately a separate, explicit choice - this discards the other change.
+                if (currentSpool != null && self.spoolItemForEditing.version != null){
+                    self.spoolItemForEditing.version(currentSpool.version);
+                }
+                self.saveSpoolItem();
+            },
+            nofade: true
+        });
+    };
+
     self.saveSpoolItem = function(){
 
         // Input validation
@@ -1150,7 +1243,14 @@ function SpoolManagerEditSpoolDialog(){
         self.spoolItemForEditing.noteDeltaFormat(noteDeltaFormat);
         self.spoolItemForEditing.noteHtml(noteHtml);
 
-        self.apiClient.callSaveSpool(self.spoolItemForEditing, function(success, validationErrors){
+        self.apiClient.callSaveSpool(self.spoolItemForEditing, function(success, validationErrors, conflict){
+            if (conflict != null){
+                // someone else changed this spool while the dialog was open (e.g. a scale
+                // writing a measured weight via the API). The save did NOT happen - explain
+                // the situation and let the user decide, instead of silently dropping the edit.
+                self._handleSaveConflict(conflict);
+                return;
+            }
             if (success === false){
                 // server rejected the save - keep the dialog open and tell the user why
                 var message = "Spool could not be saved.";
