@@ -1054,6 +1054,10 @@ class SpoolmanagerPlugin(
         settings[SettingsKeys.SETTINGS_KEY_BED_OFFSET_ENABLED] = False
         settings[SettingsKeys.SETTINGS_KEY_ENCLOSURE_OFFSET_ENABLED] = False
 
+        ## OctoScale
+        settings[SettingsKeys.SETTINGS_KEY_OCTOSCALE_ENABLED] = False
+        settings[SettingsKeys.SETTINGS_KEY_OCTOSCALE_URL] = ""
+
         ## Debugging
         settings[SettingsKeys.SETTINGS_KEY_SQL_LOGGING_ENABLED] = False
         settings[SettingsKeys.SETTINGS_KEY_EXTRUSION_DEBUGGING_ENABLED] = False
@@ -1136,7 +1140,9 @@ class SpoolmanagerPlugin(
                 "js/SpoolManager.js",
                 "js/SpoolManager-APIClient.js",
                 "js/SpoolManager-SpoolSelectionTableComp.js",
+                "js/SpoolManager-OctoScale.js",
                 "js/SpoolManager-EditSpoolDialog.js",
+                "js/SpoolManager-AddSpoolWizard.js",
                 "js/SpoolManager-ImportDialog.js",
                 "js/SpoolManager-DatabaseConnectionProblemDialog.js"
             ],

@@ -1,0 +1,416 @@
+<div id="dialog_addSpoolWizard" class="modal fade" data-bind="with: addSpoolWizard">
+    <div class="modal-header">
+        <h3>
+            {{ _('Add Spool Wizard') }}
+            <small data-bind="text: currentStepTitle"></small>
+        </h3>
+        <div class="spm-wizard-progress">
+            <div class="progress progress-striped" style="margin-bottom: 4px;">
+                <div class="bar" data-bind="style: { width: progressPercentage() + '%' }"></div>
+            </div>
+            <small class="muted" data-bind="text: stepCounterText"></small>
+        </div>
+    </div>
+
+    <div class="modal-body spm-wizard-body">
+        <form class="form-horizontal" id="spool-wizard-form">
+
+            <!-- STEP: MODE -->
+            <div data-bind="visible: currentStepId() === 'mode'">
+                <p>{{ _('How much do you want to fill in for this spool?') }}</p>
+                <label class="radio">
+                    <input type="radio" name="wizardFieldSet" value="false" data-bind="checked: useFullFieldSet, checkedValue: false">
+                    <strong>{{ _('Essentials only') }}</strong>
+                    <span class="help-block"><small>{{ _('Name, color, material, filament properties and weight. Everything you need to track filament usage.') }}</small></span>
+                </label>
+                <label class="radio">
+                    <input type="radio" name="wizardFieldSet" value="true" data-bind="checked: useFullFieldSet, checkedValue: true">
+                    <strong>{{ _('All details') }}</strong>
+                    <span class="help-block"><small>{{ _('Adds temperatures, purchase information, cost and further details.') }}</small></span>
+                </label>
+
+                <div class="control-group" style="margin-top: 18px;" data-bind="visible: hasTemplateSpools">
+                    <label class="control-label">{{ _('Start from template') }}</label>
+                    <div class="controls">
+                        <select class="input-large" data-bind="options: templateSpools,
+                                                               optionsText: function(item){ return item.displayName(); },
+                                                               optionsCaption: '{{ _('Start with an empty spool') }}',
+                                                               value: selectedTemplateSpool,
+                                                               event: { change: function(){ applyTemplateSpool(selectedTemplateSpool()); return true; } }">
+                        </select>
+                        <span class="help-block"><small>{{ _('Prefills the fields from a template spool. You can still change every value in the following steps.') }}</small></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP: IDENTITY -->
+            <div data-bind="visible: currentStepId() === 'identity'">
+                <div class="control-group" data-bind="css: {error: !isDisplayNamePresent()}">
+                    <label class="control-label">{{ _('Display name') }} *</label>
+                    <div class="controls">
+                        <input type="text" class="input-xlarge" autocomplete="off"
+                               data-bind="textInput: spoolItemForCreation.displayName">
+                        <span class="help-block" data-bind="visible: nextSpoolId() != null">
+                            <small>{{ _('This spool will get the database id') }} <strong data-bind="text: nextSpoolId"></strong>.</small>
+                        </span>
+                    </div>
+                </div>
+                {# Dropdown with the known values plus a free-text field, so an unlisted vendor or
+                   material can still be entered. Deliberately a plain <select> and not the select2
+                   widget the edit dialog uses: that one is bound to fixed ids inside #spool-form. #}
+                <div class="control-group">
+                    <label class="control-label">{{ _('Vendor') }}</label>
+                    <div class="controls">
+                        <select class="input-large" data-bind="options: allVendors,
+                                                              optionsCaption: '{{ _('Choose...') }}',
+                                                              value: selectedVendor"></select>
+                        <input type="text" class="input-large" style="margin-top: 4px;"
+                               placeholder="{{ _('or type a new vendor') }}"
+                               data-bind="textInput: spoolItemForCreation.vendor">
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">{{ _('Material') }}</label>
+                    <div class="controls">
+                        <select class="input-large" data-bind="options: allMaterials,
+                                                              optionsCaption: '{{ _('Choose...') }}',
+                                                              value: selectedMaterial"></select>
+                        <input type="text" class="input-large" style="margin-top: 4px;"
+                               placeholder="{{ _('or type a new material') }}"
+                               data-bind="textInput: spoolItemForCreation.material">
+                        <span class="help-block"><small>{{ _('Choosing a known material fills in a matching density.') }}</small></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP: COLOR -->
+            <div data-bind="visible: currentStepId() === 'color'">
+                {# Up to three colors, same as the edit dialog. Native <input type="color"> instead
+                   of the pick-a-color widget, which is bound to the edit dialog's fixed ids. #}
+                <div class="control-group">
+                    <label class="control-label">{{ _('Color') }}</label>
+                    <div class="controls">
+                        <span data-bind="visible: !isRainbow() && !isColorless()">
+                            <input type="color" class="input-mini" style="height: 30px; padding: 2px;"
+                                   data-bind="value: colorHex, event: { change: suggestColorName }">
+                            <input type="color" class="input-mini" style="height: 30px; padding: 2px;"
+                                   data-bind="value: colorHex2, visible: colorCount() >= 2">
+                            <input type="color" class="input-mini" style="height: 30px; padding: 2px;"
+                                   data-bind="value: colorHex3, visible: colorCount() >= 3">
+                            <a href="#" class="btn btn-mini" title="{{ _('Add a color (multi-color spool)') }}"
+                               data-bind="click: addColor, visible: colorCount() < 3"><i class="fas fa-plus"></i></a>
+                            <a href="#" class="btn btn-mini" title="{{ _('Remove last color') }}"
+                               data-bind="click: removeColor, visible: colorCount() > 1"><i class="fas fa-minus"></i></a>
+                        </span>
+                        <span class="color-preview" style="margin-left: 8px; margin-bottom: -5px;"
+                              data-bind="style: {'background': spmSpoolColorCss(spoolItemForCreation.color)}"></span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: isRainbow"> {{ _('Rainbow (preset gradient)') }}
+                        </label>
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: isTransparent"> {{ _('Transparent / translucent') }}
+                        </label>
+                        <label class="checkbox" style="margin-left: 20px;" data-bind="visible: isTransparent">
+                            <input type="checkbox" data-bind="checked: isColorless"> {{ _('completely colorless (no base color)') }}
+                        </label>
+                    </div>
+                </div>
+                <div class="control-group" data-bind="css: {error: !isColorNamePresent()}">
+                    <label class="control-label">{{ _('Color name') }} *</label>
+                    <div class="controls">
+                        <input type="text" class="input-large" list="wizard-color-list"
+                               data-bind="textInput: spoolItemForCreation.colorName">
+                        <datalist id="wizard-color-list" data-bind="foreach: allColors">
+                            <option data-bind="attr: { value: $data }"></option>
+                        </datalist>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">{{ _('Finish') }}</label>
+                    <div class="controls">
+                        <select class="input-medium" data-bind="options: finishOptions,
+                                                                optionsText: 'text', optionsValue: 'value',
+                                                                optionsCaption: '',
+                                                                value: spoolItemForCreation.finishSelection">
+                        </select>
+                        <input type="text" class="input-medium" placeholder="{{ _('Custom finish') }}"
+                               data-bind="visible: spoolItemForCreation.finishSelection() === 'custom',
+                                          textInput: spoolItemForCreation.finishCustomText">
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP: FILAMENT -->
+            <div data-bind="visible: currentStepId() === 'filament'">
+                <div class="control-group">
+                    <label class="control-label">{{ _('Density') }}</label>
+                    <div class="controls">
+                        <div class="input-append">
+                            <input type="number" step="0.001" min="0" class="input-small text-right"
+                                   data-bind="value: spoolItemForCreation.density">
+                            <span class="add-on">g/cm³</span>
+                        </div>
+                        <span class="help-block"><small>{{ _('Needed together with the diameter to predict filament usage.') }}</small></span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">{{ _('Diameter') }}</label>
+                    <div class="controls">
+                        <div class="input-append">
+                            <input type="number" step="0.001" min="0" class="input-mini text-right"
+                                   data-bind="value: spoolItemForCreation.diameter">
+                            <span class="add-on">mm</span>
+                        </div>
+                        <div class="input-prepend input-append">
+                            <span class="add-on">±</span>
+                            <input type="number" step="0.001" min="0" class="input-mini text-right"
+                                   data-bind="value: spoolItemForCreation.diameterTolerance">
+                            <span class="add-on">mm</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP: WEIGHT -->
+            <div data-bind="visible: currentStepId() === 'weight'">
+                <div class="control-group" data-bind="css: {error: !isTotalCombinedWeightPresent()}">
+                    <label class="control-label">{{ _('Total weight') }} *</label>
+                    <div class="controls">
+                        <div class="input-append">
+                            <input type="number" step="0.1" min="0" class="input-small text-right"
+                                   data-bind="value: spoolItemForCreation.totalCombinedWeight,
+                                              event: { change: totalCombinedWeightChanged }">
+                            <span class="add-on">g</span>
+                        </div>
+                        <span class="help-block"><small>{{ _('The full spool as it comes off the scale: empty spool plus filament.') }}</small></span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">{{ _('Empty spool weight') }}</label>
+                    <div class="controls">
+                        <div class="input-append">
+                            <input type="number" step="0.1" min="0" class="input-small text-right"
+                                   data-bind="value: spoolItemForCreation.spoolWeight,
+                                              event: { change: totalCombinedWeightChanged }">
+                            <span class="add-on">g</span>
+                        </div>
+                        <span class="help-block">
+                            <small data-bind="text: filamentWeightPreview"></small>
+                        </span>
+                    </div>
+                </div>
+
+                <!-- OctoScale weighing -->
+                {# no .well here: theme plugins restyle that class and made the panel unreadable #}
+                <div style="margin-top: 6px; border-top: 1px solid rgba(128,128,128,0.35); padding-top: 10px;"
+                     data-bind="visible: isOctoScaleEnabled">
+                    <strong>{{ _('Weigh with OctoScale') }}</strong>
+                    <div style="margin-top: 8px;">
+                        <button type="button" class="btn btn-small" data-bind="click: toggleWeighing">
+                            <i class="fas" data-bind="css: octoScaleWeighing.isActive() ? 'fa-stop' : 'fa-play'"></i>
+                            <span data-bind="text: octoScaleWeighing.isActive() ? '{{ _('Stop reading') }}' : '{{ _('Read weight') }}'"></span>
+                        </button>
+                        <button type="button" class="btn btn-small" data-bind="click: octoScaleWeighing.tare, enable: octoScaleWeighing.isActive() && !octoScaleWeighing.isTaring()">
+                            {{ _('Tare') }}
+                        </button>
+                        <span style="margin-left: 12px; font-size: 18px;" data-bind="text: octoScaleWeighing.currentWeightText"></span>
+                        <button type="button" class="btn btn-small btn-primary" style="margin-left: 12px;"
+                                data-bind="click: applyMeasuredWeight, enable: octoScaleWeighing.hasReading">
+                            {{ _('Use this value') }}
+                        </button>
+                    </div>
+                    <div class="text-error" style="margin-top: 6px;" data-bind="visible: octoScaleWeighing.errorMessage">
+                        <i class="fas fa-exclamation-triangle"></i> <span data-bind="text: octoScaleWeighing.errorMessage"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP: TEMPERATURES (full only) -->
+            <div data-bind="visible: currentStepId() === 'temperatures'">
+                <div class="control-group">
+                    <label class="control-label">{{ _('Tool temperature') }}</label>
+                    <div class="controls">
+                        <div class="input-append">
+                            <input type="number" step="1" class="input-mini text-right" data-bind="value: spoolItemForCreation.temperature">
+                            <span class="add-on">°C</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">{{ _('Bed temperature') }}</label>
+                    <div class="controls">
+                        <div class="input-append">
+                            <input type="number" step="1" class="input-mini text-right" data-bind="value: spoolItemForCreation.bedTemperature">
+                            <span class="add-on">°C</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">{{ _('Enclosure temperature') }}</label>
+                    <div class="controls">
+                        <div class="input-append">
+                            <input type="number" step="1" class="input-mini text-right" data-bind="value: spoolItemForCreation.enclosureTemperature">
+                            <span class="add-on">°C</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">{{ _('Flow rate compensation') }}</label>
+                    <div class="controls">
+                        <div class="input-append">
+                            <input type="number" step="1" class="input-mini text-right" data-bind="value: spoolItemForCreation.flowRateCompensation">
+                            <span class="add-on">%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP: PURCHASE (full only) -->
+            <div data-bind="visible: currentStepId() === 'purchase'">
+                <div class="control-group">
+                    <label class="control-label">{{ _('Purchased from') }}</label>
+                    <div class="controls">
+                        <input type="text" class="input-large" data-bind="textInput: spoolItemForCreation.purchasedFrom">
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">{{ _('Purchased on') }}</label>
+                    <div class="controls">
+                        <input type="date" class="input-medium" data-bind="value: spoolItemForCreation.purchasedOnKO">
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">{{ _('Cost') }}</label>
+                    <div class="controls">
+                        <div class="input-append">
+                            <input type="number" step="0.01" min="0" class="input-small text-right" data-bind="value: spoolItemForCreation.cost">
+                            <span class="add-on" data-bind="text: $root.pluginSettings.currencySymbol"></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">{{ _('Serial number') }}</label>
+                    <div class="controls">
+                        <input type="text" class="input-medium" data-bind="textInput: spoolItemForCreation.code">
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">{{ _('Batch number') }}</label>
+                    <div class="controls">
+                        <input type="text" class="input-medium" data-bind="textInput: spoolItemForCreation.batchNumber">
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP: MISC (full only) -->
+            <div data-bind="visible: currentStepId() === 'misc'">
+                <div class="control-group">
+                    <label class="control-label">{{ _('Auto calculation for') }}</label>
+                    <div class="controls">
+                        <select class="input-medium" data-bind="options: spoolItemForCreation.drivenScopeOptions,
+                                                                optionsText: 'text', optionsValue: 'value',
+                                                                value: spoolItemForCreation.drivenScope">
+                        </select>
+                        <span class="help-block"><small>{{ _('Which value the others are derived from when filament is used.') }}</small></span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">{{ _('Note') }}</label>
+                    <div class="controls">
+                        <textarea rows="4" class="input-xlarge" data-bind="textInput: spoolItemForCreation.noteText"></textarea>
+                        <span class="help-block"><small>{{ _('Plain text here; the spool dialog offers a formatted note editor.') }}</small></span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: spoolItemForCreation.isTemplate"> {{ _('Use this spool as a template') }}
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP: REVIEW -->
+            <div data-bind="visible: currentStepId() === 'review'">
+                <table class="table table-condensed">
+                    <tbody data-bind="foreach: reviewEntries">
+                        <tr>
+                            <td style="width: 40%;"><strong data-bind="text: label"></strong></td>
+                            <td data-bind="text: value"></td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="alert alert-error" data-bind="visible: !areMandatoryFieldsValid()">
+                    {{ _('Display name, color name and total weight are required before the spool can be saved.') }}
+                </div>
+                <div class="alert alert-error" data-bind="visible: saveErrorMessages().length > 0">
+                    <strong>{{ _('The spool could not be created:') }}</strong>
+                    <ul data-bind="foreach: saveErrorMessages">
+                        <li data-bind="text: $data"></li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- STEP: NFC -->
+            <div data-bind="visible: currentStepId() === 'nfc'">
+                <div class="alert alert-success">
+                    {{ _('The spool was created with the database id') }} <strong data-bind="text: createdDatabaseId"></strong>.
+                </div>
+                <p>{{ _('Place an NFC tag on the OctoScale reader to write the spool id onto it. You can also skip this and write a tag later from the spool dialog.') }}</p>
+
+                <div style="border-top: 1px solid rgba(128,128,128,0.35); padding-top: 10px;">
+                    <div data-bind="visible: !octoScaleTagWriter.tagPresent()">
+                        <i class="fas fa-spinner fa-spin"></i> {{ _('Waiting for a tag...') }}
+                    </div>
+                    <div data-bind="visible: octoScaleTagWriter.tagPresent">
+                        <i class="fas fa-check text-success"></i> {{ _('Tag detected') }}
+                        <span class="muted" data-bind="text: octoScaleTagWriter.tagSpoolId() != null ? '(' + octoScaleTagWriter.tagSpoolId() + ')' : ''"></span>
+                    </div>
+
+                    <div class="alert alert-warning" style="margin-top: 8px;"
+                         data-bind="visible: octoScaleTagWriter.needsOverwriteConfirmation() && !octoScaleTagWriter.overwriteConfirmed()">
+                        <span data-bind="text: octoScaleTagWriter.overwriteWarningText"></span>
+                        <button type="button" class="btn btn-small btn-warning" style="margin-left: 8px;"
+                                data-bind="click: octoScaleTagWriter.confirmOverwrite">{{ _('Overwrite anyway') }}</button>
+                    </div>
+
+                    <div style="margin-top: 10px;">
+                        <button type="button" class="btn btn-primary"
+                                data-bind="click: octoScaleTagWriter.writeTag, enable: octoScaleTagWriter.canWrite">
+                            <i class="fas fa-spinner fa-spin" data-bind="visible: octoScaleTagWriter.isWriting"></i>
+                            {{ _('Write tag') }}
+                        </button>
+                    </div>
+
+                    <div class="text-success" style="margin-top: 8px;" data-bind="visible: octoScaleTagWriter.writeSucceeded">
+                        <i class="fas fa-check"></i> {{ _('Tag written and verified.') }}
+                    </div>
+                    <div class="text-error" style="margin-top: 8px;" data-bind="visible: octoScaleTagWriter.errorMessage">
+                        <i class="fas fa-exclamation-triangle"></i> <span data-bind="text: octoScaleTagWriter.errorMessage"></span>
+                    </div>
+                </div>
+            </div>
+
+        </form>
+    </div>
+
+    <div class="modal-footer">
+        <span class="pull-left text-error" style="line-height: 30px;" data-bind="text: currentStepBlockReason"></span>
+
+        <button class="btn" data-bind="click: cancelDialog, visible: currentStepId() !== 'nfc'">{{ _('Cancel') }}</button>
+        <button class="btn" data-bind="click: goBack, visible: canGoBack">{{ _('Back') }}</button>
+        <button class="btn btn-primary" data-bind="click: goNext, enable: canGoNext, visible: !isLastInputStep() && currentStepId() !== 'nfc'">
+            {{ _('Next') }}
+        </button>
+        <button class="btn btn-primary" data-bind="click: saveSpool, enable: areMandatoryFieldsValid() && !isSaving(), visible: isLastInputStep">
+            <i class="fas fa-spinner fa-spin" data-bind="visible: isSaving"></i>
+            {{ _('Create spool') }}
+        </button>
+        <button class="btn" data-bind="click: skipTagWriting, visible: currentStepId() === 'nfc' && !octoScaleTagWriter.writeSucceeded()">{{ _('Skip') }}</button>
+        <button class="btn btn-primary" data-bind="click: finishAfterTagWriting, visible: currentStepId() === 'nfc' && octoScaleTagWriter.writeSucceeded()">{{ _('Done') }}</button>
+    </div>
+</div>

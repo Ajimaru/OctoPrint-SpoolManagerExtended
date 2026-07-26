@@ -10,6 +10,7 @@
             <li><a href="#tab-spool-Export-Import" data-toggle="tab">Export / Import</a></li>
             <li><a href="#tab-spool-Storage" data-toggle="tab">Storage</a></li>
             <li><a href="#tab-spool-MQTT" data-toggle="tab">MQTT</a></li>
+            <li><a href="#tab-spool-OctoScale" data-toggle="tab">OctoScale</a></li>
             <li><a href="#tab-spool-Debugging" data-toggle="tab">Debugging</a></li>
         </ul>
         <div class="tab-content">
@@ -814,6 +815,56 @@ FPE;	2.16
                         </label>
                         <span class="help-block">
                             <small>Keeps the last spool state on the broker, so Home Assistant shows values right after a restart.</small>
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- OCTOSCALE - TAB -->
+            <div class="tab-pane" id="tab-spool-OctoScale">
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.octoScaleEnabled" > {{ _('Use an OctoScale device') }}
+                        </label>
+                        <span class="help-block">
+                            <small>{{ _('OctoScale is a WiFi scale with an NFC reader. When enabled, the spool dialog and the Add Spool Wizard can read the weight directly from the scale and write the spool id onto an NFC tag.') }}</small>
+                        </span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">{{ _('Address') }}</label>
+                    <div class="controls">
+                        <input type="text" class="input-xlarge" placeholder="{{ _('IP address or hostname') }}" data-bind="value: pluginSettings.octoScaleUrl">
+                        <span class="help-block">
+                            <small>{{ _('IP address of the device, e.g. 192.168.0.50 - "http://" is added automatically. Prefer the IP address over a .local name: resolving mDNS can add several seconds to every request.') }}</small>
+                        </span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <div class="controls">
+                        <button class="btn" data-bind="click: testOctoScaleConnection, enable: !octoScaleTestBusy()">
+                            <i class="fas fa-spinner fa-spin" data-bind="visible: octoScaleTestBusy"></i>
+                            {{ _('Test connection') }}
+                        </button>
+                        <span class="help-inline text-success" data-bind="visible: octoScaleTestSuccess">
+                            <i class="fas fa-check"></i>
+                            {{ _('Connected') }} <span data-bind="text: octoScaleTestResultMessage"></span>
+                        </span>
+                        <span class="help-inline text-error" data-bind="visible: octoScaleTestFailed">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            <span data-bind="text: octoScaleTestResultMessage"></span>
+                        </span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">{{ _('NFC tag format') }}</label>
+                    <div class="controls">
+                        <span class="help-block">
+                            <small>
+                                {{ _('Tags are written in the "Spool ID" format: only the database id goes onto the tag, everything else stays in SpoolManager.') }}
+                                {{ _('OpenPrintTag is prepared in the backend but cannot be written yet - it needs an ISO 15693 / NFC-V capable reader, which the current hardware does not have.') }}
+                            </small>
                         </span>
                     </div>
                 </div>
