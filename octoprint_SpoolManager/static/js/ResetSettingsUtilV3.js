@@ -113,10 +113,11 @@ function ResetSettingsUtilV3(pluginSettings) {
                 // PR #19 (GH-18).
                 //
                 // This deliberately uses the native, blocking confirm() like the original PR does,
-                // and NOT OctoPrint's showConfirmationDialog(): this button is injected into the
-                // settings dialog's own .modal-footer, and opening a second Bootstrap 2 modal on
-                // top fires "hide" on #settings_dialog. That hide is what resetSettingsButtonFunction
-                // listens to, so the button was torn down mid-click and onproceed never ran.
+                // and NOT OctoPrint's showConfirmationDialog() / SPOOLMANAGER_DIALOGS.confirmDanger():
+                // this button is injected into the settings dialog's own .modal-footer, and opening a
+                // second Bootstrap 2 modal on top fires "hide" on #settings_dialog. That hide is what
+                // resetSettingsButtonFunction listens to, so the button was torn down mid-click and
+                // onproceed never ran. This is the one spot that intentionally keeps a native confirm().
                 const hasConfirmed = confirm(
                     "Reset all SpoolManager plugin settings to their default values?\n\n" +
                     "The change is only applied in the UI and takes effect once you save the settings."
@@ -140,22 +141,20 @@ function ResetSettingsUtilV3(pluginSettings) {
 
                     // Success is only reported once the reset actually happened: reporting
                     // it before the loop meant a failing reset still showed "restored!".
-                    new PNotify({
+                    SPOOLMANAGER_DIALOGS.notify({
                         title: "Default settings restored!",
-                        text: "The plugin settings have been reset but not yet been saved.<br>Remember to save. If you reset the settings accidentally, you can reload the page to revert.",
-                        type: "info",
-                        hide: true
+                        message: "The plugin settings have been reset but not yet been saved.<br>Remember to save. If you reset the settings accidentally, you can reload the page to revert.",
+                        type: "info"
                     });
                 } catch (error) {
                     // Error handling adopted from mdziekon/OctoPrint-SpoolManager PR #19
                     // (GH-18): previously a failing request did nothing at all.
                     console.error("ERROR: Plugin settings reset", error);
 
-                    new PNotify({
-                        title: "ERROR: Plugin settings reset",
-                        text: "An error occurred while loading the default settings. The settings have not been changed.",
-                        type: "error",
-                        hide: true
+                    SPOOLMANAGER_DIALOGS.notify({
+                        title: "Plugin settings reset",
+                        message: "An error occurred while loading the default settings. The settings have not been changed.",
+                        type: "error"
                     });
                 }
             });

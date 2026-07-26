@@ -2,26 +2,19 @@
 <!--###############################################################  DatabaseConnectionProblem-Dialog: id="dialog_spoolManager_databaseConnectionProblem" -->
 <div id="dialog_spoolManager_databaseConnectionProblem" class="modal hide fade">
     <div class="modal-header">
-        <h2 class="modal-title" >SpoolManager<br/> <span data-bind="text: databaseConnectionProblemDialog.dialogTitle"></span></h2>
+        <!-- Deliberately NO close "x": the plugin is unusable without a database connection,
+             so the user has to acknowledge the problem via the button below. -->
+        <h3 class="modal-title">SpoolManager<br/> <span data-bind="text: databaseConnectionProblemDialog.dialogTitle"></span></h3>
     </div>
     <div class="modal-body">
         <div class="container-fluid">
             <div class="row-fluid">
-                <div class="centering">
-                    <font color="red">
-                        <div data-bind="text: databaseConnectionProblemDialog.dialogMessage"></div>
-                    </font>
-                </div>
+                <div class="spm-dialog-error" data-bind="text: databaseConnectionProblemDialog.dialogMessage"></div>
             </div>
         </div>
-
     </div>
     <div class="modal-footer">
-        <div class="control-group">
-            <div class="controls">
-<!--                   data-bind="click: printJobEditDialog.closePrintStatusDialog"  -->
-                <button class="btn btn-warning"   data-bind="click: databaseConnectionProblemDialog.closeDialog"  style="text-align:right">Confirm</button>
-            </div>
-        </div>
+        <button type="button" class="btn btn-primary"
+                data-bind="click: databaseConnectionProblemDialog.closeDialog">Confirm</button>
     </div>
 </div>
