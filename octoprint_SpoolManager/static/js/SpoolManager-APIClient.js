@@ -275,13 +275,24 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
             function( data ){
                 responseHandler(true);
             },
-            function( body ){
+            function( body, rawText, response ){
                 // server rejected the save (e.g. HTTP 400 with validation errors) - surface it instead of swallowing it
                 var validationErrors = null;
                 if (body && body.validationErrors){
                     validationErrors = body.validationErrors;
                 }
-                responseHandler(false, validationErrors);
+                // HTTP 409 = someone else changed (or deleted) the spool while it was open in
+                // the dialog. Passed on separately so the caller can offer a real choice
+                // instead of just reporting a failure.
+                var conflict = null;
+                if (response && response.status === 409 && body){
+                    conflict = {
+                        type: body.conflict,          // "version" or "deleted"
+                        message: body.error,
+                        currentSpool: body.spool      // undefined for "deleted"
+                    };
+                }
+                responseHandler(false, validationErrors, conflict);
             });
     }
 
