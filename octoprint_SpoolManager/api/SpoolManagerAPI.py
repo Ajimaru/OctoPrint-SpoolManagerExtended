@@ -749,6 +749,12 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # data for the sidebar
         self.checkRemainingFilament()
 
+        # Push a live update to all connected OctoPrint clients so an already-open
+        # SpoolManager UI reflects the OctoScale weight update without a manual tab switch.
+        # This endpoint is called by an external scale, not the dialog's own JS, so there
+        # is no client-side state update happening on its own (unlike the edit dialog path).
+        self._sendDataToClient(dict(action="reloadTable and sidebarSpools"))
+
         return flask.jsonify({
             "spool": Transformer.transformSpoolModelToDict(spoolModel)
         })
@@ -817,6 +823,10 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
         # data for the sidebar
         self.checkRemainingFilament()
+
+        # Push a live update to all connected OctoPrint clients, same reasoning as
+        # updateMeasuredWeight above - this is an external-device endpoint (scale/NFC writer).
+        self._sendDataToClient(dict(action="reloadTable and sidebarSpools"))
 
         return make_response(jsonify({
             "databaseId": spoolModel.databaseId,
