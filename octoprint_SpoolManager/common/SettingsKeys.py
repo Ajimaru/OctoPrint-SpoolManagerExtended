@@ -53,6 +53,10 @@ class SettingsKeys():
 	SETTINGS_KEY_BED_OFFSET_ENABLED = "bedOffsetEnabled"
 	SETTINGS_KEY_ENCLOSURE_OFFSET_ENABLED = "enclosureOffsetEnabled"
 
+	## OctoScale (external scale + NFC writer device)
+	SETTINGS_KEY_OCTOSCALE_ENABLED = "octoScaleEnabled"
+	SETTINGS_KEY_OCTOSCALE_URL = "octoScaleUrl"
+
 	## Debugging
 	SETTINGS_KEY_SQL_LOGGING_ENABLED = "sqlLoggingEnabled"
 	SETTINGS_KEY_EXTRUSION_DEBUGGING_ENABLED = "extrusionDebuggingEnabled"

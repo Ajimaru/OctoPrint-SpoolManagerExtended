@@ -198,13 +198,19 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                 <a href="#" class="btn btn-mini" title="Remove last color"
                                    data-bind="click: spoolDialog.removeColorClicked, visible: spoolDialog.spoolItemForEditing.colorCount() > 1"><i class="fas fa-minus"></i></a>
                             </div>
+                            {# "Rainbow" is a fixed rainbow gradient with no colors of its own, which
+                               is why the pickers above are hidden while it is active. Multi-color
+                               spools are made with the "+" button next to the pickers instead. #}
                             <div class="row controls">
                                 <label class="checkbox">
-                                    <input type="checkbox" data-bind="checked: spoolDialog.spoolItemForEditing.isRainbow"> Rainbow / multi-color gradient
+                                    <input type="checkbox" data-bind="checked: spoolDialog.spoolItemForEditing.isRainbow"> Rainbow (preset gradient)
                                 </label>
                                 <label class="checkbox">
                                     <input type="checkbox" data-bind="checked: spoolDialog.spoolItemForEditing.isTransparent"> Transparent / translucent
                                 </label>
+                                <span class="help-block" style="margin-bottom: 0;" data-bind="visible: spoolDialog.spoolItemForEditing.isRainbow">
+                                    <small>Rainbow uses a fixed gradient. For your own multi-color spool, uncheck this and add colors with <i class="fas fa-plus"></i>.</small>
+                                </span>
                             </div>
                         </div>
                         <div class="control-group">
@@ -620,6 +626,89 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                         </span>
                                     </div>
                                     <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('remainingCombinedWeight') !== -1">Please enter a valid number</span>
+                                </div>
+                            </div>
+
+                            {# OctoScale: weighing and NFC tag writing, available in both simple and
+                               full view. Deliberately NOT wrapped in a .well - theme plugins
+                               (e.g. Themeify) restyle that class and the panel ended up unreadable.
+                               Plain rows with the dialog's own styling instead. #}
+                            <div data-bind="visible: spoolDialog.isOctoScaleEnabled">
+                                <h5>OctoScale</h5>
+                                <div class="control-group no-bottom-gap">
+                                    <label class="control-label">Weigh</label>
+                                    <div class="controls">
+                                        <button type="button" class="btn btn-small" data-bind="click: spoolDialog.toggleOctoScaleWeighing">
+                                            <i class="fas" data-bind="css: spoolDialog.octoScaleWeighing.isActive() ? 'fa-stop' : 'fa-play'"></i>
+                                            <span data-bind="text: spoolDialog.octoScaleWeighing.isActive() ? 'Stop' : 'Read weight'"></span>
+                                        </button>
+                                        <button type="button" class="btn btn-small"
+                                                data-bind="click: spoolDialog.octoScaleWeighing.tare,
+                                                           enable: spoolDialog.octoScaleWeighing.isActive() && !spoolDialog.octoScaleWeighing.isTaring()">Tare</button>
+                                        <span style="margin-left: 10px; font-size: 15px;" data-bind="text: spoolDialog.octoScaleWeighing.currentWeightText"></span>
+                                        {# Two buttons rather than one: a reading alone does not say whether the
+                                           user is setting up a full spool or checking how much is left. #}
+                                        <span class="help-block" style="margin-bottom: 2px; margin-top: 6px;">
+                                            <small>Use the reading as:</small>
+                                        </span>
+                                        <button type="button" class="btn btn-small btn-primary"
+                                                title="The spool is full - store this as its initial total weight"
+                                                data-bind="click: spoolDialog.applyMeasuredAsTotalWeight,
+                                                           enable: spoolDialog.octoScaleWeighing.hasReading">Total weight</button>
+                                        <button type="button" class="btn btn-small btn-primary"
+                                                title="The spool is partly used - work out how much filament is left"
+                                                data-bind="click: spoolDialog.applyMeasuredAsRemainingWeight,
+                                                           enable: spoolDialog.octoScaleWeighing.hasReading() && spoolDialog.canApplyAsRemaining()">Remaining weight</button>
+                                        <span class="help-block" style="margin-bottom: 0;" data-bind="visible: spoolDialog.measuredRemainingPreview">
+                                            <small data-bind="text: spoolDialog.measuredRemainingPreview"></small>
+                                        </span>
+                                        <span class="help-block" style="margin-bottom: 0;" data-bind="visible: spoolDialog.remainingBlockReason">
+                                            <small data-bind="text: spoolDialog.remainingBlockReason"></small>
+                                        </span>
+                                        <span class="help-block text-error" style="margin-bottom: 0;" data-bind="visible: spoolDialog.octoScaleWeighing.errorMessage">
+                                            <small><i class="fas fa-exclamation-triangle"></i> <span data-bind="text: spoolDialog.octoScaleWeighing.errorMessage"></span></small>
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="control-group">
+                                    <label class="control-label">NFC tag</label>
+                                    <div class="controls">
+                                        <span class="help-block" style="margin-bottom: 0;" data-bind="visible: !spoolDialog.isExistingSpool()">
+                                            <small>Save the spool first - the tag stores its database id.</small>
+                                        </span>
+                                        <span data-bind="visible: spoolDialog.isExistingSpool">
+                                            <button type="button" class="btn btn-small"
+                                                    data-bind="click: spoolDialog.startTagWriting, visible: !spoolDialog.octoScaleTagWriter.isActive()">
+                                                <i class="fas fa-tag"></i> Write NFC tag
+                                            </button>
+                                            <span data-bind="visible: spoolDialog.octoScaleTagWriter.isActive">
+                                                <button type="button" class="btn btn-small btn-primary"
+                                                        data-bind="click: spoolDialog.octoScaleTagWriter.writeTag, enable: spoolDialog.octoScaleTagWriter.canWrite">
+                                                    <i class="fas fa-spinner fa-spin" data-bind="visible: spoolDialog.octoScaleTagWriter.isWriting"></i>
+                                                    Write tag
+                                                </button>
+                                                <button type="button" class="btn btn-small" data-bind="click: spoolDialog.stopTagWriting">Cancel</button>
+                                                <span style="margin-left: 8px;" data-bind="visible: !spoolDialog.octoScaleTagWriter.tagPresent()">
+                                                    <i class="fas fa-spinner fa-spin"></i> <small>Place a tag on the reader...</small>
+                                                </span>
+                                                <span style="margin-left: 8px;" data-bind="visible: spoolDialog.octoScaleTagWriter.tagPresent">
+                                                    <i class="fas fa-check text-success"></i> <small>Tag detected</small>
+                                                </span>
+                                                <span class="help-block" style="margin-bottom: 0;"
+                                                      data-bind="visible: spoolDialog.octoScaleTagWriter.needsOverwriteConfirmation() && !spoolDialog.octoScaleTagWriter.overwriteConfirmed()">
+                                                    <small class="text-warning" data-bind="text: spoolDialog.octoScaleTagWriter.overwriteWarningText"></small>
+                                                    <button type="button" class="btn btn-mini btn-warning" style="margin-left: 6px;"
+                                                            data-bind="click: spoolDialog.octoScaleTagWriter.confirmOverwrite">Overwrite anyway</button>
+                                                </span>
+                                                <span class="help-block text-success" style="margin-bottom: 0;" data-bind="visible: spoolDialog.octoScaleTagWriter.writeSucceeded">
+                                                    <small><i class="fas fa-check"></i> Tag written and verified.</small>
+                                                </span>
+                                                <span class="help-block text-error" style="margin-bottom: 0;" data-bind="visible: spoolDialog.octoScaleTagWriter.errorMessage">
+                                                    <small><i class="fas fa-exclamation-triangle"></i> <span data-bind="text: spoolDialog.octoScaleTagWriter.errorMessage"></span></small>
+                                                </span>
+                                            </span>
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
 

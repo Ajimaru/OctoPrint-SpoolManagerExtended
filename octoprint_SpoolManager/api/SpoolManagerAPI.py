@@ -1,5 +1,6 @@
 # coding=utf-8
 
+import base64
 import logging
 import os
 
@@ -20,7 +21,7 @@ from math import pi as PI
 
 from octoprint_SpoolManager import DatabaseManager
 from octoprint_SpoolManager.models.SpoolModel import SpoolModel
-from octoprint_SpoolManager.common import StringUtils, CSVExportImporter
+from octoprint_SpoolManager.common import StringUtils, CSVExportImporter, TagFormats, OpenPrintTag
 from octoprint_SpoolManager.api import Transformer
 from octoprint_SpoolManager.common.SettingsKeys import SettingsKeys
 from octoprint_SpoolManager.common.EventBusKeys import EventBusKeys
@@ -832,6 +833,259 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             "databaseId": spoolModel.databaseId,
             "spool": Transformer.transformSpoolModelToDict(spoolModel)
         }), 201)
+
+    #####################################################################################################   OCTOSCALE PROXY
+
+    # OctoScale is an ESP32 based scale with an NFC reader, reachable over plain HTTP on the local
+    # network. The browser cannot talk to it directly: OctoPrint is frequently served over HTTPS
+    # (mixed content) and the device sends no CORS headers. So every call is proxied here.
+    #
+    # Device API (see the OctoScale firmware): GET /version, /weight, /tare, /nfc, /nfcwriteid?id=N.
+    # All of them answer plain text except /nfc, which answers JSON.
+
+    # The device is a single-core ESP32-S2: its NFC polling task competes with the web server for
+    # the one core, so an otherwise instant request can take several seconds (measured: 0.02s to
+    # 5.0s for /weight while a tag is being polled). Timeouts below ~8s therefore report a
+    # connection failure for requests that actually succeed, which is what a short timeout looked
+    # like in practice. Kept generous rather than clever - a slow answer is still a correct answer.
+    OCTOSCALE_TIMEOUT_SECONDS = 8.0
+
+    def _getOctoScaleBaseUrl(self):
+        # Returns (baseUrl, errorResponse). errorResponse is None when OctoScale is usable.
+        if (self._settings.get_boolean([SettingsKeys.SETTINGS_KEY_OCTOSCALE_ENABLED]) != True):
+            return (None, make_response(jsonify({
+                "success": False,
+                "error": "OctoScale is not enabled in the SpoolManager settings."
+            }), 409))
+
+        baseUrl = self._settings.get([SettingsKeys.SETTINGS_KEY_OCTOSCALE_URL])
+        baseUrl = self._normalizeOctoScaleUrl(baseUrl)
+        if (baseUrl == None):
+            return (None, make_response(jsonify({
+                "success": False,
+                "error": "No OctoScale address configured in the SpoolManager settings."
+            }), 409))
+        return (baseUrl, None)
+
+    def _normalizeOctoScaleUrl(self, baseUrl):
+        if (baseUrl == None):
+            return None
+        baseUrl = str(baseUrl).strip().rstrip("/")
+        if (not baseUrl):
+            return None
+        if (not baseUrl.startswith("http://") and not baseUrl.startswith("https://")):
+            # a bare "192.0.2.20" is what people type; the device serves plain HTTP
+            baseUrl = "http://" + baseUrl
+        return baseUrl
+
+    def _callOctoScale(self, baseUrl, path, timeout=None):
+        # Returns (response, errorMessage). Never raises - every transport problem comes back
+        # as a message the UI can show next to the weight readout.
+        import requests
+
+        url = baseUrl + path
+        try:
+            response = requests.get(url, timeout=timeout if timeout != None else self.OCTOSCALE_TIMEOUT_SECONDS)
+        except requests.exceptions.Timeout:
+            return (None, "OctoScale did not answer in time (" + url + ")")
+        except requests.exceptions.RequestException as e:
+            return (None, "Could not reach OctoScale: " + str(e))
+
+        if (response.status_code != 200):
+            return (None, "OctoScale answered with HTTP " + str(response.status_code))
+        return (response, None)
+
+    def _octoScaleFloatOrError(self, response):
+        try:
+            return (float(response.text.strip()), None)
+        except (ValueError, AttributeError):
+            return (None, "OctoScale sent an unreadable value: '" + str(response.text)[:80] + "'")
+
+    @octoprint.plugin.BlueprintPlugin.route("/octoscale/testConnection", methods=["PUT"])
+    @no_firstrun_access
+    def testOctoScaleConnection(self):
+        # Takes the address from the request body, not from the stored settings, so the user can
+        # test what they just typed without saving first (same idea as testDatabaseConnection).
+        jsonData = request.json
+        baseUrl = None
+        if (jsonData != None):
+            baseUrl = jsonData.get("octoScaleUrl")
+        if (baseUrl == None or not str(baseUrl).strip()):
+            baseUrl = self._settings.get([SettingsKeys.SETTINGS_KEY_OCTOSCALE_URL])
+
+        baseUrl = self._normalizeOctoScaleUrl(baseUrl)
+        if (baseUrl == None):
+            return flask.jsonify({"success": False, "error": "Please enter the OctoScale address first."})
+
+        response, errorMessage = self._callOctoScale(baseUrl, "/version")
+        if (errorMessage != None):
+            return flask.jsonify({"success": False, "error": errorMessage})
+
+        return flask.jsonify({
+            "success": True,
+            "version": response.text.strip()
+        })
+
+    @octoprint.plugin.BlueprintPlugin.route("/octoscale/weight", methods=["GET"])
+    @no_firstrun_access
+    def getOctoScaleWeight(self):
+        # Polled roughly once per second while a weighing panel is open, so it stays quiet in the log.
+        baseUrl, errorResponse = self._getOctoScaleBaseUrl()
+        if (errorResponse != None):
+            return errorResponse
+
+        response, errorMessage = self._callOctoScale(baseUrl, "/weight")
+        if (errorMessage != None):
+            return flask.jsonify({"success": False, "error": errorMessage})
+
+        grams, errorMessage = self._octoScaleFloatOrError(response)
+        if (errorMessage != None):
+            return flask.jsonify({"success": False, "error": errorMessage})
+
+        return flask.jsonify({"success": True, "grams": grams})
+
+    @octoprint.plugin.BlueprintPlugin.route("/octoscale/tare", methods=["POST"])
+    @no_firstrun_access
+    def tareOctoScale(self):
+        baseUrl, errorResponse = self._getOctoScaleBaseUrl()
+        if (errorResponse != None):
+            return errorResponse
+
+        self._logger.info("Taring OctoScale")
+        response, errorMessage = self._callOctoScale(baseUrl, "/tare")
+        if (errorMessage != None):
+            return flask.jsonify({"success": False, "error": errorMessage})
+
+        return flask.jsonify({"success": True})
+
+    @octoprint.plugin.BlueprintPlugin.route("/octoscale/nfc", methods=["GET"])
+    @no_firstrun_access
+    def getOctoScaleNfcStatus(self):
+        # Device answers {ready, present, uid, data}; "data" holds the spool id already on the tag
+        # (as ASCII digits) or an empty string for a blank tag.
+        baseUrl, errorResponse = self._getOctoScaleBaseUrl()
+        if (errorResponse != None):
+            return errorResponse
+
+        response, errorMessage = self._callOctoScale(baseUrl, "/nfc")
+        if (errorMessage != None):
+            return flask.jsonify({"success": False, "error": errorMessage})
+
+        try:
+            nfcData = response.json()
+        except ValueError:
+            return flask.jsonify({"success": False, "error": "OctoScale sent an unreadable NFC status"})
+
+        existingSpoolId = None
+        rawTagData = nfcData.get("data")
+        if (rawTagData != None and str(rawTagData).strip().isdigit()):
+            existingSpoolId = int(str(rawTagData).strip())
+
+        result = {
+            "success": True,
+            "ready": nfcData.get("ready") == True,
+            "present": nfcData.get("present") == True,
+            "uid": nfcData.get("uid"),
+            "spoolId": existingSpoolId
+        }
+
+        # Resolve the id already on the tag to a name, so the UI can warn with something
+        # meaningful ("this tag belongs to <name>") before overwriting it.
+        if (existingSpoolId != None):
+            existingSpool = self._databaseManager.loadSpool(existingSpoolId)
+            result["spoolDisplayName"] = existingSpool.displayName if existingSpool != None else None
+
+        return flask.jsonify(result)
+
+    @octoprint.plugin.BlueprintPlugin.route("/octoscale/writeTag", methods=["POST"])
+    @no_firstrun_access
+    def writeOctoScaleTag(self):
+        baseUrl, errorResponse = self._getOctoScaleBaseUrl()
+        if (errorResponse != None):
+            return errorResponse
+
+        jsonData = request.json
+        if (jsonData == None):
+            return make_response(jsonify({"success": False, "error": "Request body must be JSON"}), 400)
+
+        databaseId = jsonData.get("databaseId")
+        if (databaseId == None or not str(databaseId).strip().isdigit()):
+            return make_response(jsonify({"success": False, "error": "A numeric databaseId is required"}), 400)
+        databaseId = int(str(databaseId).strip())
+
+        # The tag format is routed through the registry so an OpenPrintTag writer can be added
+        # later without touching this endpoint's contract (issue #56).
+        tagFormatId = jsonData.get("tagFormat")
+        if (tagFormatId == None):
+            tagFormatId = TagFormats.TAG_FORMAT_SPOOL_ID_NTAG
+        tagFormat = TagFormats.getTagFormat(tagFormatId)
+        if (tagFormat == None):
+            return make_response(jsonify({
+                "success": False,
+                "error": "Unknown tag format '" + str(tagFormatId) + "'"
+            }), 400)
+        if (tagFormat["supported"] != True):
+            return make_response(jsonify({
+                "success": False,
+                "error": tagFormat["label"] + " cannot be written by the connected hardware yet."
+            }), 400)
+
+        spoolModel = self._databaseManager.loadSpool(databaseId)
+        if (spoolModel == None):
+            abort(404)
+
+        self._logger.info("Writing NFC tag for spool with database id '" + str(databaseId) + "'")
+        response, errorMessage = self._callOctoScale(baseUrl, "/nfcwriteid?id=" + str(databaseId), timeout=8.0)
+        if (errorMessage != None):
+            return flask.jsonify({"success": False, "error": errorMessage})
+
+        # The firmware writes and verifies, then answers with a short status text. Anything
+        # mentioning an error means the verify step failed - surface that instead of a fake success.
+        responseText = response.text.strip()
+        if ("error" in responseText.lower() or "fail" in responseText.lower()):
+            return flask.jsonify({"success": False, "error": "OctoScale could not write the tag: " + responseText})
+
+        return flask.jsonify({
+            "success": True,
+            "databaseId": databaseId,
+            "message": responseText
+        })
+
+    #####################################################################################################   OPENPRINTTAG
+
+    @octoprint.plugin.BlueprintPlugin.route("/spool/<int:databaseId>/openPrintTagPayload", methods=["GET"])
+    @no_firstrun_access
+    def getOpenPrintTagPayload(self, databaseId):
+        # Read-only preview of what an OpenPrintTag for this spool would contain (issue #56).
+        # Writing is not possible yet, see the notes in common/OpenPrintTag.py, so this exists so
+        # the mapping can be checked against real spools and an NFC-V capable writer can be
+        # developed against a stable payload endpoint.
+        spoolModel = self._databaseManager.loadSpool(databaseId)
+        if (spoolModel == None):
+            abort(404)
+
+        fields = OpenPrintTag.spoolModelToFields(spoolModel)
+        unresolvedFields = OpenPrintTag.getUnresolvedFieldNames(fields)
+
+        payloadBase64 = None
+        encodingError = None
+        if (not unresolvedFields):
+            try:
+                payloadBase64 = base64.b64encode(OpenPrintTag.buildTagPayload(spoolModel)).decode("ascii")
+            except (OpenPrintTag.UnresolvedFieldKeyError, ValueError) as e:
+                encodingError = str(e)
+
+        return flask.jsonify({
+            "success": True,
+            "databaseId": databaseId,
+            "fields": fields,
+            "payloadBase64": payloadBase64,
+            "encodingComplete": payloadBase64 != None,
+            "unresolvedFields": unresolvedFields,
+            "error": encodingError,
+            "notes": ("The OpenPrintTag integer key map is not transcribed from the specification yet, "
+                      "so only the named field preview is available.") if unresolvedFields else None
+        })
 
     #####################################################################################################   SELECT SPOOL BY QR
 
