@@ -907,6 +907,12 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         spoolModel = self._selectSpool(toolIndex, databaseId)
 
         if (spoolModel != None):
+            # Push a live update to all connected OctoPrint clients so an already-open
+            # SpoolManager UI reflects the QR-triggered selection without a manual refresh.
+            # The internal /selectSpool (PUT) path updates its own client-side state after
+            # the response; the QR route only returns a browser redirect, so without this
+            # message other open UIs (e.g. a desktop browser) stay stale until reloaded.
+            self._sendDataToClient(dict(action="reloadTable and sidebarSpools"))
             #Take us back to the SpoolManager plugin tab
             return self._buildQRCodeRedirect(databaseId, "selected")
         else:
