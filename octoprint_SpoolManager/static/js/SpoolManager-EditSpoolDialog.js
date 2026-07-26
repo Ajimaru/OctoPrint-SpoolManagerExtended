@@ -1379,7 +1379,11 @@ function SpoolManagerEditSpoolDialog(){
         // Input validation
         var displayName = self.spoolItemForEditing.displayName();
         if (!displayName || displayName.trim().length === 0){
-            alert("Display name not entered!");
+            SPOOLMANAGER_DIALOGS.notify({
+                title: "Missing display name",
+                message: "Please enter a display name before saving the spool.",
+                type: "error"
+            });
             return;
         }
         // workaround
@@ -1406,9 +1410,16 @@ function SpoolManagerEditSpoolDialog(){
                 // server rejected the save - keep the dialog open and tell the user why
                 var message = "Spool could not be saved.";
                 if (validationErrors && validationErrors.length > 0){
-                    message += "\n\n- " + validationErrors.join("\n- ");
+                    var escapedErrors = validationErrors.map(function(validationError){
+                        return SPOOLMANAGER_DIALOGS.escapeHtml(validationError);
+                    });
+                    message += SPOOLMANAGER_DIALOGS.buildHtmlList(escapedErrors);
                 }
-                alert(message);
+                SPOOLMANAGER_DIALOGS.notify({
+                    title: "Save failed",
+                    message: message,
+                    type: "error"
+                });
                 return;
             }
             self.spoolItemForEditing.isSpoolVisible(false);
@@ -1416,7 +1427,13 @@ function SpoolManagerEditSpoolDialog(){
             if (self.spoolItemForEditing.selectedForTool() != undefined && self.printerStateViewModel.isPrinting()) {
                 // spool that is currently printed from was updated - warn
                 console.log(self.spoolItemForEditing.selectedForTool());
-                alert("Your changes will not be applied automatically because a print is running. You can apply the changes by manually re-selecting the spool.");
+                SPOOLMANAGER_DIALOGS.notify({
+                    title: "Changes not applied to the running print",
+                    message: "A print is running, so the changes are not applied automatically. " +
+                             "Re-select the spool manually to apply them.",
+                    type: "info",
+                    autoclose: false
+                });
                 self.closeDialogHandler(true);
             }
             else if(self.spoolItemForEditing.selectedForTool() != undefined) {
@@ -1435,14 +1452,27 @@ function SpoolManagerEditSpoolDialog(){
         if (self.isLoadedInTool()){
             return;
         }
-        var result = confirm("Do you really want to delete this spool?");
-        if (result == true){
+        var spoolName = self.spoolItemForEditing.displayName();
+        var spoolLabel = (spoolName != null && spoolName != "")
+                            ? "'" + SPOOLMANAGER_DIALOGS.escapeHtml(spoolName) + "'"
+                            : "This spool";
+
+        SPOOLMANAGER_DIALOGS.confirmDanger({
+            title: "Delete spool",
+            message: spoolLabel + " will be permanently removed from the database. This cannot be undone.",
+            question: "Do you really want to delete this spool?",
+            cancel: "Keep spool",
+            proceed: "Delete"
+        }).then(function(confirmed){
+            if (confirmed != true){
+                return;
+            }
             self.apiClient.callDeleteSpool(self.spoolItemForEditing.databaseId(), function(responseData) {
                 self.spoolItemForEditing.isSpoolVisible(false);
                 self.spoolDialog.modal('hide');
                 self.closeDialogHandler(true);
             });
-        }
+        });
     }
 
     // Adapted from mdziekon/OctoPrint-SpoolManager PR #29 (GH-24): the "Select for printing" button now

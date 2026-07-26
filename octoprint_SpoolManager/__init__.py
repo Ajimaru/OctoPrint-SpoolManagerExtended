@@ -1130,9 +1130,10 @@ class SpoolmanagerPlugin(
                 "js/tinycolor.min.js",
                 "js/pick-a-color.min.js",
                 # Shared constants/helpers, adopted from mdziekon/OctoPrint-SpoolManager PR #11 (GH-10).
-                # Load order matters: constants -> utils -> ComponentFactory -> SpoolItem -> consumers
+                # Load order matters: constants -> utils -> dialogs -> ComponentFactory -> SpoolItem -> consumers
                 "js/common/constants.js",
                 "js/common/utils.js",
+                "js/common/dialogs.js",
                 "js/ResetSettingsUtilV3.js",
                 "js/ComponentFactory.js",
                 "js/TableItemHelper.js",
