@@ -1125,7 +1125,6 @@ class SpoolmanagerPlugin(
         return dict(
             js=[
                 "js/quill.min.js",
-                "js/select2.min.js",
                 # Minified 3rd-party assets adopted from mdziekon/OctoPrint-SpoolManager PR #13 (GH-12)
                 "js/tinycolor.min.js",
                 "js/pick-a-color.min.js",
@@ -1149,7 +1148,6 @@ class SpoolmanagerPlugin(
             ],
             css=[
                 "css/quill.snow.css",
-                "css/select2.min.css",
                 "css/pick-a-color-1.1.8.min.css",
                 "css/SpoolManager.css"
             ],
