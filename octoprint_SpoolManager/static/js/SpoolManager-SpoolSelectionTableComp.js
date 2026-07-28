@@ -34,6 +34,14 @@ function SpoolSelectionTableComp() {
                                     ? params.databaseItemCountKO
                                     : null;
 
+        // Optional: only the sidebar selector loads its data lazily and can be "busy"
+        // (Attribution @mdziekon, PR #42). The template spool dialog passes no flag, so
+        // fall back to a constant-false observable, because unlike databaseItemCount the
+        // template dereferences this one unconditionally.
+        self.isLoadingSpoolsSelectorData = ko.isObservable(params.isLoadingSpoolsSelectorData)
+                                            ? params.isLoadingSpoolsSelectorData
+                                            : ko.observable(false);
+
         self.selectSpoolFunction = params.selectSpoolFunction;
 
         ////////////////////////////////////////////////////////////////////// internal field variables
