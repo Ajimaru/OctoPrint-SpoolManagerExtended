@@ -162,22 +162,17 @@ let SpoolItem;
         this.cost = ko.observable();
         this.costUnit = ko.observable();
 
+        // Vendor/material/labels are plain observables in both modes: the edit dialog binds
+        // them to a native <input list=...> + <datalist>, so no widget wrapper is involved.
+        this.vendor = ko.observable();
+        this.material = ko.observable();
+        this.labels = ko.observableArray();
+        this.allLabels = ko.observableArray();
+
         if (isEditable == true){
-            // Editing mode: bind to the dialog's select2/picker widgets.
-            // Widget creation only happens here (never for read-only table items) - adopted from
-            // mdziekon/OctoPrint-SpoolManager PR #11 (GH-10). Previously every table item re-ran
-            // the select2 initialisation on the dialog's DOM nodes, which could reset the
-            // editor's vendor/material selection while spools were still loading (race condition).
-            var vendorViewModel = ComponentFactory.createSelectWithFilter("spool-vendor-select", $('#spool-form'));
-            this.vendor = vendorViewModel.selectedOption;
-            this.allVendors = vendorViewModel.allOptions;
-
-            var materialViewModel = ComponentFactory.createSelectWithFilter("spool-material-select", $('#spool-form'));
-            this.material = materialViewModel.selectedOption;
-
-            var labelsViewModel = ComponentFactory.createLabels("spool-labels-select", $('#spool-form'));
-            this.labels = labelsViewModel.selectedOptions;
-            this.allLabels = labelsViewModel.allOptions;
+            // Editing mode: bind to the dialog's picker widgets. Widget creation only happens
+            // here (never for read-only table items) - adopted from mdziekon/OctoPrint-SpoolManager
+            // PR #11 (GH-10), so the table items cannot reach into the dialog's DOM nodes.
 
             // Multi-color support (issue #19): "color" holds the composed value
             // ("#hex", "#hex;#hex[;#hex]" or "rainbow"), the pickers hold the parts.
@@ -285,14 +280,6 @@ let SpoolItem;
             this.firstUse = firstUseViewModel.currentDateTime;
             this.lastUse = lastUseViewModel.currentDateTime;
             this.purchasedOn = purchasedOnViewModel.currentDateTime;
-        } else {
-            // Read-only mode (table/list items): plain observables, no widget coupling
-            // (adopted from mdziekon/OctoPrint-SpoolManager PR #11, GH-10)
-            this.vendor = ko.observable();
-            this.allVendors = ko.observableArray();
-            this.material = ko.observable();
-            this.labels = ko.observableArray();
-            this.allLabels = ko.observableArray();
         }
 
         // Autosuggest for "density" (data source: SpoolmanDB-derived mapping, see common/constants.js).
@@ -342,12 +329,12 @@ let SpoolItem;
         var catalogs = (params != null) ? params.catalogs : null;
 
         // update latest all catalog
+        // (vendors/materials are no longer mirrored here: the edit dialog's datalists bind
+        //  straight to the dialog-level spoolDialog.allVendors / allMaterials arrays)
         if (catalogs != null){
             // labels
             this.allLabels.removeAll();
             ko.utils.arrayPushAll(this.allLabels, catalogs.labels);
-            //vendors
-            this.allVendors(catalogs.vendors);
         }
 
         this.selectedFromQRCode(updateData.selectedFromQRCode);
