@@ -993,6 +993,11 @@ $(function() {
         // dialog open instead of on OctoPrint page load.
         self.hasInitializedSpoolsSelector = false;
 
+        // Drives the spinner inside <spm-select-spool-table> while the selector query is
+        // in flight (Attribution @mdziekon, PR #42). Always reset in the response callback,
+        // including on API failure, so the spinner can never hang.
+        self.isLoadingSpoolsSelectorData = ko.observable(false);
+
         self._isLazySelectorEnabled = function(){
             return self.pluginSettings != null
                 && self.pluginSettings.performanceLazyLoadSpoolSelectorData
@@ -1049,6 +1054,7 @@ $(function() {
         // fetch the full spool list for the sidebar select-spool dialog
         self.loadSpoolSelectorData = function() {
             self.hasInitializedSpoolsSelector = true;
+            self.isLoadingSpoolsSelectorData(true);
 
             var currentFilterName = "all";
 
@@ -1062,6 +1068,17 @@ $(function() {
 
             // api-call
             self.apiClient.callLoadSpoolsByQuery(tableQuery, function(responseData){
+                // Clear the busy flag first: callLoadSpoolsByQuery passes no onFail, so
+                // _callApi invokes this handler with an undefined body on network errors.
+                // Clearing up-front guarantees the spinner stops even if the body throws.
+                self.isLoadingSpoolsSelectorData(false);
+
+                if (responseData == null){
+                    // Request failed; keep the previously loaded list rather than blanking
+                    // it, otherwise a transient error would wipe a good list and the empty
+                    // state would wrongly claim there are no spools at all.
+                    return;
+                }
 
                 self.sidebarDatabaseItemCount(responseData["databaseItemCount"]);
 
