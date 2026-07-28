@@ -217,17 +217,25 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                         <div class="control-group">
                             <label class="control-label">Vendor</label>
                             <div class="controls">
-                                <select id="spool-vendor-select" class="input-large" data-bind="options: spoolDialog.spoolItemForEditing.allVendors, value: spoolDialog.spoolItemForEditing.vendor">
-                                  <option></option>
-                                </select>
+                                {# Native input + datalist: the catalog entries are suggestions, but any
+                                   free text is accepted so a new vendor can be typed straight in. #}
+                                <input id="spool-vendor-select" type="text" class="input-large" list="spool-vendor-list"
+                                       autocomplete="off" placeholder="Choose or type..."
+                                       data-bind="textInput: spoolDialog.spoolItemForEditing.vendor">
+                                <datalist id="spool-vendor-list" data-bind="foreach: spoolDialog.allVendors">
+                                    <option data-bind="attr: { value: $data }"></option>
+                                </datalist>
                             </div>
                         </div>
                         <div class="control-group no-bottom-gap">
                             <label class="control-label">Material</label>
                             <div class="controls">
-                                <select id="spool-material-select" class="input-large" data-bind="options: spoolDialog.allMaterials, value: spoolDialog.spoolItemForEditing.material">
-                                  <option></option>
-                                </select>
+                                <input id="spool-material-select" type="text" class="input-large" list="spool-material-list"
+                                       autocomplete="off" placeholder="Choose or type..."
+                                       data-bind="textInput: spoolDialog.spoolItemForEditing.material">
+                                <datalist id="spool-material-list" data-bind="foreach: spoolDialog.allMaterials">
+                                    <option data-bind="attr: { value: $data }"></option>
+                                </datalist>
                             </div>
                         </div>
                         <div class="control-group no-bottom-gap">
