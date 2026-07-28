@@ -366,16 +366,23 @@ function SpoolManagerEditSpoolDialog(){
     // In simple mode the detailed weight inputs (initial / used) are hidden once a spool is in
     // use, leaving only the remaining amount. Fresh spools still show the initial weight so they
     // can be set up.
-    this.isSpoolInUse = ko.pureComputed(function(){
-        if (self.spoolItemForEditing == null){
-            return false;
-        }
-        var used = parseFloat(self.spoolItemForEditing.usedWeight());
-        return !isNaN(used) && used > 0;
-    });
+    // This is a *snapshot* taken when the dialog opens (see _snapshotSpoolInUse), deliberately not
+    // a computed over usedWeight: as a live computed the four weight blocks vanished mid-typing the
+    // moment a used amount was entered, which reads as data loss. The state a spool was opened in
+    // stays put until it is saved and reopened.
+    this.isSpoolInUse = ko.observable(false);
+    // simpleMode stays reactive here so the view toggle keeps taking effect immediately.
     this.hideDetailedWeights = ko.pureComputed(function(){
         return self.simpleMode() && self.isSpoolInUse();
     });
+    self._snapshotSpoolInUse = function(){
+        if (self.spoolItemForEditing == null){
+            self.isSpoolInUse(false);
+            return;
+        }
+        var used = parseFloat(self.spoolItemForEditing.usedWeight());
+        self.isSpoolInUse(!isNaN(used) && used > 0);
+    };
 
 
     /////////////////////////////////////////////////////////////////////////////////////////////////////////// OCTOSCALE
@@ -1173,6 +1180,9 @@ function SpoolManagerEditSpoolDialog(){
         }
         self.spoolItemForEditing.drivenScope(COMBINED); // default calculation mode
         self.spoolItemForEditing.isSpoolVisible(true);
+
+        // freeze the simple-view weight-field visibility for as long as this dialog is open
+        self._snapshotSpoolInUse();
 
         self.spoolDialog.modal({
             minHeight: function() { return Math.max($.fn.modal.defaults.maxHeight() - 180, 250); },
