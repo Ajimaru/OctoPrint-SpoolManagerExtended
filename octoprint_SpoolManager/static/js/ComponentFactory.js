@@ -8,8 +8,6 @@ function ComponentFactory(pluginId) {
     this.pluginId = pluginId
 
     this.createDateTimePicker = ComponentFactory.createDateTimePicker;
-    this.createLabels = ComponentFactory.createLabels;
-    this.createSelectWithFilter = ComponentFactory.createSelectWithFilter;
     this.createColorPicker = ComponentFactory.createColorPicker;
     this.createNoteEditor = ComponentFactory.createNoteEditor;
 }
@@ -28,70 +26,6 @@ ComponentFactory.createDateTimePicker = function(elementId, showTimePicker){
     return componentViewModel;
 }
 
-
-///////////////////////////////////////////////////////////////////////////////////////////////////////////// LABELS
-ComponentFactory.createLabels = function(elementId, dropDownParent){
-
-    var elementSelector = "#" + elementId ;
-    // Build Widget
-    var labels = $(elementSelector).select2({
-      dropdownParent: dropDownParent,
-      multiple: true,
-      placeholder: "Add a Label...",
-      width: '400px',
-      tags: true,
-      dropdownAutoWidth: true
-    });
-
-
-    // Widget Model
-    var componentViewModel = {
-        allOptions: ko.observableArray(),
-        selectedOptions: ko.observableArray(),
-    }
-
-    // sync: observable -> jquery
-    var fired = [false];
-    componentViewModel.selectedOptions.subscribe(function(newSelections){
-        if (fired[0] == false){
-            fired[0] = true;
-            labels.val(newSelections);
-            labels.trigger('change');
-        } else {
-            fired[0] = false;
-        }
-    });
-
-
-    return componentViewModel;
-}
-
-///////////////////////////////////////////////////////////////////////////// SELECT WITH FILTER
-ComponentFactory.createSelectWithFilter = function(elementId, dropDownParent){
-
-    var elementSelector = "#" + elementId;
-    // Build Widget
-    var select2 = $(elementSelector).select2({
-      dropdownParent: dropDownParent,
-      placeholder: "Choose...",
-      allowClear: true,
-      tags: true
-    });
-
-    // Widget Model
-    var componentViewModel = {
-        allOptions: ko.observableArray(),
-        selectedOption: ko.observable(),
-        select2Element: select2
-    }
-
-    // sync: observable -> jquery
-    componentViewModel.selectedOption.subscribe(function(newSelection){
-        select2.val(newSelection);
-        select2.trigger('change');
-    });
-    return componentViewModel;
-}
 
 ///////////////////////////////////////////////////////////////////////////////////// COLOR - PICKER
 ComponentFactory.createColorPicker = function(elementId, showTranslucent){

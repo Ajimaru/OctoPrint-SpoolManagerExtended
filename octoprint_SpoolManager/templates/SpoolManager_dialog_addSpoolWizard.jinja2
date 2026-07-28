@@ -60,8 +60,8 @@
                     </div>
                 </div>
                 {# Dropdown with the known values plus a free-text field, so an unlisted vendor or
-                   material can still be entered. Deliberately a plain <select> and not the select2
-                   widget the edit dialog uses: that one is bound to fixed ids inside #spool-form. #}
+                   material can still be entered. The edit dialog solves the same problem with an
+                   <input list=...> + <datalist>; here the two fields feed separate observables. #}
                 <div class="control-group">
                     <label class="control-label">{{ _('Vendor') }}</label>
                     <div class="controls">

@@ -34,7 +34,7 @@ function SpoolManagerAddSpoolWizard() {
     self.octoScaleWeighing = null;
     self.octoScaleTagWriter = null;
 
-    // catalogs for the select2 inputs, same source as the edit dialog
+    // catalogs for the vendor/material/color inputs, same source as the edit dialog
     self.allMaterials = ko.observableArray([]);
     self.allVendors = ko.observableArray([]);
     self.allColors = ko.observableArray([]);
@@ -567,9 +567,8 @@ function SpoolManagerAddSpoolWizard() {
 
         self.wizardDialog = $("#dialog_addSpoolWizard");
         // isEditable:false is essential - see the note at the top of this file. The editable
-        // variant re-binds #spool-vendor-select, #spool-material-select and the
-        // #filament-color-picker* widgets, which belong to the edit dialog; creating a second
-        // editable item steals them and breaks the color pickers over there.
+        // variant re-binds the #filament-color-picker* widgets, which belong to the edit
+        // dialog; creating a second editable item steals them and breaks the pickers there.
         self.spoolItemForCreation = new SpoolItem(null, { isEditable: false, catalogs: self.catalogs });
         self.spoolItemForCreation.isInActive.subscribe(function(newValue){
             self.spoolItemForCreation.isActive(!newValue);

@@ -144,9 +144,6 @@ or use `octoprint.plugin.EventHandlerPlugin` with something like this:
 Pick-a-Color https://github.com/lauren/pick-a-color/
 * Color Helper:
 https://github.com/bgrins/TinyColor
-* Select/Labels
-select2 https://select2.org/
-
 * WYSIWYG - Editor
 quill https://quilljs.com/
 
