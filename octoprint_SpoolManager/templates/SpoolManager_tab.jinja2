@@ -324,7 +324,7 @@
                     <span data-bind="text: $root.formatWeightForDisplay(usedWeight()), attr: {title: $root.buildTooltipForSpoolItem($data, 'Used weight: ', 'usedWeight')}"></span><br/>
                     <span data-bind="text: $root.formatLengthForDisplay(usedLength()), attr: {title: $root.buildTooltipForSpoolItem($data, 'Used length: ', 'usedLength')}"></span>
                 </td>
-                <td data-bind="visible: $root.tableAttributeVisibility.note"><span class="spool-note-html" data-bind="html: noteHtml, attr: { title: noteText }"></span></td>
+                <td data-bind="visible: $root.tableAttributeVisibility.note"><span class="spool-note-html" data-bind="html: noteHtml, attr: { title: noteText }, click: function(data, event) { return $root.handleNoteClick(event); }"></span></td>
               </tr>
             </tbody>
         </table>
