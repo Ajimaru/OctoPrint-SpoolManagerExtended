@@ -33,9 +33,13 @@
 }
 #selectedSpools > div > * {
     flex-grow: 0;
+    /* the swatch sits in a wrapper div, which must not give up width to a long label */
+    flex-shrink: 0;
 }
 #selectedSpools > div > .spool-label {
     flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
 }
 #selectedSpools .spool-remaining {
     white-space: nowrap;
@@ -96,6 +100,13 @@
     display: inline-block;
     cursor: pointer;
     margin-right: 5px;
+    /* Several parents are flex containers (sidebar rows, the select dialog's spool-label).
+       There `width` only acts as a flex-basis, so a long spool label used to squash the
+       swatch into a sliver - and with it the angled gradients of multi-color spools.
+       Pinning flex and the aspect ratio keeps it square no matter how long the text is. */
+    flex: 0 0 auto;
+    aspect-ratio: 1 / 1;
+    box-sizing: border-box;
 }
 /* swatch + material in a spool table cell */
 .spm-swatch-cell .color-preview {
@@ -149,6 +160,11 @@
 #dialog_spool_selection .spool-label {
     display: flex;
     align-items: center;
+}
+
+/* let the long label wrap inside the cell instead of pushing against the swatch */
+#dialog_spool_selection .spool-label > span:not(.color-preview) {
+    min-width: 0;
 }
 
 
