@@ -373,7 +373,7 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
 
                         {# QR-CODE STUFF #}
                         <!-- ko if: spoolDialog.isExistingSpool() && pluginSettings.qrCodeEnabled() && !spoolDialog.simpleMode() -->
-                        <div class="control-group no-bottom-gap" data-bind="visible: spoolDialog.isExistingSpool() && pluginSettings.qrCodeEnabled() && !spoolDialog.simpleMode()">
+                        <div class="control-group" data-bind="visible: spoolDialog.isExistingSpool() && pluginSettings.qrCodeEnabled() && !spoolDialog.simpleMode()">
                             <div class="row-fluid">
                                 <div class="span8">
                                     <label class="control-label">QR Code</label>
