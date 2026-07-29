@@ -183,10 +183,10 @@
                     <label class="control-label">{{ _('Total weight') }} *</label>
                     <div class="controls">
                         <div class="input-append">
-                            <input type="number" step="0.1" min="0" class="input-small text-right"
-                                   data-bind="value: spoolItemForCreation.totalCombinedWeight,
+                            <input type="number" step="any" min="0" class="input-small text-right"
+                                   data-bind="value: totalCombinedWeightDisplay,
                                               event: { change: totalCombinedWeightChanged }">
-                            <span class="add-on">g</span>
+                            <span class="add-on" data-bind="text: weightUnitText">g</span>
                         </div>
                         <span class="help-block"><small>{{ _('The full spool as it comes off the scale: empty spool plus filament.') }}</small></span>
                     </div>
@@ -195,10 +195,10 @@
                     <label class="control-label">{{ _('Empty spool weight') }}</label>
                     <div class="controls">
                         <div class="input-append">
-                            <input type="number" step="0.1" min="0" class="input-small text-right"
-                                   data-bind="value: spoolItemForCreation.spoolWeight,
+                            <input type="number" step="any" min="0" class="input-small text-right"
+                                   data-bind="value: spoolWeightDisplay,
                                               event: { change: totalCombinedWeightChanged }">
-                            <span class="add-on">g</span>
+                            <span class="add-on" data-bind="text: weightUnitText">g</span>
                         </div>
                         <span class="help-block">
                             <small data-bind="text: filamentWeightPreview"></small>

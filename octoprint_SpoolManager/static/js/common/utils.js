@@ -129,6 +129,71 @@ SPOOLMANAGER_UTILS = {
         );
     },
 
+    ///////////////////////////////////////////////////////////////////////////////// DISPLAY UNITS
+    // Weights are ALWAYS stored in grams (see SettingsKeys.SETTINGS_KEY_WEIGHT_UNIT); the setting
+    // only picks how they are shown. Nothing in here may reach the api client or the database -
+    // every validator, every payload and every SpoolItem observable keeps working in grams.
+    //
+    // SpoolManager.js and SpoolManager-EditSpoolDialog.js still carry their own older copies of
+    // these tables from before this file existed. They are left alone on purpose; new code uses
+    // the functions here.
+
+    WEIGHT_UNIT_FACTORS: { "g": 1, "kg": 1000 },
+    UNIT_DISPLAY_DECIMALS: { "mm": 1, "cm": 2, "m": 3, "g": 1, "kg": 3 },
+
+    // pluginSettings may still be null while a dialog is constructed but not yet bound, and an
+    // unknown unit from a hand-edited config must not produce NaN, so both fall back to grams.
+    selectedWeightUnit: function (pluginSettings) {
+        var unit = (pluginSettings != null && pluginSettings.weightUnit != null)
+            ? pluginSettings.weightUnit()
+            : "g";
+        return SPOOLMANAGER_UTILS.WEIGHT_UNIT_FACTORS[unit] ? unit : "g";
+    },
+
+    convertWeightForDisplay: function (rawGram, unit) {
+        var value = parseFloat(rawGram);
+        if (isNaN(value)) {
+            return rawGram;
+        }
+        var factor = SPOOLMANAGER_UTILS.WEIGHT_UNIT_FACTORS[unit];
+        return parseFloat((value / factor).toFixed(SPOOLMANAGER_UTILS.UNIT_DISPLAY_DECIMALS[unit]));
+    },
+
+    // "1234.5 g" / "1.234 kg" - with a space, unlike the older copy in SpoolManager.js
+    formatWeightForDisplay: function (rawGram, pluginSettings) {
+        if (rawGram == null || rawGram === "") {
+            return "";
+        }
+        if (isNaN(parseFloat(rawGram))) {
+            return "" + rawGram;
+        }
+        var unit = SPOOLMANAGER_UTILS.selectedWeightUnit(pluginSettings);
+        return SPOOLMANAGER_UTILS.convertWeightForDisplay(rawGram, unit) + " " + unit;
+    },
+
+    // Two-way computed over a base observable holding grams: read() divides into the display unit,
+    // write() multiplies back. Bind inputs to this, never to the base observable, and keep writing
+    // the base observable programmatically (OctoScale, template copy) - those writes bypass write()
+    // and stay exact, since knockout only calls it on an actual user change.
+    makeWeightDisplayKo: function (baseKo, unitFunction) {
+        return ko.pureComputed({
+            read: function () {
+                return SPOOLMANAGER_UTILS.convertWeightForDisplay(baseKo(), unitFunction());
+            },
+            write: function (newValue) {
+                var value = parseFloat(newValue);
+                if (isNaN(value)) {
+                    // pass non-numeric input through untouched so the field's own validation sees it
+                    baseKo(newValue);
+                    return;
+                }
+                var factor = SPOOLMANAGER_UTILS.WEIGHT_UNIT_FACTORS[unitFunction()];
+                // toFixed(1) mirrors the edit dialog's converter so both round identically
+                baseKo(parseFloat((value * factor).toFixed(1)));
+            }
+        });
+    },
+
     // Normalizes a material display name to a MATERIALS_DENSITY_MAPPING key:
     // "Flexible (TPU)" -> "FLEXIBLE_TPU", "PC/ABS" -> "PC_ABS", "PLA+" -> "PLA_PLUS"
     normalizeMaterialKey: function (materialName) {
