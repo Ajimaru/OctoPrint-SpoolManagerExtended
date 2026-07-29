@@ -84,8 +84,22 @@
     max-height: calc(100vh - 250px) !important;
 }
 
-.color-preview{
-    border:1px solid #ccc;-webkit-border-radius:4px;-moz-border-radius:4px;border-radius:4px;-webkit-box-shadow:inset 0 0 2px 2px rgba(0,0,0,0.075);-moz-box-shadow:inset 0 0 2px 2px rgba(0,0,0,0.075);box-shadow:inset 0 0 2px 2px rgba(0,0,0,0.075);height:1.429em;width:1.429em;display:inline-block;cursor:pointer;margin-right:5px}div.pick-a-color-markup .color-preview.current-color{margin-bottom:-5px
+/* The colored square used all over the plugin (sidebar, table, dialogs) and inside the
+   color picker's toggle button. Originally came from pick-a-color's stylesheet; kept here
+   after that library was dropped, because ~10 templates render such a swatch on their own. */
+.color-preview {
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-shadow: inset 0 0 2px 2px rgba(0, 0, 0, 0.075);
+    height: 1.429em;
+    width: 1.429em;
+    display: inline-block;
+    cursor: pointer;
+    margin-right: 5px;
+}
+/* swatch + material in a spool table cell */
+.spm-swatch-cell .color-preview {
+    margin-bottom: -5px;
 }
 
 .truncatedText {
@@ -345,13 +359,6 @@ input.spm-number-invalid {
     margin-right: 10px;
 }
 
-/* "translucent" swatch in the basic colors tab of the color picker:
-   checkerboard instead of the plain white hex the entry technically carries
-   (!important overrides the inline background-color set by pick-a-color) */
-.color-preview.translucent {
-    background: repeating-conic-gradient(#c8c8c8 0% 25%, #ffffff 0% 50%) 50% / 8px 8px !important;
-}
-
 /* Legacy note lists (Quill 1.x).
    Quill 1 wrote real <ul>/<ol> into noteHtml. Quill 2 renders every list as <ol> with
    li[data-list] plus a .ql-ui span carrying the marker, so quill.snow.css v2 has no <ul>
@@ -510,4 +517,162 @@ input.spm-number-invalid {
 #dialog_spool_edit .ql-toolbar.ql-snow .ql-color-picker .ql-picker-item.ql-selected,
 #dialog_spool_edit .ql-toolbar.ql-snow .ql-color-picker .ql-picker-item:hover {
     border-color: #74b8ff;
+}
+
+/* ------------------------------------------------------------------------ Color picker
+   Styling for the component in common/colorPicker.js, which replaced the pick-a-color
+   widget (and its 30 KB of Bootstrap-2 stylesheet).
+   Same theme strategy as the Quill block above: no theme detection, instead surfaces
+   inherit and borders use a neutral grey that works on light and dark alike. The swatches
+   and the preview are the exception - they carry an actual colour and stay literal. */
+.spm-color-picker {
+    position: relative;
+    display: inline-block;
+    vertical-align: middle;
+}
+.spm-color-picker-toggle {
+    padding: 3px 6px;
+    line-height: 1.429em;
+}
+.spm-color-picker-toggle .color-preview {
+    cursor: pointer;
+    vertical-align: middle;
+    margin-right: 4px;
+}
+.spm-color-picker-toggle .caret {
+    vertical-align: middle;
+}
+.spm-color-picker-menu {
+    /* .dropdown-menu is display:none until opened */
+    padding: 8px;
+    min-width: 0;
+    width: 232px;
+    background-color: inherit;
+    border-color: rgba(128, 128, 128, 0.35);
+}
+.spm-color-picker.open > .spm-color-picker-menu {
+    display: block;
+}
+.spm-color-picker-tabs {
+    margin-bottom: 8px;
+    border-bottom-color: rgba(128, 128, 128, 0.35);
+}
+.spm-color-picker-tabs > li > a {
+    padding: 4px 8px;
+    font-size: 12px;
+    color: inherit;
+}
+.spm-color-picker-tabs > li.active > a {
+    background-color: transparent;
+    border-color: rgba(128, 128, 128, 0.35);
+    border-bottom-color: transparent;
+    color: inherit;
+}
+.spm-color-picker-panel {
+    display: none;
+}
+.spm-color-picker-panel.active {
+    display: block;
+}
+
+/* --- basic tab: swatch grid + hex field */
+.spm-color-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 4px;
+}
+.spm-color-picker-grid .spm-swatch {
+    /* a <button>, so it is focusable and keyboard-operable */
+    width: 100%;
+    height: 22px;
+    padding: 0;
+    border: 1px solid rgba(128, 128, 128, 0.45);
+    border-radius: 3px;
+    cursor: pointer;
+    box-shadow: inset 0 0 2px 1px rgba(0, 0, 0, 0.06);
+}
+.spm-color-picker-grid .spm-swatch:hover {
+    border-color: #74b8ff;
+}
+.spm-color-picker-grid .spm-swatch.selected {
+    border-color: #74b8ff;
+    box-shadow: 0 0 0 2px rgba(116, 184, 255, 0.55);
+}
+.spm-color-picker-hex-row {
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.spm-color-picker-hex-label {
+    font-size: 11px;
+    opacity: 0.75;
+}
+input.spm-color-picker-hex {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    height: 20px;
+    padding: 2px 4px;
+    font-family: monospace;
+    font-size: 12px;
+    background-color: transparent;
+    color: inherit;
+    border-color: rgba(128, 128, 128, 0.35);
+    box-shadow: none;
+}
+
+/* --- advanced tab: HSL sliders + preview */
+.spm-color-picker-slider-row {
+    margin-bottom: 8px;
+}
+.spm-color-picker-slider-label {
+    display: block;
+    font-size: 11px;
+    opacity: 0.75;
+    margin-bottom: 2px;
+}
+input.spm-color-picker-slider {
+    /* the gradient is set inline per value; -webkit-appearance:none keeps the track visible */
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 14px;
+    margin: 0;
+    padding: 0;
+    border: 1px solid rgba(128, 128, 128, 0.45);
+    border-radius: 3px;
+    cursor: pointer;
+}
+input.spm-color-picker-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 8px;
+    height: 18px;
+    margin-top: -3px;
+    background: #fff;
+    border: 1px solid #555;
+    border-radius: 2px;
+    cursor: pointer;
+}
+input.spm-color-picker-slider::-moz-range-thumb {
+    width: 8px;
+    height: 18px;
+    background: #fff;
+    border: 1px solid #555;
+    border-radius: 2px;
+    cursor: pointer;
+}
+input.spm-color-picker-slider::-moz-range-track {
+    background: transparent;
+}
+.spm-color-picker-preview-label {
+    font-size: 11px;
+    opacity: 0.75;
+    margin-bottom: 2px;
+}
+.spm-color-picker-preview {
+    height: 28px;
+    border: 1px solid rgba(128, 128, 128, 0.45);
+    border-radius: 3px;
 }
