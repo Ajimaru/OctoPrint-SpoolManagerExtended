@@ -351,3 +351,163 @@ input.spm-number-invalid {
 .color-preview.translucent {
     background: repeating-conic-gradient(#c8c8c8 0% 25%, #ffffff 0% 50%) 50% / 8px 8px !important;
 }
+
+/* Legacy note lists (Quill 1.x).
+   Quill 1 wrote real <ul>/<ol> into noteHtml. Quill 2 renders every list as <ol> with
+   li[data-list] plus a .ql-ui span carrying the marker, so quill.snow.css v2 has no <ul>
+   rules at all and sets `list-style-type: none` on every <li>. Notes saved before this
+   upgrade would therefore lose their bullets/numbers.
+   These rules restore native markers for that stored markup. They are kept here rather
+   than patched into quill.snow.css so future Quill updates stay a plain file swap.
+   Scope: `.ql-editor ul` covers old content loaded back into the editor,
+   `.spool-note-html` the read-only render in the spool table (SpoolManager_tab.jinja2). */
+.ql-editor ul,
+.spool-note-html ul {
+    list-style-type: disc;
+    padding-left: 1.5em;
+}
+.ql-editor ol,
+.spool-note-html ol {
+    padding-left: 1.5em;
+}
+/* v2 zeroes these on every <li>; re-enable them for legacy <ul>/<ol> children.
+   li[data-list] (v2 markup) is untouched, so new notes keep rendering via .ql-ui. */
+.ql-editor ul > li:not([data-list]),
+.ql-editor ol > li:not([data-list]),
+.spool-note-html ul > li:not([data-list]),
+.spool-note-html ol > li:not([data-list]) {
+    list-style-type: inherit;
+    padding-left: 0;
+}
+.ql-editor ol > li:not([data-list]) {
+    list-style-type: decimal;
+}
+/* v1 drew its own bullet via ::before; suppress it so we don't get a double marker. */
+.ql-editor ul > li:not([data-list])::before,
+.spool-note-html ul > li:not([data-list])::before {
+    content: none;
+}
+
+/* ---------------------------------------------------------------- Quill theme neutrality
+   quill.snow.css hardcodes a light palette (#fff backgrounds, #444 text/icons, #ccc borders).
+   Under a dark OctoPrint theme that produced a bright box with near-invisible icons - the
+   same breakage existed in Quill 1.x.
+   Theme plugins generally restyle bare `body` without setting any marker class, so CSS
+   cannot detect which theme is active. Instead of guessing, these rules make the editor
+   inherit from whatever surrounds it: colors become `inherit`/`currentColor`, surfaces
+   become transparent, and borders use a neutral grey that reads on light and dark alike.
+   Deliberately NOT neutralised: .ql-color-* / .ql-bg-* content classes and the color-picker
+   swatches - those carry the user's actual colour choice and must stay literal. */
+#dialog_spool_edit .ql-toolbar.ql-snow,
+#dialog_spool_edit .ql-container.ql-snow {
+    border-color: rgba(128, 128, 128, 0.35) !important;
+}
+#dialog_spool_edit .ql-container.ql-snow,
+#dialog_spool_edit .ql-editor {
+    background-color: transparent !important;
+    color: inherit !important;
+}
+/* Toolbar glyphs are SVG paths filled/stroked with #444.
+   `!important` is required here, not a shortcut: other plugins (stickypad, PrintJobHistory)
+   ship their own quill.snow.css into the same packed_plugins.css bundle. OctoPrint concatenates
+   plugin CSS alphabetically, so SpoolManager's rules land BEFORE stickypad's and lose the
+   cascade at equal specificity. The #dialog_spool_edit scope keeps this off those plugins'
+   own editors - we only override inside our dialog. */
+#dialog_spool_edit .ql-snow .ql-stroke {
+    stroke: currentColor !important;
+}
+#dialog_spool_edit .ql-snow .ql-stroke-miter {
+    stroke: currentColor !important;
+}
+#dialog_spool_edit .ql-snow .ql-fill,
+#dialog_spool_edit .ql-snow .ql-stroke.ql-fill {
+    fill: currentColor !important;
+}
+#dialog_spool_edit .ql-snow .ql-empty {
+    fill: none !important;
+}
+/* Dropdown labels (colour/background pickers) */
+#dialog_spool_edit .ql-snow .ql-picker {
+    color: inherit;
+}
+#dialog_spool_edit .ql-snow .ql-picker-label {
+    color: inherit;
+}
+/* Placeholder shown while the note is empty */
+#dialog_spool_edit .ql-editor.ql-blank::before {
+    color: inherit;
+    opacity: 0.55;
+}
+/* Popovers need real opacity - they overlap the text behind them. Bootstrap 2's dropdown
+   background is the closest thing to a themed surface OctoPrint gives us here. */
+#dialog_spool_edit .ql-snow .ql-picker-options,
+#dialog_spool_edit .ql-snow .ql-tooltip {
+    background-color: #2b2f33;
+    color: #e6e6e6;
+    border-color: rgba(128, 128, 128, 0.35);
+    box-shadow: 0 5px 10px rgba(0, 0, 0, 0.35);
+}
+#dialog_spool_edit .ql-snow .ql-tooltip input[type=text] {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: inherit;
+    border-color: rgba(128, 128, 128, 0.35);
+}
+#dialog_spool_edit .ql-snow .ql-tooltip a,
+#dialog_spool_edit .ql-snow .ql-tooltip a.ql-preview {
+    color: #74b8ff;
+}
+#dialog_spool_edit .ql-snow .ql-tooltip a.ql-action::after {
+    border-right-color: rgba(128, 128, 128, 0.35);
+}
+/* Blockquote / inline code inside the note body */
+#dialog_spool_edit .ql-snow .ql-editor blockquote {
+    border-left-color: rgba(128, 128, 128, 0.45);
+}
+#dialog_spool_edit .ql-snow .ql-editor code,
+#dialog_spool_edit .ql-snow .ql-editor .ql-code-block-container {
+    background-color: rgba(128, 128, 128, 0.18);
+    color: inherit;
+}
+/* Active/hover state: snow uses #06c, which is too dark on a dark surface */
+#dialog_spool_edit .ql-snow.ql-toolbar button:hover,
+#dialog_spool_edit .ql-snow.ql-toolbar button:focus,
+#dialog_spool_edit .ql-snow.ql-toolbar button.ql-active,
+#dialog_spool_edit .ql-snow.ql-toolbar .ql-picker-label:hover,
+#dialog_spool_edit .ql-snow.ql-toolbar .ql-picker-label.ql-active,
+#dialog_spool_edit .ql-snow.ql-toolbar .ql-picker-item:hover,
+#dialog_spool_edit .ql-snow.ql-toolbar .ql-picker-item.ql-selected {
+    color: #74b8ff;
+}
+#dialog_spool_edit .ql-snow.ql-toolbar button:hover .ql-stroke,
+#dialog_spool_edit .ql-snow.ql-toolbar button:focus .ql-stroke,
+#dialog_spool_edit .ql-snow.ql-toolbar button.ql-active .ql-stroke,
+#dialog_spool_edit .ql-snow.ql-toolbar button:hover .ql-stroke-miter,
+#dialog_spool_edit .ql-snow.ql-toolbar button:focus .ql-stroke-miter,
+#dialog_spool_edit .ql-snow.ql-toolbar button.ql-active .ql-stroke-miter,
+#dialog_spool_edit .ql-snow.ql-toolbar .ql-picker-label:hover .ql-stroke,
+#dialog_spool_edit .ql-snow.ql-toolbar .ql-picker-label.ql-active .ql-stroke {
+    stroke: #74b8ff !important;
+}
+#dialog_spool_edit .ql-snow.ql-toolbar button:hover .ql-fill,
+#dialog_spool_edit .ql-snow.ql-toolbar button:focus .ql-fill,
+#dialog_spool_edit .ql-snow.ql-toolbar button.ql-active .ql-fill,
+#dialog_spool_edit .ql-snow.ql-toolbar button:hover .ql-stroke.ql-fill,
+#dialog_spool_edit .ql-snow.ql-toolbar button.ql-active .ql-stroke.ql-fill {
+    fill: #74b8ff !important;
+}
+/* The expanded picker label goes #ccc in snow, which vanishes on light backgrounds */
+#dialog_spool_edit .ql-snow .ql-picker.ql-expanded .ql-picker-label {
+    color: inherit;
+    border-color: rgba(128, 128, 128, 0.35);
+}
+#dialog_spool_edit .ql-snow .ql-picker.ql-expanded .ql-picker-label .ql-stroke {
+    stroke: currentColor !important;
+}
+#dialog_spool_edit .ql-snow .ql-picker.ql-expanded .ql-picker-label .ql-fill {
+    fill: currentColor !important;
+}
+/* Swatch grid: keep the literal colours, only the selection outline is themed */
+#dialog_spool_edit .ql-toolbar.ql-snow .ql-color-picker .ql-picker-item.ql-selected,
+#dialog_spool_edit .ql-toolbar.ql-snow .ql-color-picker .ql-picker-item:hover {
+    border-color: #74b8ff;
+}

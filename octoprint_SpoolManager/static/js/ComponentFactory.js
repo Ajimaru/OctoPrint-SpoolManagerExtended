@@ -138,6 +138,14 @@ ComponentFactory.createColorPicker = function(elementId, showTranslucent){
 
 
 //////////////////////////////////////////////////////////////////////////////////////// NOTE EDITOR
+// Returns the raw editor HTML. Quill 2 offers getSemanticHTML(), but that normalises the
+// markup, which would change what gets stored in noteHtml - so keep reading .ql-editor
+// directly, exactly as before. Defined once here instead of inside the factory, where it
+// used to be re-assigned on every createNoteEditor() call.
+Quill.prototype.getHtml = function() {
+    return this.container.querySelector('.ql-editor').innerHTML;
+};
+
 // Adopted from mdziekon/OctoPrint-SpoolManager PR #11 (GH-10): returns the raw Quill instance
 // (plus a getHtml helper) instead of a wrapper, so callers can use the full Quill API.
 ComponentFactory.createNoteEditor = function(elementId){
@@ -154,9 +162,6 @@ ComponentFactory.createNoteEditor = function(elementId){
         },
         theme: 'snow'
     });
-    Quill.prototype.getHtml = function() {
-        return this.container.querySelector('.ql-editor').innerHTML;
-    };
 
     return noteEditor;
 }
