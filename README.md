@@ -140,8 +140,6 @@ or use `octoprint.plugin.EventHandlerPlugin` with something like this:
 ---
 
 ### UI dependencies
-* Color-Picker:
-Pick-a-Color https://github.com/lauren/pick-a-color/
 * Color Helper:
 https://github.com/bgrins/TinyColor
 * WYSIWYG - Editor

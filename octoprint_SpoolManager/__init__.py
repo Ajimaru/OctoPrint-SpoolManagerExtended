@@ -1127,11 +1127,11 @@ class SpoolmanagerPlugin(
                 "js/quill.min.js",
                 # Minified 3rd-party assets adopted from mdziekon/OctoPrint-SpoolManager PR #13 (GH-12)
                 "js/tinycolor.min.js",
-                "js/pick-a-color.min.js",
                 # Shared constants/helpers, adopted from mdziekon/OctoPrint-SpoolManager PR #11 (GH-10).
                 # Load order matters: constants -> utils -> dialogs -> ComponentFactory -> SpoolItem -> consumers
                 "js/common/constants.js",
                 "js/common/utils.js",
+                "js/common/colorPicker.js",
                 "js/common/dialogs.js",
                 "js/ResetSettingsUtilV3.js",
                 "js/ComponentFactory.js",
@@ -1148,7 +1148,6 @@ class SpoolmanagerPlugin(
             ],
             css=[
                 "css/quill.snow.css",
-                "css/pick-a-color-1.1.8.min.css",
                 "css/SpoolManager.css"
             ],
             less=["less/SpoolManager.less"]

@@ -1803,9 +1803,10 @@ $(function() {
 
             // resetSettings-Stuff
              new ResetSettingsUtilV3(self.pluginSettings).assignResetSettingsFeature(PLUGIN_ID, function(data){
-                 // fix colors after settings were reset. This is a hack because the color picker does not update itself
-                 $("#qrcode-fill-color-picker + .btn-group button span.color-preview").css("background-color", self.pluginSettings.qrCodeFillColor());
-                 $("#qrcode-background-color-picker + .btn-group button span.color-preview").css("background-color", self.pluginSettings.qrCodeBackgroundColor());
+                 // the reset writes straight into pluginSettings, so push the new values back into
+                 // the pickers (they render themselves from their observable)
+                 self.qrCodeFillColor(self.pluginSettings.qrCodeFillColor());
+                 self.qrCodeBackgroundColor(self.pluginSettings.qrCodeBackgroundColor());
              });
 
             // Load sidebar data (selected spools always; full selector list only when not lazy)
@@ -1823,20 +1824,19 @@ $(function() {
 
 
             // Settings - Color-Picker
+            // (on self, not this: the reset-settings callback above reaches for them by that name)
             self.componentFactory = new ComponentFactory();
-            var fillColorViewModel = self.componentFactory.createColorPicker("qrcode-fill-color-picker");
-            this.qrCodeFillColor = fillColorViewModel.selectedColor;
-            // Init with current value
-            this.qrCodeFillColor(self.pluginSettings.qrCodeFillColor());  // needed
-            this.qrCodeFillColor.subscribe(function(newColorValue){
+            var fillColorViewModel = self.componentFactory.createColorPicker(
+                "qrcode-fill-color-picker", self.pluginSettings.qrCodeFillColor());
+            self.qrCodeFillColor = fillColorViewModel.selectedColor;
+            self.qrCodeFillColor.subscribe(function(newColorValue){
                 self.pluginSettings.qrCodeFillColor(newColorValue);
             });
 
-            var backgroundColorViewModel = self.componentFactory.createColorPicker("qrcode-background-color-picker");
-            this.qrCodeBackgroundColor = backgroundColorViewModel.selectedColor;
-            // Init with current value
-            this.qrCodeBackgroundColor(self.pluginSettings.qrCodeBackgroundColor());  // needed
-            this.qrCodeBackgroundColor.subscribe(function(newColorValue){
+            var backgroundColorViewModel = self.componentFactory.createColorPicker(
+                "qrcode-background-color-picker", self.pluginSettings.qrCodeBackgroundColor());
+            self.qrCodeBackgroundColor = backgroundColorViewModel.selectedColor;
+            self.qrCodeBackgroundColor.subscribe(function(newColorValue){
                 self.pluginSettings.qrCodeBackgroundColor(newColorValue);
             });
 

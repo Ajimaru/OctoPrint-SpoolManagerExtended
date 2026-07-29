@@ -33,6 +33,8 @@ function SpoolManagerAddSpoolWizard() {
     self.spoolItemForCreation = null;
     self.octoScaleWeighing = null;
     self.octoScaleTagWriter = null;
+    // the three color picker widgets, created in initBinding (see _createColorPickers)
+    self.colorPickers = [];
 
     // catalogs for the vendor/material/color inputs, same source as the edit dialog
     self.allMaterials = ko.observableArray([]);
@@ -43,9 +45,10 @@ function SpoolManagerAddSpoolWizard() {
     self.useFullFieldSet = ko.observable(false);
     self.nextSpoolId = ko.observable(null);
 
-    // Color inputs. The editable SpoolItem would drive these through the pick-a-color widgets of
-    // the edit dialog, which the wizard must not touch, so it keeps its own native colour inputs
-    // and builds the stored value with the shared compose/parse helpers.
+    // Color inputs. These stay plain observables rather than being the pickers' own: the
+    // subscriptions below are wired in the constructor, while the picker widgets can only be
+    // created in initBinding (their containers do not exist before that). The pickers are
+    // attached to these observables there, in both directions.
     self.colorHex = ko.observable(SPOOLMANAGER_CONSTANTS.COLORS.DEFAULT);
     self.colorHex2 = ko.observable("#0000ff");
     self.colorHex3 = ko.observable("#ffff00");
@@ -389,6 +392,57 @@ function SpoolManagerAddSpoolWizard() {
         self._composeColor();
     };
 
+    // Creates the three picker widgets and ties them to colorHex/colorHex2/colorHex3. Called from
+    // initBinding, because the containers only exist once the wizard template is in the DOM.
+    //
+    // The link is two-way: the picker pushes what the user chose into the observable, and
+    // _applyColorValue (template spools, reset) pushes the other way. A guard per picker keeps the
+    // two from echoing each other.
+    self._createColorPickers = function(){
+        var pickerSpecs = [
+            { elementId: "wizard-color-picker",  observable: self.colorHex,  suggestsName: true },
+            { elementId: "wizard-color-picker2", observable: self.colorHex2, suggestsName: false },
+            { elementId: "wizard-color-picker3", observable: self.colorHex3, suggestsName: false }
+        ];
+
+        self.colorPickers = pickerSpecs.map(function(spec){
+            var picker = SPOOLMANAGER_COLOR_PICKER.create("#" + spec.elementId, {
+                initialColor: spec.observable()
+            });
+            var syncing = false;
+
+            picker.selectedColor.subscribe(function(newColor){
+                if (syncing == true){
+                    return;
+                }
+                syncing = true;
+                try {
+                    spec.observable(newColor);
+                    if (spec.suggestsName == true){
+                        // used to hang off the native input's change event
+                        self.suggestColorName();
+                    }
+                } finally {
+                    syncing = false;
+                }
+            });
+
+            spec.observable.subscribe(function(newColor){
+                if (syncing == true){
+                    return;
+                }
+                syncing = true;
+                try {
+                    picker.selectedColor(newColor);
+                } finally {
+                    syncing = false;
+                }
+            });
+
+            return picker;
+        });
+    };
+
     // Suggest a color name from the picked value, but never overwrite something the user typed.
     self.suggestColorName = function(){
         if ((self.spoolItemForCreation.colorName() || "").trim().length > 0){
@@ -567,9 +621,11 @@ function SpoolManagerAddSpoolWizard() {
 
         self.wizardDialog = $("#dialog_addSpoolWizard");
         // isEditable:false is essential - see the note at the top of this file. The editable
-        // variant re-binds the #filament-color-picker* widgets, which belong to the edit
-        // dialog; creating a second editable item steals them and breaks the pickers there.
+        // variant wires vendor/material/labels and the color pickers to the edit dialog's
+        // fixed ids; creating a second editable item would steal them from that dialog.
         self.spoolItemForCreation = new SpoolItem(null, { isEditable: false, catalogs: self.catalogs });
+
+        self._createColorPickers();
         self.spoolItemForCreation.isInActive.subscribe(function(newValue){
             self.spoolItemForCreation.isActive(!newValue);
         });
