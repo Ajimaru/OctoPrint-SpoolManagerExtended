@@ -445,7 +445,11 @@ let SpoolItem;
         this.noteText(updateData.noteText);
         this.noteDeltaFormat(updateData.noteDeltaFormat);
         if (updateData.noteHtml != null){
-            this.noteHtml(updateData.noteHtml);
+            // Notes saved before the link normalisation landed can still contain href="web.de",
+            // which the browser resolves against OctoPrint's own URL. Repairing it on the way
+            // into the table leaves stored rows untouched (no migration needed) - a note re-saved
+            // through the edit dialog is cleaned permanently by the Quill link override.
+            this.noteHtml(SPOOLMANAGER_UTILS.repairNoteHtmlLinks(updateData.noteHtml));
         } else {
             // Fallback text
             this.noteHtml(updateData.noteText);

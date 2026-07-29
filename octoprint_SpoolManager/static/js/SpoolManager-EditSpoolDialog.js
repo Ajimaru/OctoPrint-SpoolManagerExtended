@@ -1108,7 +1108,9 @@ function SpoolManagerEditSpoolDialog(){
                 // Fallback is text (if present), not Html
                 self.noteEditor.setText(updateData.noteText != null ? updateData.noteText : "", 'api');
             } else {
-                var deltaFormat = JSON.parse(updateData.noteDeltaFormat);
+                // Links stored before the normalisation landed still carry a scheme-less href;
+                // setContents() bypasses the Link blot's sanitize(), so repair them here.
+                var deltaFormat = SPOOLMANAGER_UTILS.repairNoteDeltaLinks(JSON.parse(updateData.noteDeltaFormat));
                 self.noteEditor.setContents(deltaFormat, 'api');
             }
         }
