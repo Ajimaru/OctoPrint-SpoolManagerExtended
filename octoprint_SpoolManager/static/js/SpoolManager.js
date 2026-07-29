@@ -1512,6 +1512,21 @@ $(function() {
             "spoolmanager.spooltable."
         );
 
+        // The whole table row opens the edit dialog, so a click on a link inside a note would
+        // never reach the browser's default navigation. Stop it from bubbling up to the row
+        // binding for anchors only - every other spot in the note cell keeps opening the dialog.
+        // Returning true matters: Knockout suppresses the default action when a click handler
+        // returns false, which would swallow the navigation we are trying to allow here.
+        self.handleNoteClick = function(event) {
+            // closest(), not target.tagName: the click usually lands on nested markup
+            // (<a><strong>text</strong></a>), where the target is the inner element
+            if (event.target.closest("a[href]") == null) {
+                return true;
+            }
+            event.stopPropagation();
+            return true;
+        };
+
         self.showSpoolDialogAction = function(selectedSpoolItem) {
 
             // identify for which toolindex is the current selectedSpoolItem is selected
