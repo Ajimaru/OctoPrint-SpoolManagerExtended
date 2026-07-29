@@ -183,17 +183,12 @@ let SpoolItem;
             // true = transparent without any base tint ("transparent"),
             // false = transparent with a chosen base color ("transparent:#hex")
             this.transparentUntinted = ko.observable(false);
-            var colorViewModel = ComponentFactory.createColorPicker("filament-color-picker", true);
-            var colorViewModel2 = ComponentFactory.createColorPicker("filament-color-picker2", true);
-            var colorViewModel3 = ComponentFactory.createColorPicker("filament-color-picker3", true);
-            // picking the "translucent" swatch enables transparent without a base tint
-            var activateTransparent = function(){
-                spoolItemInstance.transparentUntinted(true);
-                spoolItemInstance.isTransparent(true);
-            };
-            colorViewModel.onTranslucentSelected = activateTransparent;
-            colorViewModel2.onTranslucentSelected = activateTransparent;
-            colorViewModel3.onTranslucentSelected = activateTransparent;
+            // "transparent without a base tint" is the "completely colorless" checkbox in the
+            // dialog (bound to transparentUntinted); it used to be pick-a-color's translucent
+            // swatch, which went away with the widget.
+            var colorViewModel = ComponentFactory.createColorPicker("filament-color-picker", DEFAULT_COLOR);
+            var colorViewModel2 = ComponentFactory.createColorPicker("filament-color-picker2", "#0000ff");
+            var colorViewModel3 = ComponentFactory.createColorPicker("filament-color-picker3", "#ffff00");
             var pickerColors = [colorViewModel.selectedColor, colorViewModel2.selectedColor, colorViewModel3.selectedColor];
             var applyingColor = false;
             var composeColor = function(){

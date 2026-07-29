@@ -204,15 +204,15 @@ FPE;	2.16
                 <div class="control-group">
                     <label class="control-label">Fill color</label>
                     <div class="controls">
-{#                        <input type="text" class="input-midi text-left" data-bind="value: pluginSettings.qrCodeFillColor">#}
-                        <input data-bind="value: pluginSettings.qrCodeFillColor" id="qrcode-fill-color-picker" type="text" name="border-color" class="pick-a-color form-control input-mini">
+                        {# Container for the color picker component; the value is kept in sync
+                           with pluginSettings.qrCodeFillColor in SpoolManager.js. #}
+                        <span id="qrcode-fill-color-picker"></span>
                     </div>
                 </div>
                 <div class="control-group">
                     <label class="control-label">Background color</label>
                     <div class="controls">
-{#                        <input type="text" class="input-midi text-left" data-bind="value: pluginSettings.qrCodeBackgroundColor">#}
-                        <input data-bind="value: pluginSettings.qrCodeBackgroundColor" id="qrcode-background-color-picker" type="text" name="border-color" class="pick-a-color form-control input-mini">
+                        <span id="qrcode-background-color-picker"></span>
                     </div>
                 </div>
                 <div class="control-group">

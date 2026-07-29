@@ -89,18 +89,16 @@
 
             <!-- STEP: COLOR -->
             <div data-bind="visible: currentStepId() === 'color'">
-                {# Up to three colors, same as the edit dialog. Native <input type="color"> instead
-                   of the pick-a-color widget, which is bound to the edit dialog's fixed ids. #}
+                {# Up to three colors, same as the edit dialog - and since the color picker
+                   component takes a container element rather than a fixed id, both dialogs
+                   can now use the very same widget (see common/colorPicker.js). #}
                 <div class="control-group">
                     <label class="control-label">{{ _('Color') }}</label>
                     <div class="controls">
                         <span data-bind="visible: !isRainbow() && !isColorless()">
-                            <input type="color" class="input-mini" style="height: 30px; padding: 2px;"
-                                   data-bind="value: colorHex, event: { change: suggestColorName }">
-                            <input type="color" class="input-mini" style="height: 30px; padding: 2px;"
-                                   data-bind="value: colorHex2, visible: colorCount() >= 2">
-                            <input type="color" class="input-mini" style="height: 30px; padding: 2px;"
-                                   data-bind="value: colorHex3, visible: colorCount() >= 3">
+                            <span id="wizard-color-picker"></span>
+                            <span data-bind="visible: colorCount() >= 2"><span id="wizard-color-picker2"></span></span>
+                            <span data-bind="visible: colorCount() >= 3"><span id="wizard-color-picker3"></span></span>
                             <a href="#" class="btn btn-mini" title="{{ _('Add a color (multi-color spool)') }}"
                                data-bind="click: addColor, visible: colorCount() < 3"><i class="fas fa-plus"></i></a>
                             <a href="#" class="btn btn-mini" title="{{ _('Remove last color') }}"
