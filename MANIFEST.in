@@ -2,3 +2,7 @@ include README.md
 recursive-include octoprint_SpoolManager/templates *
 recursive-include octoprint_SpoolManager/translations *
 recursive-include octoprint_SpoolManager/static *
+# Vendored 3rd-party licences. BSD-3-Clause (Quill) requires the copyright notice,
+# conditions and disclaimer to accompany redistributions in binary form - the minified
+# bundles under static/ only carry the copyright header, so the full text ships here.
+include 3rdPartySoftware/*/LICENSE
