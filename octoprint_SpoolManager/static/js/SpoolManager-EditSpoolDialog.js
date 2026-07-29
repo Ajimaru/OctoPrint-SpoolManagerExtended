@@ -710,7 +710,7 @@ function SpoolManagerEditSpoolDialog(){
         // OctoScale: weighing and NFC tag writing straight from the dialog, so a spool can be
         // weighed or tagged without going through the wizard. Shared implementation, see
         // SpoolManager-OctoScale.js.
-        self.octoScaleWeighing = new SpoolManagerOctoScaleWeighing(apiClient);
+        self.octoScaleWeighing = new SpoolManagerOctoScaleWeighing(apiClient, pluginSettings);
         self.octoScaleTagWriter = new SpoolManagerOctoScaleTagWriter(apiClient);
 
         // closing the dialog (Save, Close, Esc) must not leave the device pollers running

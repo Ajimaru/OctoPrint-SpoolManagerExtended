@@ -150,6 +150,15 @@ function SpoolManagerAddSpoolWizard() {
         return self.pluginSettings.octoScaleEnabled() == true;
     });
 
+    // Display unit for every weight shown in the wizard. pluginSettings is only assigned in
+    // initBinding, so this has to tolerate null - hence the read through the helper rather than
+    // a captured reference.
+    self.selectedWeightUnit = function(){
+        return SPOOLMANAGER_UTILS.selectedWeightUnit(self.pluginSettings);
+    };
+
+    self.weightUnitText = ko.pureComputed(self.selectedWeightUnit);
+
     self.visibleSteps = ko.pureComputed(function(){
         return ko.utils.arrayFilter(ALL_STEPS, function(step){
             return step.isVisible();
@@ -505,7 +514,9 @@ function SpoolManagerAddSpoolWizard() {
         if (filamentWeight < 0){
             return "The empty spool weight is higher than the total weight.";
         }
-        return "Filament: " + (Math.round(filamentWeight * 10) / 10) + " g";
+        // round in grams first, then convert - otherwise kg display would round away the tenths
+        return "Filament: " + SPOOLMANAGER_UTILS.formatWeightForDisplay(
+            Math.round(filamentWeight * 10) / 10, self.pluginSettings);
     });
 
     ////////////////////////////////////////////////////////////////////////////////////// REVIEW
@@ -530,8 +541,10 @@ function SpoolManagerAddSpoolWizard() {
             reviewEntry("Finish", item.finish()),
             reviewEntry("Density", item.density() ? item.density() + " g/cm³" : null),
             reviewEntry("Diameter", item.diameter() ? item.diameter() + " mm" : null),
-            reviewEntry("Total weight", item.totalCombinedWeight() ? item.totalCombinedWeight() + " g" : null),
-            reviewEntry("Empty spool weight", item.spoolWeight() ? item.spoolWeight() + " g" : null)
+            reviewEntry("Total weight", item.totalCombinedWeight()
+                ? SPOOLMANAGER_UTILS.formatWeightForDisplay(item.totalCombinedWeight(), self.pluginSettings) : null),
+            reviewEntry("Empty spool weight", item.spoolWeight()
+                ? SPOOLMANAGER_UTILS.formatWeightForDisplay(item.spoolWeight(), self.pluginSettings) : null)
         ];
         if (self.useFullFieldSet()){
             entries = entries.concat([
@@ -625,6 +638,15 @@ function SpoolManagerAddSpoolWizard() {
         // fixed ids; creating a second editable item would steal them from that dialog.
         self.spoolItemForCreation = new SpoolItem(null, { isEditable: false, catalogs: self.catalogs });
 
+        // The weight inputs bind to these, not to the SpoolItem observables: the item keeps holding
+        // grams for validation and for the save payload, while the field shows the configured unit.
+        // Created here because spoolItemForCreation does not exist before this point - safe, since
+        // initBinding runs from onBeforeBinding, i.e. before ko.applyBindings.
+        self.totalCombinedWeightDisplay = SPOOLMANAGER_UTILS.makeWeightDisplayKo(
+            self.spoolItemForCreation.totalCombinedWeight, self.selectedWeightUnit);
+        self.spoolWeightDisplay = SPOOLMANAGER_UTILS.makeWeightDisplayKo(
+            self.spoolItemForCreation.spoolWeight, self.selectedWeightUnit);
+
         self._createColorPickers();
         self.spoolItemForCreation.isInActive.subscribe(function(newValue){
             self.spoolItemForCreation.isActive(!newValue);
@@ -646,7 +668,7 @@ function SpoolManagerAddSpoolWizard() {
             self._suggestDensityForMaterial(newValue);
         });
 
-        self.octoScaleWeighing = new SpoolManagerOctoScaleWeighing(apiClient);
+        self.octoScaleWeighing = new SpoolManagerOctoScaleWeighing(apiClient, pluginSettings);
         self.octoScaleTagWriter = new SpoolManagerOctoScaleTagWriter(apiClient);
 
         // a dialog closed with Esc or the backdrop must not leave pollers running

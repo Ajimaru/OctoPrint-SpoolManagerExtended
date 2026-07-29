@@ -24,11 +24,13 @@ const OCTOSCALE_NFC_POLL_INTERVAL_MS = 1200;
 // error is shown - and the last known value stays on screen meanwhile.
 const OCTOSCALE_TOLERATED_CONSECUTIVE_FAILURES = 3;
 
-function SpoolManagerOctoScaleWeighing(apiClient) {
+function SpoolManagerOctoScaleWeighing(apiClient, pluginSettings) {
 
     var self = this;
 
     self.apiClient = apiClient;
+    // only used to pick the unit of the readout label; currentWeight() stays in grams
+    self.pluginSettings = pluginSettings;
 
     self.isActive = ko.observable(false);
     self.currentWeight = ko.observable(null);
@@ -46,7 +48,8 @@ function SpoolManagerOctoScaleWeighing(apiClient) {
         if (weight == null){
             return "--";
         }
-        return weight.toFixed(1) + " g";
+        // the device always reports grams (responseData.grams); only the label converts
+        return SPOOLMANAGER_UTILS.formatWeightForDisplay(Math.round(weight * 10) / 10, self.pluginSettings);
     });
 
     var consecutiveFailures = 0;
