@@ -57,15 +57,15 @@
                     </div>
                     <div class="btn-group">
                         <button class="btn"
-                                data-bind="click: addNewSpool,
+                                data-bind="click: addNewSpoolViaWizard,
                                            enable: schemeUpgradeNeeded() == false,
-                                           attr: { title: schemeUpgradeNeeded() ? 'Upgrade the database scheme first (Plugin Settings -> Storage)' : 'Add new Spool' }"><i class="fa fa-plus"></i> Add Spool</button>
+                                           attr: { title: schemeUpgradeNeeded() ? 'Upgrade the database scheme first (Plugin Settings -> Storage)' : 'Add new Spool via Wizard' }"><i class="fas fa-magic"></i> Add Spool Wizard</button>
                         <button class="btn dropdown-toggle" data-toggle="dropdown"
                                 data-bind="enable: schemeUpgradeNeeded() == false"
                                 title="More ways to add a spool"><b class="caret"></b></button>
                         <ul class="dropdown-menu">
-                            <li><a href="#" data-bind="click: addNewSpool"><i class="fa fa-plus"></i> Add Spool</a></li>
                             <li><a href="#" data-bind="click: addNewSpoolViaWizard"><i class="fas fa-magic"></i> Add Spool Wizard</a></li>
+                            <li><a href="#" data-bind="click: addNewSpool"><i class="fa fa-plus"></i> Add Spool</a></li>
                         </ul>
                     </div>
                 </div>
