@@ -489,13 +489,10 @@ class DatabaseManager(object):
         #
         # UPDATE 'spo_pluginmetadatamodel' SET value=5 WHERE key='databaseSchemeVersion';
 
-        sql = (
-            sql
-            + """
+        sql = sql + """
         COMMIT;
         PRAGMA foreign_keys=on;
         """
-        )
         cursor.executescript(sql)
 
         connection.close()
