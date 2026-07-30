@@ -12,7 +12,6 @@
  * Defined without specifier to be globally accessible
  */
 SPOOLMANAGER_DIALOGS = {
-
     // Bootstrap 2 renders the message as HTML - escape anything that comes from spool data.
     escapeHtml: function (value) {
         if (value == null) {
@@ -47,12 +46,13 @@ SPOOLMANAGER_DIALOGS = {
      * Never rejects, so call sites do not need a .catch().
      */
     _confirmationDialog: function (options) {
-
         return new Promise(function (resolve) {
             if (typeof showConfirmationDialog !== "function") {
                 // Fallback for environments without OctoPrint's helper (e.g. plain unit tests).
                 var plainText = [options.title, options.message, options.question]
-                    .filter(function (part) { return part != null && part != ""; })
+                    .filter(function (part) {
+                        return part != null && part != "";
+                    })
                     .join("\n\n")
                     .replace(/<[^>]+>/g, "");
                 resolve(confirm(plainText) ? 0 : null);
@@ -74,7 +74,8 @@ SPOOLMANAGER_DIALOGS = {
                 question: options.question,
                 cancel: options.cancel != null ? options.cancel : "Cancel",
                 proceed: options.proceed != null ? options.proceed : "Proceed",
-                proceedClass: options.proceedClass != null ? options.proceedClass : "primary",
+                proceedClass:
+                    options.proceedClass != null ? options.proceedClass : "primary",
                 onproceed: function (buttonIndex) {
                     // fires before the modal is hidden, so this wins over the onclose fallback below
                     settle(buttonIndex == null ? 0 : buttonIndex);
@@ -108,7 +109,7 @@ SPOOLMANAGER_DIALOGS = {
      * @returns {Promise<Boolean>} true when the user proceeded
      */
     confirmDanger: function (options) {
-        var dangerOptions = $.extend({}, options, { proceedClass: "danger" });
+        var dangerOptions = $.extend({}, options, {proceedClass: "danger"});
         return this.confirm(dangerOptions);
     },
 
@@ -130,11 +131,12 @@ SPOOLMANAGER_DIALOGS = {
      */
     notify: function (options) {
         var type = options.type != null ? options.type : "info";
-        var title = type.toUpperCase() + ": " + (options.title != null ? options.title : "");
+        var title =
+            type.toUpperCase() + ": " + (options.title != null ? options.title : "");
         var message = options.message != null ? options.message : "";
         var popupId = (title + message).replace(/([^a-z0-9]+)/gi, "-");
         // errors stay until dismissed, everything else auto-hides unless told otherwise
-        var autoclose = options.autoclose != null ? options.autoclose : (type != "error");
+        var autoclose = options.autoclose != null ? options.autoclose : type != "error";
 
         if ($("." + popupId).length < 1) {
             new PNotify({

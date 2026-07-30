@@ -18,7 +18,6 @@
  * Defined without specifier to be globally accessible
  */
 SPOOLMANAGER_COLOR_PICKER = {
-
     // number of swatches per row; also drives the menu width via CSS
     GRID_COLUMNS: 8,
 
@@ -36,7 +35,10 @@ SPOOLMANAGER_COLOR_PICKER = {
         var $container = $(container);
         if ($container.length === 0) {
             console.warn("SpoolManager: color picker container not found", container);
-            return { selectedColor: ko.observable(settings.initialColor || null), destroy: function () {} };
+            return {
+                selectedColor: ko.observable(settings.initialColor || null),
+                destroy: function () {}
+            };
         }
 
         var self = {};
@@ -57,7 +59,7 @@ SPOOLMANAGER_COLOR_PICKER = {
             '<button type="button" class="btn spm-color-picker-toggle">' +
                 '<span class="color-preview spm-color-picker-current"></span>' +
                 '<span class="caret"></span>' +
-            "</button>"
+                "</button>"
         );
         var $menu = $('<div class="dropdown-menu spm-color-picker-menu"></div>');
 
@@ -67,13 +69,21 @@ SPOOLMANAGER_COLOR_PICKER = {
         var advancedTabId = "spm-color-advanced-" + instanceId;
         var $tabs = $(
             '<ul class="nav nav-tabs spm-color-picker-tabs">' +
-                '<li class="active"><a href="#" data-spm-tab="' + basicTabId + '">Basic Colors</a></li>' +
-                '<li><a href="#" data-spm-tab="' + advancedTabId + '">Advanced</a></li>' +
-            "</ul>"
+                '<li class="active"><a href="#" data-spm-tab="' +
+                basicTabId +
+                '">Basic Colors</a></li>' +
+                '<li><a href="#" data-spm-tab="' +
+                advancedTabId +
+                '">Advanced</a></li>' +
+                "</ul>"
         );
 
         // --- basic tab: swatch grid + hex input
-        var $basicPanel = $('<div class="spm-color-picker-panel active" data-spm-panel="' + basicTabId + '"></div>');
+        var $basicPanel = $(
+            '<div class="spm-color-picker-panel active" data-spm-panel="' +
+                basicTabId +
+                '"></div>'
+        );
         var $grid = $('<div class="spm-color-picker-grid"></div>');
         var palette = SPOOLMANAGER_CONSTANTS.COLORS.PALETTE;
         for (var i = 0; i < palette.length; i++) {
@@ -84,21 +94,33 @@ SPOOLMANAGER_COLOR_PICKER = {
                 .appendTo($grid);
         }
         var $hexRow = $('<div class="spm-color-picker-hex-row"></div>');
-        var $hexInput = $('<input type="text" class="spm-color-picker-hex" spellcheck="false" maxlength="7">');
-        $hexRow.append($('<span class="spm-color-picker-hex-label">Hex</span>')).append($hexInput);
+        var $hexInput = $(
+            '<input type="text" class="spm-color-picker-hex" spellcheck="false" maxlength="7">'
+        );
+        $hexRow
+            .append($('<span class="spm-color-picker-hex-label">Hex</span>'))
+            .append($hexInput);
         $basicPanel.append($grid).append($hexRow);
 
         // --- advanced tab: HSL sliders + preview
         // Native range inputs instead of the widget's hand-rolled drag bands: same result, but
         // they work on touch and with the keyboard, and the gradient still goes in the track.
-        var $advancedPanel = $('<div class="spm-color-picker-panel" data-spm-panel="' + advancedTabId + '"></div>');
+        var $advancedPanel = $(
+            '<div class="spm-color-picker-panel" data-spm-panel="' +
+                advancedTabId +
+                '"></div>'
+        );
         var buildSlider = function (label, max) {
             var $row = $('<div class="spm-color-picker-slider-row"></div>');
-            var $label = $('<span class="spm-color-picker-slider-label"></span>').text(label + ": ");
+            var $label = $('<span class="spm-color-picker-slider-label"></span>').text(
+                label + ": "
+            );
             var $value = $('<span class="spm-color-picker-slider-value"></span>');
-            var $input = $('<input type="range" class="spm-color-picker-slider" min="0" step="1">').attr("max", max);
+            var $input = $(
+                '<input type="range" class="spm-color-picker-slider" min="0" step="1">'
+            ).attr("max", max);
             $row.append($label.append($value)).append($input);
-            return { row: $row, input: $input, value: $value };
+            return {row: $row, input: $input, value: $value};
         };
         var hueSlider = buildSlider("Hue", 360);
         var saturationSlider = buildSlider("Saturation", 100);
@@ -134,7 +156,10 @@ SPOOLMANAGER_COLOR_PICKER = {
             var normalizedValue = hexValue.toLowerCase();
             $grid.find(".spm-swatch").each(function () {
                 var $swatch = $(this);
-                $swatch.toggleClass("selected", $swatch.attr("data-spm-hex").toLowerCase() === normalizedValue);
+                $swatch.toggleClass(
+                    "selected",
+                    $swatch.attr("data-spm-hex").toLowerCase() === normalizedValue
+                );
             });
 
             var hsl = tinycolor(hexValue).toHsl();
@@ -155,13 +180,22 @@ SPOOLMANAGER_COLOR_PICKER = {
             // its own component swept across the range
             // background-image rather than the "background" shorthand: the shorthand would also
             // reset background-color and is rejected outright by stricter CSS parsers
-            hueSlider.input.css("background-image", SPOOLMANAGER_COLOR_PICKER._hueGradient(saturation, lightness));
-            saturationSlider.input.css("background-image", SPOOLMANAGER_COLOR_PICKER._sweepGradient(
-                function (step) { return { h: hue, s: step, l: lightness }; }
-            ));
-            lightnessSlider.input.css("background-image", SPOOLMANAGER_COLOR_PICKER._sweepGradient(
-                function (step) { return { h: hue, s: saturation, l: step }; }
-            ));
+            hueSlider.input.css(
+                "background-image",
+                SPOOLMANAGER_COLOR_PICKER._hueGradient(saturation, lightness)
+            );
+            saturationSlider.input.css(
+                "background-image",
+                SPOOLMANAGER_COLOR_PICKER._sweepGradient(function (step) {
+                    return {h: hue, s: step, l: lightness};
+                })
+            );
+            lightnessSlider.input.css(
+                "background-image",
+                SPOOLMANAGER_COLOR_PICKER._sweepGradient(function (step) {
+                    return {h: hue, s: saturation, l: step};
+                })
+            );
         };
 
         // single funnel for every user-driven change
@@ -230,7 +264,10 @@ SPOOLMANAGER_COLOR_PICKER = {
             $tabs.find("li").removeClass("active");
             $(this).parent().addClass("active");
             $menu.find(".spm-color-picker-panel").each(function () {
-                $(this).toggleClass("active", $(this).attr("data-spm-panel") === targetPanel);
+                $(this).toggleClass(
+                    "active",
+                    $(this).attr("data-spm-panel") === targetPanel
+                );
             });
         });
 
@@ -244,7 +281,7 @@ SPOOLMANAGER_COLOR_PICKER = {
         $hexInput.on("input", function () {
             var typedValue = $hexInput.val();
             if (SPOOLMANAGER_COLOR_PICKER._normalizeHex(typedValue) != null) {
-                commitColor(typedValue, { skipHexInput: true });
+                commitColor(typedValue, {skipHexInput: true});
             }
         });
         $hexInput.on("blur", function () {
@@ -261,11 +298,11 @@ SPOOLMANAGER_COLOR_PICKER = {
             var hexValue = tinycolor({
                 h: parseInt(hueSlider.input.val(), 10),
                 s: parseInt(saturationSlider.input.val(), 10) / 100,
-                l: parseInt(lightnessSlider.input.val(), 10) / 100,
+                l: parseInt(lightnessSlider.input.val(), 10) / 100
             }).toHexString();
             // the dragged slider keeps its own position; re-setting .val() mid-drag would fight
             // the browser, and rounding through HSL can shift the other two by a step
-            commitColor(hexValue, { skipSliders: true });
+            commitColor(hexValue, {skipSliders: true});
         };
         hueSlider.input.on("input change", onSliderInput);
         saturationSlider.input.on("input change", onSliderInput);
@@ -314,7 +351,7 @@ SPOOLMANAGER_COLOR_PICKER = {
     // 0..360 in fixed steps, so the hue track shows the full wheel at the current S/L
     _hueGradient: function (saturation, lightness) {
         return SPOOLMANAGER_COLOR_PICKER._sweepGradient(function (step) {
-            return { h: step * 3.6, s: saturation, l: lightness };
+            return {h: step * 3.6, s: saturation, l: lightness};
         });
     },
 
@@ -324,8 +361,13 @@ SPOOLMANAGER_COLOR_PICKER = {
         var stops = [];
         for (var step = 0; step <= 100; step += 10) {
             var hsl = hslForStep(step);
-            stops.push(tinycolor({ h: hsl.h, s: hsl.s / 100, l: hsl.l / 100 }).toHexString() + " " + step + "%");
+            stops.push(
+                tinycolor({h: hsl.h, s: hsl.s / 100, l: hsl.l / 100}).toHexString() +
+                    " " +
+                    step +
+                    "%"
+            );
         }
         return "linear-gradient(to right, " + stops.join(", ") + ")";
-    },
+    }
 };

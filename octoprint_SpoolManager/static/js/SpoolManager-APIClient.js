@@ -1,7 +1,4 @@
-
-
 function SpoolManagerAPIClient(pluginId, baseUrl) {
-
     this.pluginId = pluginId;
     this.baseUrl = baseUrl;
 
@@ -10,7 +7,7 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
     // see https://gomakethings.com/how-to-build-a-query-string-from-an-object-with-vanilla-js/
     var _buildRequestQuery = function (data) {
         // If the data is already a string, return it as-is
-        if (typeof (data) === 'string') return data;
+        if (typeof data === "string") return data;
 
         // Create a query array to hold the key/value pairs
         var query = [];
@@ -18,22 +15,20 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
         // Loop through the data object
         for (var key in data) {
             if (data.hasOwnProperty(key)) {
-
                 // Encode each key and value, concatenate them into a string, and push them to the array
-                query.push(encodeURIComponent(key) + '=' + encodeURIComponent(data[key]));
+                query.push(encodeURIComponent(key) + "=" + encodeURIComponent(data[key]));
             }
         }
         // Join each item in the array with a `&` and return the resulting string
-        return query.join('&');
-
+        return query.join("&");
     };
 
-    var _addApiKeyIfNecessary = function(urlContext){
-        if (UI_API_KEY){
+    var _addApiKeyIfNecessary = function (urlContext) {
+        if (UI_API_KEY) {
             urlContext = urlContext + "?apikey=" + UI_API_KEY;
         }
         return urlContext;
-    }
+    };
 
     // fetch()-based API layer, approach adopted from mdziekon/OctoPrint-SpoolManager
     // PR #2 (GH-1) and PR #7 (GH-4): a shared callApi() helper replaces the
@@ -61,8 +56,8 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
         return {
             method: method,
             headers: headers,
-            body: options.body,          // undefined for GET/bodyless requests
-            credentials: "same-origin"   // match jQuery: send the session cookie
+            body: options.body, // undefined for GET/bodyless requests
+            credentials: "same-origin" // match jQuery: send the session cookie
         };
     };
 
@@ -99,17 +94,24 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
             });
     };
 
-    this.getExportUrl = function(exportType, databaseInUse){
-        return _addApiKeyIfNecessary("./plugin/" + this.pluginId + "/exportSpools/" + exportType + "?instance=" + databaseInUse);
-    }
+    this.getExportUrl = function (exportType, databaseInUse) {
+        return _addApiKeyIfNecessary(
+            "./plugin/" +
+                this.pluginId +
+                "/exportSpools/" +
+                exportType +
+                "?instance=" +
+                databaseInUse
+        );
+    };
 
-    this.getInventoryReportUrl = function(tableQuery, databaseInUse, reportFormat){
+    this.getInventoryReportUrl = function (tableQuery, databaseInUse, reportFormat) {
         var params = ["instance=" + encodeURIComponent(databaseInUse)];
         params.push("format=" + encodeURIComponent(reportFormat || "pdf"));
-        if (tableQuery){
+        if (tableQuery) {
             var passThrough = ["sortColumn", "sortOrder", "filterName", "textFilter"];
-            passThrough.forEach(function(key){
-                if (tableQuery[key] != null){
+            passThrough.forEach(function (key) {
+                if (tableQuery[key] != null) {
                     params.push(key + "=" + encodeURIComponent(tableQuery[key]));
                 }
             });
@@ -117,198 +119,239 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
             // matching how the backend reads them via flask.request.values.
             // Always send all three: the backend accesses them together and would
             // KeyError if only some are present (see _applyTableQueryFilters).
-            ["materialFilter", "vendorFilter", "colorFilter"].forEach(function(key){
+            ["materialFilter", "vendorFilter", "colorFilter"].forEach(function (key) {
                 var value = tableQuery[key];
-                if (value == null){
+                if (value == null) {
                     value = "all";
-                } else if (Array.isArray(value)){
+                } else if (Array.isArray(value)) {
                     value = value.join(",");
                 }
                 params.push(key + "=" + encodeURIComponent(value));
             });
         }
-        return _addApiKeyIfNecessary("./plugin/" + this.pluginId + "/exportInventoryReport?" + params.join("&"));
-    }
+        return _addApiKeyIfNecessary(
+            "./plugin/" + this.pluginId + "/exportInventoryReport?" + params.join("&")
+        );
+    };
 
-    this.getSampleCSVUrl = function(){
+    this.getSampleCSVUrl = function () {
         return _addApiKeyIfNecessary("./plugin/" + this.pluginId + "/sampleCSV");
-    }
+    };
 
-    this.getDatabaseDumpExportUrl = function(){
+    this.getDatabaseDumpExportUrl = function () {
         return _addApiKeyIfNecessary("./plugin/" + this.pluginId + "/exportDatabaseDump");
-    }
+    };
 
-    this.getDatabaseBackupDownloadUrl = function(backupFileName){
-        return _addApiKeyIfNecessary("./plugin/" + this.pluginId + "/downloadDatabaseBackup?fileName=" + encodeURIComponent(backupFileName));
-    }
+    this.getDatabaseBackupDownloadUrl = function (backupFileName) {
+        return _addApiKeyIfNecessary(
+            "./plugin/" +
+                this.pluginId +
+                "/downloadDatabaseBackup?fileName=" +
+                encodeURIComponent(backupFileName)
+        );
+    };
 
-    this.callCreateDatabaseBackup = function (responseHandler){
-        _callApi(_buildPluginUrl("createDatabaseBackup"), { method: "PUT" },
-            function( data ){
+    this.callCreateDatabaseBackup = function (responseHandler) {
+        _callApi(
+            _buildPluginUrl("createDatabaseBackup"),
+            {method: "PUT"},
+            function (data) {
                 responseHandler(data);
-            });
-    }
+            }
+        );
+    };
 
     // Creates a safety backup of the active database before an import (.db/.sql + best-effort .csv),
     // stored in the plugin data folder. Response: { mandatoryBackupFile, optionalBackupFiles: [...] }.
     // Download each via getDatabaseBackupDownloadUrl(name).
-    this.callCreateImportBackup = function (responseHandler){
-        _callApi(_buildPluginUrl("createImportBackup"), { method: "PUT" },
-            function( data ){
+    this.callCreateImportBackup = function (responseHandler) {
+        _callApi(
+            _buildPluginUrl("createImportBackup"),
+            {method: "PUT"},
+            function (data) {
                 responseHandler(true, data);
             },
-            function( body, rawText ){
+            function (body, rawText) {
                 // consumers read .responseText (formerly jqXHR) for the error message
-                responseHandler(false, body || { responseText: rawText });
-            });
-    }
+                responseHandler(false, body || {responseText: rawText});
+            }
+        );
+    };
 
     //////////////////////////////////////////////////////////////////////////////// IMPORT MYSQL DATABASE DUMP
-    this.callImportDatabaseDump = function (file, importMode, responseHandler){
+    this.callImportDatabaseDump = function (file, importMode, responseHandler) {
         var formData = new FormData();
         formData.append("file", file);
         formData.append("importMode", importMode);
 
-        _callApi(_buildPluginUrl("importDatabaseDump"), { method: "POST", body: formData },
-            function( data ){
+        _callApi(
+            _buildPluginUrl("importDatabaseDump"),
+            {method: "POST", body: formData},
+            function (data) {
                 responseHandler(data);
-            });
-    }
+            }
+        );
+    };
 
     //////////////////////////////////////////////////////////////////////////////// RESTORE LOCAL .db FILE
-    this.callImportDatabaseFile = function (file, importMode, responseHandler){
+    this.callImportDatabaseFile = function (file, importMode, responseHandler) {
         var formData = new FormData();
         formData.append("file", file);
         formData.append("importMode", importMode);
 
-        _callApi(_buildPluginUrl("importDatabaseFile"), { method: "POST", body: formData },
-            function( data ){
+        _callApi(
+            _buildPluginUrl("importDatabaseFile"),
+            {method: "POST", body: formData},
+            function (data) {
                 responseHandler(true, data);
             },
-            function( body, rawText ){
+            function (body, rawText) {
                 // consumers read .errorMessage (JSON) or .responseText (formerly jqXHR)
-                responseHandler(false, body || { responseText: rawText });
-            });
-    }
+                responseHandler(false, body || {responseText: rawText});
+            }
+        );
+    };
 
     //////////////////////////////////////////////////////////////////////////////// LOAD AdditionalSettingsValues
-    this.callAdditionalSettings = function (responseHandler){
-        var urlToCall = this.baseUrl + "api/plugin/"+this.pluginId+"?action=additionalSettingsValues";
-        _callApi(urlToCall, { method: "GET" },
-            function( data ){
-                responseHandler(data)
-            });
-    }
+    this.callAdditionalSettings = function (responseHandler) {
+        var urlToCall =
+            this.baseUrl +
+            "api/plugin/" +
+            this.pluginId +
+            "?action=additionalSettingsValues";
+        _callApi(urlToCall, {method: "GET"}, function (data) {
+            responseHandler(data);
+        });
+    };
     //////////////////////////////////////////////////////////////////////////////// LOAD DatabaseMetaData
-    this.loadDatabaseMetaData = function (responseHandler){
-        _callApi(_buildPluginUrl("loadDatabaseMetaData"), { method: "GET" },
-            function( data ){
-                responseHandler(data)
-            });
-    }
+    this.loadDatabaseMetaData = function (responseHandler) {
+        _callApi(
+            _buildPluginUrl("loadDatabaseMetaData"),
+            {method: "GET"},
+            function (data) {
+                responseHandler(data);
+            }
+        );
+    };
     //////////////////////////////////////////////////////////////////////////////// TEST DatabaseConnection
-    this.testDatabaseConnection = function (databaseSettings, responseHandler){
+    this.testDatabaseConnection = function (databaseSettings, responseHandler) {
         var jsonPayload = ko.toJSON(databaseSettings);
 
-        _callApi(_buildPluginUrl("testDatabaseConnection"), { method: "PUT", body: jsonPayload },
-            function( data ){
+        _callApi(
+            _buildPluginUrl("testDatabaseConnection"),
+            {method: "PUT", body: jsonPayload},
+            function (data) {
                 responseHandler(data);
-            });
-    }
+            }
+        );
+    };
 
     //////////////////////////////////////////////////////////////////////////////////// UPGRADE Database Scheme
-    this.callUpgradeDatabaseScheme = function (payload, responseHandler){
-        _callApi(_buildPluginUrl("upgradeDatabaseScheme"), { method: "PUT", body: JSON.stringify(payload || {}) },
-            function( data ){
+    this.callUpgradeDatabaseScheme = function (payload, responseHandler) {
+        _callApi(
+            _buildPluginUrl("upgradeDatabaseScheme"),
+            {method: "PUT", body: JSON.stringify(payload || {})},
+            function (data) {
                 responseHandler(data);
-            });
-    }
+            }
+        );
+    };
 
     //////////////////////////////////////////////////////////////////////////////// CONFIRM DatabaseConnectionPoblem
-    this.confirmDatabaseProblemMessage = function (responseHandler){
-        _callApi(_buildPluginUrl("confirmDatabaseProblemMessage"), { method: "PUT" },
-            function( data ){
+    this.confirmDatabaseProblemMessage = function (responseHandler) {
+        _callApi(
+            _buildPluginUrl("confirmDatabaseProblemMessage"),
+            {method: "PUT"},
+            function (data) {
                 responseHandler(data);
-            });
-    }
-
+            }
+        );
+    };
 
     //////////////////////////////////////////////////////////////////////////////// LOAD FILTERED/SORTED PrintJob-Items
-    this.callLoadSpoolsByQuery = function (tableQuery, responseHandler){
+    this.callLoadSpoolsByQuery = function (tableQuery, responseHandler) {
         var query = _buildRequestQuery(tableQuery);
-        _callApi(_buildPluginUrl("loadSpoolsByQuery?" + query), { method: "GET" },
-            function( data ){
-                responseHandler(data)
-            });
-    }
-
+        _callApi(
+            _buildPluginUrl("loadSpoolsByQuery?" + query),
+            {method: "GET"},
+            function (data) {
+                responseHandler(data);
+            }
+        );
+    };
 
     ///////////////////////////////////////////////////////////////////////////////////////////// LOAD SELECTED Spools
-    this.callLoadSelectedSpools = function (responseHandler){
-        _callApi(_buildPluginUrl("loadSelectedSpools"), { method: "GET" },
-            function( data ){
-                responseHandler(data);
-            });
-    }
+    this.callLoadSelectedSpools = function (responseHandler) {
+        _callApi(_buildPluginUrl("loadSelectedSpools"), {method: "GET"}, function (data) {
+            responseHandler(data);
+        });
+    };
 
     ///////////////////////////////////////////////////////////////////////////////////////////////// LOAD Spool by Id
-    this.callLoadSpoolById = function (databaseId, responseHandler){
-        _callApi(_buildPluginUrl("spool/" + databaseId), { method: "GET" },
-            function( data ){
+    this.callLoadSpoolById = function (databaseId, responseHandler) {
+        _callApi(
+            _buildPluginUrl("spool/" + databaseId),
+            {method: "GET"},
+            function (data) {
                 responseHandler(data);
-            });
-    }
+            }
+        );
+    };
 
     ///////////////////////////////////////////////////////////////////////////////////////////////// LOAD NEXT Spool-Id
-    this.callLoadNextSpoolId = function (responseHandler){
-        _callApi(_buildPluginUrl("nextSpoolId"), { method: "GET" },
-            function( data ){
-                responseHandler(data);
-            });
-    }
+    this.callLoadNextSpoolId = function (responseHandler) {
+        _callApi(_buildPluginUrl("nextSpoolId"), {method: "GET"}, function (data) {
+            responseHandler(data);
+        });
+    };
 
     //////////////////////////////////////////////////////////////////////////////////////////////////// SAVE Spool-Item
-    this.callSaveSpool = function (spoolItem, responseHandler){
+    this.callSaveSpool = function (spoolItem, responseHandler) {
         var jsonPayload = ko.toJSON(spoolItem);
 
-        _callApi(_buildPluginUrl("saveSpool"), { method: "PUT", body: jsonPayload },
-            function( data ){
+        _callApi(
+            _buildPluginUrl("saveSpool"),
+            {method: "PUT", body: jsonPayload},
+            function (data) {
                 responseHandler(true);
             },
-            function( body, rawText, response ){
+            function (body, rawText, response) {
                 // server rejected the save (e.g. HTTP 400 with validation errors) - surface it instead of swallowing it
                 var validationErrors = null;
-                if (body && body.validationErrors){
+                if (body && body.validationErrors) {
                     validationErrors = body.validationErrors;
                 }
                 // HTTP 409 = someone else changed (or deleted) the spool while it was open in
                 // the dialog. Passed on separately so the caller can offer a real choice
                 // instead of just reporting a failure.
                 var conflict = null;
-                if (response && response.status === 409 && body){
+                if (response && response.status === 409 && body) {
                     conflict = {
-                        type: body.conflict,          // "version" or "deleted"
+                        type: body.conflict, // "version" or "deleted"
                         message: body.error,
-                        currentSpool: body.spool      // undefined for "deleted"
+                        currentSpool: body.spool // undefined for "deleted"
                     };
                 }
                 responseHandler(false, validationErrors, conflict);
-            });
-    }
+            }
+        );
+    };
 
     ////////////////////////////////////////////////////////////////////////////////////////////////// CREATE Spool-Item
     // Unlike callSaveSpool this answers with the new database id, which the wizard needs to
     // write an NFC tag right after creating the spool.
-    this.callCreateSpool = function (spoolItem, responseHandler){
+    this.callCreateSpool = function (spoolItem, responseHandler) {
         var jsonPayload = ko.toJSON(spoolItem);
 
-        _callApi(_buildPluginUrl("spool"), { method: "POST", body: jsonPayload },
-            function( data ){
+        _callApi(
+            _buildPluginUrl("spool"),
+            {method: "POST", body: jsonPayload},
+            function (data) {
                 responseHandler(true, data);
             },
-            function( body, rawText, response ){
+            function (body, rawText, response) {
                 var validationErrors = null;
-                if (body && body.validationErrors){
+                if (body && body.validationErrors) {
                     validationErrors = body.validationErrors;
                 } else {
                     // No JSON body: usually OctoPrint itself rejecting the request before the
@@ -317,144 +360,217 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
                     // could only report "could not be created" and the user has no way to guess
                     // that reloading the page fixes it.
                     var status = response ? response.status : 0;
-                    if (status === 400 || status === 403){
-                        validationErrors = ["The request was rejected by OctoPrint (HTTP " + status
-                            + "). This usually means the browser session expired - please reload the page and try again."];
-                    } else if (status !== 0){
-                        validationErrors = ["The server answered with HTTP " + status
-                            + (rawText ? ": " + ("" + rawText).substring(0, 200) : "")];
+                    if (status === 400 || status === 403) {
+                        validationErrors = [
+                            "The request was rejected by OctoPrint (HTTP " +
+                                status +
+                                "). This usually means the browser session expired - please reload the page and try again."
+                        ];
+                    } else if (status !== 0) {
+                        validationErrors = [
+                            "The server answered with HTTP " +
+                                status +
+                                (rawText ? ": " + ("" + rawText).substring(0, 200) : "")
+                        ];
                     } else {
                         validationErrors = ["No connection to OctoPrint."];
                     }
                 }
                 responseHandler(false, body, validationErrors);
-            });
-    }
+            }
+        );
+    };
 
     /////////////////////////////////////////////////////////////////////////////////////////////////////////// OCTOSCALE
     // All OctoScale calls are proxied through the plugin backend: the device speaks plain HTTP
     // without CORS headers, so the browser cannot reach it directly from an HTTPS OctoPrint.
     // Every handler gets (data) where data.success tells whether the device answered.
 
-    this.testOctoScaleConnection = function (octoScaleUrl, responseHandler){
-        var jsonPayload = JSON.stringify({ octoScaleUrl: octoScaleUrl });
+    this.testOctoScaleConnection = function (octoScaleUrl, responseHandler) {
+        var jsonPayload = JSON.stringify({octoScaleUrl: octoScaleUrl});
 
-        _callApi(_buildPluginUrl("octoscale/testConnection"), { method: "PUT", body: jsonPayload },
-            function( data ){
-                responseHandler(data || { success: false, error: "No answer from the plugin backend." });
+        _callApi(
+            _buildPluginUrl("octoscale/testConnection"),
+            {method: "PUT", body: jsonPayload},
+            function (data) {
+                responseHandler(
+                    data || {success: false, error: "No answer from the plugin backend."}
+                );
             },
-            function( body, rawText ){
-                responseHandler(body || { success: false, error: rawText || "The connection test failed." });
-            });
-    }
+            function (body, rawText) {
+                responseHandler(
+                    body || {
+                        success: false,
+                        error: rawText || "The connection test failed."
+                    }
+                );
+            }
+        );
+    };
 
-    this.getOctoScaleWeight = function (responseHandler){
-        _callApi(_buildPluginUrl("octoscale/weight"), { method: "GET" },
-            function( data ){
-                responseHandler(data || { success: false, error: "No answer from the plugin backend." });
+    this.getOctoScaleWeight = function (responseHandler) {
+        _callApi(
+            _buildPluginUrl("octoscale/weight"),
+            {method: "GET"},
+            function (data) {
+                responseHandler(
+                    data || {success: false, error: "No answer from the plugin backend."}
+                );
             },
-            function( body, rawText ){
-                responseHandler(body || { success: false, error: rawText || "Could not read the weight." });
-            });
-    }
+            function (body, rawText) {
+                responseHandler(
+                    body || {
+                        success: false,
+                        error: rawText || "Could not read the weight."
+                    }
+                );
+            }
+        );
+    };
 
-    this.tareOctoScale = function (responseHandler){
-        _callApi(_buildPluginUrl("octoscale/tare"), { method: "POST" },
-            function( data ){
-                responseHandler(data || { success: false, error: "No answer from the plugin backend." });
+    this.tareOctoScale = function (responseHandler) {
+        _callApi(
+            _buildPluginUrl("octoscale/tare"),
+            {method: "POST"},
+            function (data) {
+                responseHandler(
+                    data || {success: false, error: "No answer from the plugin backend."}
+                );
             },
-            function( body, rawText ){
-                responseHandler(body || { success: false, error: rawText || "Could not tare the scale." });
-            });
-    }
+            function (body, rawText) {
+                responseHandler(
+                    body || {
+                        success: false,
+                        error: rawText || "Could not tare the scale."
+                    }
+                );
+            }
+        );
+    };
 
-    this.getOctoScaleNfcStatus = function (responseHandler){
-        _callApi(_buildPluginUrl("octoscale/nfc"), { method: "GET" },
-            function( data ){
-                responseHandler(data || { success: false, error: "No answer from the plugin backend." });
+    this.getOctoScaleNfcStatus = function (responseHandler) {
+        _callApi(
+            _buildPluginUrl("octoscale/nfc"),
+            {method: "GET"},
+            function (data) {
+                responseHandler(
+                    data || {success: false, error: "No answer from the plugin backend."}
+                );
             },
-            function( body, rawText ){
-                responseHandler(body || { success: false, error: rawText || "Could not read the NFC status." });
-            });
-    }
+            function (body, rawText) {
+                responseHandler(
+                    body || {
+                        success: false,
+                        error: rawText || "Could not read the NFC status."
+                    }
+                );
+            }
+        );
+    };
 
-    this.writeOctoScaleTag = function (databaseId, tagFormat, responseHandler){
-        var payload = { databaseId: databaseId };
-        if (tagFormat){
+    this.writeOctoScaleTag = function (databaseId, tagFormat, responseHandler) {
+        var payload = {databaseId: databaseId};
+        if (tagFormat) {
             payload.tagFormat = tagFormat;
         }
 
-        _callApi(_buildPluginUrl("octoscale/writeTag"), { method: "POST", body: JSON.stringify(payload) },
-            function( data ){
-                responseHandler(data || { success: false, error: "No answer from the plugin backend." });
+        _callApi(
+            _buildPluginUrl("octoscale/writeTag"),
+            {method: "POST", body: JSON.stringify(payload)},
+            function (data) {
+                responseHandler(
+                    data || {success: false, error: "No answer from the plugin backend."}
+                );
             },
-            function( body, rawText ){
-                responseHandler(body || { success: false, error: rawText || "Could not write the tag." });
-            });
-    }
+            function (body, rawText) {
+                responseHandler(
+                    body || {success: false, error: rawText || "Could not write the tag."}
+                );
+            }
+        );
+    };
 
     ////////////////////////////////////////////////////////////////////////////////////////////////// DELETE Spool-Item
-    this.callDeleteSpool = function (databaseId, responseHandler){
-        _callApi(_buildPluginUrl("deleteSpool/" + databaseId), { method: "DELETE" },
-            function( data ){
+    this.callDeleteSpool = function (databaseId, responseHandler) {
+        _callApi(
+            _buildPluginUrl("deleteSpool/" + databaseId),
+            {method: "DELETE"},
+            function (data) {
                 responseHandler();
-            });
-    }
+            }
+        );
+    };
 
     ////////////////////////////////////////////////////////////////////////////////////////////////// SELECT Spool-Item
-    this.callSelectSpool = function (toolIndex, databaseId, commitCurrentSpoolValues, responseHandler){
-        if (databaseId == null){
+    this.callSelectSpool = function (
+        toolIndex,
+        databaseId,
+        commitCurrentSpoolValues,
+        responseHandler
+    ) {
+        if (databaseId == null) {
             databaseId = -1;
         }
         var payload = {
             databaseId: databaseId,
-            toolIndex: toolIndex,
-        }
+            toolIndex: toolIndex
+        };
         if (commitCurrentSpoolValues !== undefined) {
             payload.commitCurrentSpoolValues = commitCurrentSpoolValues;
         }
-        _callApi(_buildPluginUrl("selectSpool"), { method: "PUT", body: JSON.stringify(payload) },
-            function( data ){
-                responseHandler( data );
-            });
-    }
+        _callApi(
+            _buildPluginUrl("selectSpool"),
+            {method: "PUT", body: JSON.stringify(payload)},
+            function (data) {
+                responseHandler(data);
+            }
+        );
+    };
 
     /////////////////////////////////////////////////////////////////////////////////////////////////// ALLOWED TO PRINT
-    this.allowedToPrint = function (responseHandler){
-        _callApi(_buildPluginUrl("allowedToPrint"), { method: "GET" },
-            function( data ){
-                responseHandler(data);
-            });
-    }
+    this.allowedToPrint = function (responseHandler) {
+        _callApi(_buildPluginUrl("allowedToPrint"), {method: "GET"}, function (data) {
+            responseHandler(data);
+        });
+    };
 
     /////////////////////////////////////////////////////////////////////////////////////////////////// START PRINT CONFIRMED
-    this.startPrintConfirmed = function (responseHandler){
-        _callApi(_buildPluginUrl("startPrintConfirmed"), { method: "GET" },
-            function( data ){
+    this.startPrintConfirmed = function (responseHandler) {
+        _callApi(
+            _buildPluginUrl("startPrintConfirmed"),
+            {method: "GET"},
+            function (data) {
                 responseHandler(data);
-            });
-    }
+            }
+        );
+    };
 
     //////////////////////////////////////////////////////////////////////////////////////////////////// DELETE Database
-    this.callDeleteDatabase = function(databaseType, databaseSettings, responseHandler){
+    this.callDeleteDatabase = function (databaseType, databaseSettings, responseHandler) {
         var jsonPayload = ko.toJSON(databaseSettings);
-        _callApi(_buildPluginUrl("deleteDatabase/" + databaseType), { method: "POST", body: jsonPayload },
-            function( data ){
-                responseHandler(data)
-            });
-    }
+        _callApi(
+            _buildPluginUrl("deleteDatabase/" + databaseType),
+            {method: "POST", body: jsonPayload},
+            function (data) {
+                responseHandler(data);
+            }
+        );
+    };
 
     //////////////////////////////////////////////////////////////////////////////////////////////////// Copy Database
-    this.callCopyDatabase = function(databaseSettings, responseHandler) {
+    this.callCopyDatabase = function (databaseSettings, responseHandler) {
         var jsonPayload = ko.toJSON(databaseSettings);
-        _callApi(_buildPluginUrl("copyDatabase"), { method: "POST", body: jsonPayload },
-            function( data ){
-                responseHandler(data)
-            });
-    }
+        _callApi(
+            _buildPluginUrl("copyDatabase"),
+            {method: "POST", body: jsonPayload},
+            function (data) {
+                responseHandler(data);
+            }
+        );
+    };
 
     ////////////////////////////////////////////////////////////////////////////////////////////////// DOWNLOAD Database
-    this.getDownloadDatabaseUrl = function(exportType){
+    this.getDownloadDatabaseUrl = function (exportType) {
         return _addApiKeyIfNecessary("./plugin/" + this.pluginId + "/downloadDatabase");
-    }
+    };
 }

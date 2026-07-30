@@ -1,6 +1,4 @@
-
-function SpoolManagerImportDialog(){
-
+function SpoolManagerImportDialog() {
     const self = this;
 
     this.apiClient = null;
@@ -18,19 +16,18 @@ function SpoolManagerImportDialog(){
     this.shouldTableReload = false;
     /////////////////////////////////////////////////////////////////////////////////////////////////// INIT
 
-    this.init = function(apiClient){
+    this.init = function (apiClient) {
         self.apiClient = apiClient;
 
         self.importSpoolItemDialog = $("#dialog_spoolManager_csvImportStatus");
     };
 
-    this.isInitialized = function() {
+    this.isInitialized = function () {
         return self.apiClient != null;
     };
 
     /////////////////////////////////////////////////////////////////////////////////////////////////// SHOW DIALOG
-    this.showDialog = function(closeDialogHandler){
-
+    this.showDialog = function (closeDialogHandler) {
         self.closeDialogHandler = closeDialogHandler;
 
         // reset message
@@ -43,26 +40,30 @@ function SpoolManagerImportDialog(){
         self.errorMessages("");
         self.shouldTableReload = false;
 
-        self.importSpoolItemDialog.modal({
-            //minHeight: function() { return Math.max($.fn.modal.defaults.maxHeight() - 80, 250); }
-            keyboard: false,
-            clickClose: false,
-            showClose: false,
-            backdrop: "static"
-        }).css({
-            width: 'auto',
-            'margin-left': function() { return -($(this).width() /2); }
-        });
+        self.importSpoolItemDialog
+            .modal({
+                //minHeight: function() { return Math.max($.fn.modal.defaults.maxHeight() - 80, 250); }
+                keyboard: false,
+                clickClose: false,
+                showClose: false,
+                backdrop: "static"
+            })
+            .css({
+                "width": "auto",
+                "margin-left": function () {
+                    return -($(this).width() / 2);
+                }
+            });
     };
 
     /////////////////////////////////////////////////////////////////////////////////////////////////// UPDATE TEXT
-    this.updateText = function(importData){
+    this.updateText = function (importData) {
         if (!importData.importStatus) {
             return;
         }
 
         self.importStatus(importData.importStatus);
-        switch (importData.importStatus){
+        switch (importData.importStatus) {
             case "running": {
                 self.currentLineNumber(importData.currenLineNumber);
                 self.successMessages(importData.successMessages);
@@ -88,8 +89,8 @@ function SpoolManagerImportDialog(){
     };
 
     /////////////////////////////////////////////////////////////////////////////////////////////////// CLOSE
-    this.closeDialog  = function(){
-        self.importSpoolItemDialog.modal('hide');
+    this.closeDialog = function () {
+        self.importSpoolItemDialog.modal("hide");
 
         self.closeDialogHandler(self.shouldTableReload);
     };

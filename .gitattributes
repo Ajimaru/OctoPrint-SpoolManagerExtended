@@ -1,0 +1,45 @@
+# Line ending normalisation.
+#
+# Without this, a contributor on Windows can commit CRLF line endings, which then
+# show up as a full-file diff for everyone else. `text=auto eol=lf` makes Git store
+# every text file with LF in the repository and check it out with LF on all
+# platforms - matching .editorconfig (end_of_line = lf), which only editors honour.
+* text=auto eol=lf
+
+# Windows-only helper scripts must keep CRLF to stay runnable on Windows
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary files: never touch, never diff as text
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.zip binary
+*.db binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.pdf binary
+*.xlsx binary
+
+# Test fixtures are compared byte-for-byte, so keep them exactly as committed
+testdata/** -text
+
+# Vendored third-party assets: excluded from GitHub's language statistics and
+# collapsed in diffs. They are also skipped by our linters (see .prettierignore,
+# eslint.config.js, .stylelintrc.json).
+#
+# `-text` keeps Git from normalising them at all: these are prebuilt artefacts that
+# must stay byte-identical to what upstream shipped. A minified file is a single
+# very long line, so a diff on it is unreadable anyway.
+3rdPartySoftware/** linguist-vendored
+octoprint_SpoolManager/static/js/quill.min.js -text linguist-vendored
+octoprint_SpoolManager/static/js/tinycolor.min.js -text linguist-vendored
+octoprint_SpoolManager/static/css/quill.snow.css -text linguist-vendored
+
+# Jinja2 templates are HTML, not a separate language, for language stats
+*.jinja2 linguist-language=HTML
