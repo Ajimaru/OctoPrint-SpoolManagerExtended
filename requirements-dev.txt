@@ -1,0 +1,27 @@
+# Development environment for this plugin.
+#
+# Python 3.13 is the development baseline: OctoPrint requires <3.14 and the current
+# lint tooling requires >=3.10, so 3.13 is the only version satisfying both.
+# The plugin itself still supports >=3.9 (see python_requires in setup.py) - that
+# range is meant to be covered by CI, not by the local environment.
+#
+# Setup (macOS/Homebrew):
+#   brew install python@3.13
+#   /opt/homebrew/opt/python@3.13/bin/python3.13 -m venv .venv
+#   .venv/bin/pip install --upgrade pip
+#   .venv/bin/pip install --no-build-isolation -r requirements-dev.txt
+#   .venv/bin/pre-commit install
+#
+# `--no-build-isolation` is required for the editable install below: setup.py imports
+# octoprint_setuptools, which pip's isolated build environment cannot see.
+#
+# Frontend tooling (eslint/stylelint/prettier) lives in package.json - run `npm install`.
+
+OctoPrint==1.11.8
+
+# the plugin itself, editable, including its runtime dependencies from setup.py
+--editable .
+
+# test + hook runner
+pytest
+pre-commit
