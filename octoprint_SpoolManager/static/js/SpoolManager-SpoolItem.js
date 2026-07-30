@@ -377,20 +377,8 @@ let SpoolItem;
         this.color(rawColor);
         // if no custom color name present, use predefined name
         if (updateData.colorName == null || updateData.colorName.length == 0) {
-            var colorParts = SPOOLMANAGER_UTILS.parseSpoolColor(rawColor);
-            var preDefinedColorName = false;
-            if (colorParts.isRainbow) {
-                preDefinedColorName = "Rainbow";
-            } else if (colorParts.isTransparent) {
-                var baseName = colorParts.isUntinted
-                    ? false
-                    : tinycolor(colorParts.colors[0]).toName();
-                preDefinedColorName =
-                    baseName != false ? "Transparent " + baseName : "Transparent";
-            } else {
-                preDefinedColorName = tinycolor(colorParts.colors[0]).toName();
-            }
-            if (preDefinedColorName != false) {
+            var preDefinedColorName = SPOOLMANAGER_UTILS.colorNameForSpoolColor(rawColor);
+            if (preDefinedColorName != null) {
                 this.colorName(preDefinedColorName);
             }
         } else {
