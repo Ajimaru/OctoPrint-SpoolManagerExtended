@@ -1,0 +1,62 @@
+# Linting for the SpoolManager plugin.
+#
+# Mirrors OctoPrint core's tooling choice (flake8 for Python) and adds the
+# frontend linters. Formatting (Black/isort/Prettier) is intentionally NOT part
+# of this config yet - see setup.cfg for why - so running these hooks does not
+# reformat the code base.
+#
+# Setup:  pre-commit install
+# Manual: pre-commit run --all-files
+
+exclude: |
+  (?x)^(
+      3rdPartySoftware/.*|
+      octoprint_SpoolManager/static/js/quill\.min\.js|
+      octoprint_SpoolManager/static/js/tinycolor\.min\.js|
+      octoprint_SpoolManager/static/css/quill\.snow\.css|
+      translations/.*|
+      testdata/.*
+  )$
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+
+  - repo: https://github.com/PyCQA/flake8
+    rev: 7.1.1
+    hooks:
+      - id: flake8
+        # configuration lives in setup.cfg
+        types: [python]
+
+  - repo: https://github.com/djlint/djLint
+    rev: v1.36.4
+    hooks:
+      - id: djlint-jinja
+        files: \.jinja2$
+        args: ["--lint"]
+
+  # Frontend linters run from the local node_modules (npm install once).
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint
+        entry: npx --no-install eslint
+        language: system
+        files: ^octoprint_SpoolManager/static/js/.*\.js$
+        pass_filenames: true
+
+      - id: stylelint
+        name: stylelint
+        entry: npx --no-install stylelint
+        language: system
+        files: ^octoprint_SpoolManager/static/.*\.(css|less)$
+        pass_filenames: true
