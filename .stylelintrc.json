@@ -1,4 +1,14 @@
 {
+  "//": [
+    "Disabled rules fall into three groups:",
+    "1. formatting - Prettier owns that (comment-*, *-empty-line-before)",
+    "2. naming patterns - selector ids/classes are referenced from JS and Jinja",
+    "   templates, renaming them would break bindings",
+    "3. modern-CSS rewrites that drop support for older browsers OctoPrint still",
+    "   runs in: color-function-alias-notation (rgba()->rgb()) and",
+    "   media-feature-range-notation (max-width -> width <=). The latter is pinned",
+    "   to 'prefix' so the legacy form stays enforced instead of merely allowed."
+  ],
   "extends": "stylelint-config-standard",
   "ignoreFiles": [
     "octoprint_SpoolManager/static/css/quill.snow.css",
@@ -20,6 +30,8 @@
     "color-function-notation": null,
     "alpha-value-notation": null,
     "value-keyword-case": null,
+
+    "color-function-alias-notation": null,
 
     "no-descending-specificity": null,
     "property-no-vendor-prefix": null,
