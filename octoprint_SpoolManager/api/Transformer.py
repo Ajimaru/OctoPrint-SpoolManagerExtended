@@ -1,25 +1,24 @@
 # coding=utf-8
 
-from octoprint_SpoolManager.models.SpoolModel import SpoolModel
 from octoprint_SpoolManager.common import StringUtils
 
 def calculateRemainingWeight(usedWeight, totalWeight):
-	if (usedWeight == None or totalWeight == None):
+	if (usedWeight is None or totalWeight is None):
 		return None
 
-	if ( (type(usedWeight) == int or type(usedWeight) == float) and
-			(type(totalWeight) == int or type(totalWeight) == float) ):
+	if ( isinstance(usedWeight, (int, float)) and
+			isinstance(totalWeight, (int, float)) ):
 		result = totalWeight - usedWeight
 		return result
 
 	return None
 
 def _calculateRemainingPercentage(remainingWeight, totalWeight):
-	if (remainingWeight == None or totalWeight == None):
+	if (remainingWeight is None or totalWeight is None):
 		return None
 
-	if ( (type(remainingWeight) == int or type(remainingWeight) == float) and
-			(type(totalWeight) == int or type(totalWeight) == float) and
+	if ( isinstance(remainingWeight, (int, float)) and
+			isinstance(totalWeight, (int, float)) and
 			(totalWeight > 0) ):
 		result = remainingWeight / (totalWeight / 100.0)
 		return result
@@ -27,11 +26,11 @@ def _calculateRemainingPercentage(remainingWeight, totalWeight):
 	return None
 
 def _calculateUsedPercentage(usedWeight, totalWeight):
-	if (usedWeight == None or totalWeight == None):
+	if (usedWeight is None or totalWeight is None):
 		return None
 
-	if ( (type(usedWeight) == int or type(usedWeight) == float) and
-			(type(totalWeight) == int or type(totalWeight) == float) and
+	if ( isinstance(usedWeight, (int, float)) and
+			isinstance(totalWeight, (int, float)) and
 			(totalWeight > 0) ):
 		result = usedWeight / (totalWeight / 100.0)
 		return result
@@ -90,7 +89,7 @@ def transformSpoolModelToDict(spoolModel):
 
 def transformAllSpoolModelsToDict(allSpoolModels):
 	result = []
-	if (allSpoolModels != None):
+	if (allSpoolModels is not None):
 		for job in allSpoolModels:
 			spoolAsDict = transformSpoolModelToDict(job)
 			result.append(spoolAsDict)

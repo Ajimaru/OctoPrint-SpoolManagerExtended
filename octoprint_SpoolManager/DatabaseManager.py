@@ -10,12 +10,11 @@ import shutil
 import sqlite3
 
 from octoprint_SpoolManager.WrappedLoggingHandler import WrappedLoggingHandler
-from peewee import *
-from playhouse.shortcuts import model_to_dict, dict_to_model
+from peewee import DoesNotExist, MySQLDatabase, PostgresqlDatabase, SqliteDatabase, chunked, fn
+from playhouse.shortcuts import model_to_dict
 
 from octoprint_SpoolManager.api import Transformer
 from octoprint_SpoolManager.common import StringUtils
-from octoprint_SpoolManager.models.BaseModel import BaseModel
 from octoprint_SpoolManager.models.PluginMetaDataModel import PluginMetaDataModel
 from octoprint_SpoolManager.models.SpoolModel import SpoolModel
 
@@ -75,7 +74,7 @@ class DatabaseManager(object):
 
     def _buildDatabaseConnection(self):
         database = None
-        if (self._databaseSettings.useExternal == False):
+        if (not self._databaseSettings.useExternal):
             # local database`
             database = SqliteDatabase(self._databaseSettings.fileLocation)
         else:
@@ -116,12 +115,11 @@ class DatabaseManager(object):
     def _createOrUpgradeSchemeIfNecessary(self):
 
         self._logger.info("Check if database-scheme upgrade needed...")
-        schemeVersionFromDatabaseModel = None
         schemeVersionFromDatabase = None
         try:
             cursor = PluginMetaDataModel.get(PluginMetaDataModel.key == PluginMetaDataModel.KEY_DATABASE_SCHEME_VERSION)
             result = cursor.value
-            if (result != None):
+            if (result is not None):
                 schemeVersionFromDatabase = int(result[0])
                 self._logger.info("Current databasescheme: " + str(schemeVersionFromDatabase))
             else:
@@ -147,11 +145,11 @@ class DatabaseManager(object):
             else:
                 self._logger.error(str(e))
 
-        if not schemeVersionFromDatabase == None:
+        if schemeVersionFromDatabase is not None:
             currentDatabaseSchemeVersion = schemeVersionFromDatabase
             if (currentDatabaseSchemeVersion < CURRENT_DATABASE_SCHEME_VERSION):
                 # auto upgrade done only for local database
-                if (self._databaseSettings.useExternal == True):
+                if (self._databaseSettings.useExternal):
                     self._logger.warning("Scheme upgrade is only done for local database. Use the 'Upgrade database scheme' button in the plugin settings (Storage tab).")
                     self._schemeUpgradeNeeded = True
                     return
@@ -250,12 +248,12 @@ class DatabaseManager(object):
 
             try:
                 allSpoolModels = self.loadAllSpoolsByQuery(None)
-                if (allSpoolModels != None):
+                if (allSpoolModels is not None):
                     for spoolModel in allSpoolModels:
                         totalWeight = spoolModel.totalWeight
                         usedWeight = spoolModel.usedWeight
                         remainingWeight = Transformer.calculateRemainingWeight(usedWeight, totalWeight)
-                        if (remainingWeight != None):
+                        if (remainingWeight is not None):
                             spoolModel.remainingWeight = remainingWeight
                             spoolModel.save()
 
@@ -266,7 +264,7 @@ class DatabaseManager(object):
 
                 # do explicit commit
                 transaction.commit()
-            except:
+            except Exception:
                 # Because this block of code is wrapped with "atomic", a
                 # new transaction will begin automatically after the call
                 # to rollback().
@@ -310,12 +308,12 @@ class DatabaseManager(object):
         with self._database.atomic() as transaction:  # Opens new transaction.
             try:
                 allSpoolModels = self.loadAllSpoolsByQuery(None)
-                if (allSpoolModels != None):
+                if (allSpoolModels is not None):
                     for spoolModel in allSpoolModels:
                         totalWeight = spoolModel.totalWeight
                         usedWeight = spoolModel.usedWeight
                         remainingWeight = Transformer.calculateRemainingWeight(usedWeight, totalWeight)
-                        if (remainingWeight != None):
+                        if (remainingWeight is not None):
                             spoolModel.remainingWeight = remainingWeight
                             spoolModel.save()
                 # do expicit commit
@@ -570,12 +568,12 @@ class DatabaseManager(object):
         with self._database.atomic() as transaction:  # Opens new transaction.
             try:
                 allSpoolModels = self.loadAllSpoolsByQuery(None)
-                if (allSpoolModels != None):
+                if (allSpoolModels is not None):
                     for spoolModel in allSpoolModels:
                         totalWeight = spoolModel.totalWeight
                         usedWeight = spoolModel.usedWeight
                         remainingWeight = Transformer.calculateRemainingWeight(usedWeight, totalWeight)
-                        if (remainingWeight != None):
+                        if (remainingWeight is not None):
                             spoolModel.remainingWeight = remainingWeight
                             spoolModel.save()
 
@@ -612,7 +610,7 @@ class DatabaseManager(object):
             "message":message
         }
         # send to client, if needed
-        if (sendErrorPopUp == True):
+        if (sendErrorPopUp):
             self._passMessageToClient(type, title, message)
 
     ################################################################################################### public functions
@@ -633,7 +631,7 @@ class DatabaseManager(object):
         existsDatabaseFile = str(os.path.exists(self._databaseSettings.fileLocation))
         self._logger.info("Databasefile '" +self._databaseSettings.fileLocation+ "' exists: " + existsDatabaseFile)
 
-        if (existsDatabaseFile == False):
+        if (not existsDatabaseFile):
             self._createDatabase(FORCE_CREATE_TABLES)
             self.closeDatabase()
 
@@ -651,7 +649,7 @@ class DatabaseManager(object):
         logger.addHandler(wrappedHandler)
 
         connected = self.connectoToDatabase(sendErrorPopUp=False)
-        if (connected == True):
+        if (connected):
             self._createDatabase(FORCE_CREATE_TABLES)
             self.closeDatabase()
 
@@ -676,19 +674,19 @@ class DatabaseManager(object):
         backupCurrentDatabaseSettings = None
         try:
             # use provided database settings or default if not provided
-            if (databaseSettings != None):
+            if (databaseSettings is not None):
                 backupCurrentDatabaseSettings = self._databaseSettings
                 self._databaseSettings = databaseSettings
 
             succesful = self.connectoToDatabase()
-            if (succesful == False):
+            if (not succesful):
                 result = self.getCurrentErrorMessageDict()
         finally:
             try:
                 self.closeDatabase()
-            except:
+            except Exception:
                 pass # do nothing
-            if (backupCurrentDatabaseSettings != None):
+            if (backupCurrentDatabaseSettings is not None):
                 self._databaseSettings = backupCurrentDatabaseSettings
 
         return result
@@ -743,7 +741,7 @@ class DatabaseManager(object):
         try:
             self._database.close()
             pass
-        except Exception as e:
+        except Exception:
             pass ## ignore close exception
         self._isConnected = False
 
@@ -763,7 +761,7 @@ class DatabaseManager(object):
             return self._schemeUpgradeNeeded
 
         try:
-            if (withReusedConnection == True):
+            if (withReusedConnection):
                 return databaseCallMethode()
             self.connectoToDatabase(sendErrorPopUp=False)
             try:
@@ -787,7 +785,7 @@ class DatabaseManager(object):
 
     def backupDatabaseFile(self):
 
-        if (self._databaseSettings.useExternal == True):
+        if (self._databaseSettings.useExternal):
             self._logger.info("No database backup needed, because we are using an external database.")
         else:
             if (os.path.exists(self._databaseSettings.fileLocation)):
@@ -798,7 +796,7 @@ class DatabaseManager(object):
                 try:
                     currentSchemeVersion = PluginMetaDataModel.get(
                         PluginMetaDataModel.key == PluginMetaDataModel.KEY_DATABASE_SCHEME_VERSION)
-                    if (currentSchemeVersion != None):
+                    if (currentSchemeVersion is not None):
                         currentSchemeVersion = str(currentSchemeVersion.value)
                 except Exception as e:
                     self._logger.exception("Could not read databasescheme version:" + str(e))
@@ -823,7 +821,7 @@ class DatabaseManager(object):
         self._logger.info(databaseSettings)
 
         backupCurrentDatabaseSettings = None
-        if (databaseSettings != None):
+        if (databaseSettings is not None):
             backupCurrentDatabaseSettings = self._databaseSettings
             self._databaseSettings = databaseSettings
         try:
@@ -836,7 +834,7 @@ class DatabaseManager(object):
             self.closeDatabase()
         finally:
             # - restore database settings
-            if (backupCurrentDatabaseSettings != None):
+            if (backupCurrentDatabaseSettings is not None):
                 self._databaseSettings = backupCurrentDatabaseSettings
 
     def copySpoolData(self, databaseSettings = None):
@@ -845,7 +843,7 @@ class DatabaseManager(object):
         copySpoolCount = 0
 
         backupCurrentDatabaseSettings = None
-        if (databaseSettings != None):
+        if (databaseSettings is not None):
             backupCurrentDatabaseSettings = self._databaseSettings
         else:
             # use default settings
@@ -854,7 +852,6 @@ class DatabaseManager(object):
 
         try:
             currentDatabaseType = databaseSettings.type
-            currentUseExternal = databaseSettings.useExternal
 
             # First load meta from local sqlite database
             databaseSettings.type = "sqlite"
@@ -872,7 +869,6 @@ class DatabaseManager(object):
                 allSpoolDicts = [model_to_dict(spool) for spool in SpoolModel.select()]
                 self.closeDatabase()
             except Exception as e:
-                errorMessage = "local database: " + str(e)
                 self._logger.error("Connecting to local database not possible")
                 self._logger.exception(e)
                 try:
@@ -895,7 +891,6 @@ class DatabaseManager(object):
                     self.closeDatabase()
                     loadResult = True
                 except Exception as e:
-                    errorMessage = "database: " + str(e)
                     self._logger.error("Connecting to external database not possible")
                     self._logger.exception(e)
                     try:
@@ -905,7 +900,7 @@ class DatabaseManager(object):
 
         finally:
             # restore orig. databasettings
-            if (backupCurrentDatabaseSettings != None):
+            if (backupCurrentDatabaseSettings is not None):
                 self._databaseSettings = backupCurrentDatabaseSettings
 
         return {
@@ -922,7 +917,7 @@ class DatabaseManager(object):
             try:
                 cursor = connection.cursor()
                 cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='spo_spoolmodel';")
-                if (cursor.fetchone() == None):
+                if (cursor.fetchone() is None):
                     return (False, "The uploaded .db file is not a SpoolManager database (table 'spo_spoolmodel' is missing).")
             finally:
                 connection.close()
@@ -951,12 +946,12 @@ class DatabaseManager(object):
     def restoreFromSQLiteFile(self, uploadedDbPath, mode):
         result = {"success": False, "importedSpoolCount": 0, "errorMessage": None}
 
-        if (self._databaseSettings == None or self._databaseSettings.useExternal == True):
+        if (self._databaseSettings is None or self._databaseSettings.useExternal):
             result["errorMessage"] = "A .db restore is only available for the local SQLite database."
             return result
 
         isValid, validationError = self._validateUploadedSQLiteFile(uploadedDbPath)
-        if (isValid == False):
+        if (not isValid):
             result["errorMessage"] = validationError
             return result
 
@@ -1018,13 +1013,13 @@ class DatabaseManager(object):
     SQL_DUMP_MARKER = "-- SpoolManager MySQL dump"
 
     def _isExternalMySQL(self):
-        return self._databaseSettings != None and \
-               self._databaseSettings.useExternal == True and \
+        return self._databaseSettings is not None and \
+               self._databaseSettings.useExternal and \
                "mysql" == self._databaseSettings.type
 
     def _assertSafeSQLIdentifier(self, identifier):
         # last line of defense before an identifier is concatenated into raw SQL
-        if (re.match(r"^[A-Za-z0-9_]+$", str(identifier)) == None):
+        if (re.match(r"^[A-Za-z0-9_]+$", str(identifier)) is None):
             raise ValueError("Unsafe SQL identifier: '" + str(identifier) + "'")
         return identifier
 
@@ -1090,7 +1085,7 @@ class DatabaseManager(object):
 
     def exportMySQLDatabaseDump(self):
 
-        if (self._isExternalMySQL() == False):
+        if (not self._isExternalMySQL()):
             return {
                 "success": False,
                 "dump": None,
@@ -1099,9 +1094,9 @@ class DatabaseManager(object):
 
         try:
             connected = self.connectoToDatabase(sendErrorPopUp=False)
-            if (connected == False):
+            if (not connected):
                 errorMessage = "Could not connect to the external MySQL database."
-                if (self._currentErrorMessageDict != None):
+                if (self._currentErrorMessageDict is not None):
                     errorMessage = errorMessage + " " + str(self._currentErrorMessageDict.get("message", ""))
                 return {
                     "success": False,
@@ -1133,14 +1128,14 @@ class DatabaseManager(object):
             "backupFilePath": None,
             "errorMessage": None
         }
-        if (self._databaseSettings == None or self._databaseSettings.useExternal == True):
+        if (self._databaseSettings is None or self._databaseSettings.useExternal):
             result["errorMessage"] = "A database file backup is only available for the local SQLite database."
             return result
         try:
             # connect so backupDatabaseFile() can read the current scheme version for the file name
             self.connectoToDatabase(sendErrorPopUp=False)
             backupFilePath = self.backupDatabaseFile()
-            if (backupFilePath == None):
+            if (backupFilePath is None):
                 result["errorMessage"] = "Could not create the database file backup (no database file found)."
                 return result
             result["backupFilePath"] = backupFilePath
@@ -1170,17 +1165,17 @@ class DatabaseManager(object):
             "errorMessage": None
         }
 
-        if (self._databaseSettings == None):
+        if (self._databaseSettings is None):
             result["errorMessage"] = "No database settings available."
             return result
 
-        useExternal = self._databaseSettings.useExternal == True
+        useExternal = self._databaseSettings.useExternal
 
         try:
             connected = self.connectoToDatabase(sendErrorPopUp=False)
-            if (connected == False):
+            if (not connected):
                 errorMessage = "Could not connect to the external database." if useExternal else "Could not connect to the local database."
-                if (self._currentErrorMessageDict != None):
+                if (self._currentErrorMessageDict is not None):
                     errorMessage = errorMessage + " " + str(self._currentErrorMessageDict.get("message", ""))
                 result["errorMessage"] = errorMessage
                 return result
@@ -1202,19 +1197,19 @@ class DatabaseManager(object):
                                          " is newer than this plugin supports (" + str(CURRENT_DATABASE_SCHEME_VERSION) + \
                                          "). Please update the plugin instead."
                 return result
-            if (useExternal == True and currentSchemeVersion < 7):
+            if (useExternal and currentSchemeVersion < 7):
                 # the legacy migrations (1..7) use SQLite-specific scripts and can't run against external databases
                 result["errorMessage"] = "Upgrades from scheme version " + str(currentSchemeVersion) + \
                                          " are not supported for external databases. Please migrate manually via SQL console."
                 return result
 
             # mandatory backup, the upgrade is aborted if it fails
-            if (useExternal == True):
-                if (self._isExternalMySQL() == False):
+            if (useExternal):
+                if (not self._isExternalMySQL()):
                     result["errorMessage"] = "No dump backup is available for this database type. " \
                                              "Please create a backup manually (e.g. pg_dump) and migrate via SQL console."
                     return result
-                if (createBackupFile == True):
+                if (createBackupFile):
                     try:
                         dumpText = self._generateMySQLDumpText()
                         now = datetime.datetime.now()
@@ -1233,7 +1228,7 @@ class DatabaseManager(object):
             else:
                 # local SQLite: the .db file backup is downloaded by the frontend BEFORE the upgrade
                 # (createBackupFile=False). Only create it here as a fallback when that did not happen.
-                if (createBackupFile == True):
+                if (createBackupFile):
                     try:
                         backupFilePath = self.backupDatabaseFile()
                         result["backupFilePath"] = backupFilePath
@@ -1267,7 +1262,7 @@ class DatabaseManager(object):
             "errorMessage": None
         }
 
-        if (self._isExternalMySQL() == False):
+        if (not self._isExternalMySQL()):
             result["errorMessage"] = "Database dump import is only supported for external MySQL databases."
             return result
 
@@ -1283,7 +1278,7 @@ class DatabaseManager(object):
 
         # - validate the database scheme version (there is no MySQL scheme-upgrade path)
         schemeVersionMatch = re.search(r"^-- schemeVersion: (\d+)$", dumpText, re.MULTILINE)
-        if (schemeVersionMatch == None):
+        if (schemeVersionMatch is None):
             result["errorMessage"] = "Dump file has no schemeVersion header."
             return result
         dumpSchemeVersion = int(schemeVersionMatch.group(1))
@@ -1304,10 +1299,10 @@ class DatabaseManager(object):
         allowedModelsByTableName = {model._meta.table_name: model for model in MODELS}
         parsedInsertRows = []  # entries: (model, columnNames, values)
         for index, statement in enumerate(statements):
-            if (self._isIgnoredDumpStatement(statement, allowedModelsByTableName) == True):
+            if (self._isIgnoredDumpStatement(statement, allowedModelsByTableName)):
                 continue
             parsedInsert = self._parseInsertDumpStatement(statement, allowedModelsByTableName)
-            if (parsedInsert == None):
+            if (parsedInsert is None):
                 result["errorMessage"] = "Statement #" + str(index + 1) + " is not allowed or malformed. " \
                                          "Only SET NAMES, DROP/CREATE/INSERT for the SpoolManager tables are accepted."
                 return result
@@ -1315,9 +1310,9 @@ class DatabaseManager(object):
 
         try:
             connected = self.connectoToDatabase(sendErrorPopUp=False)
-            if (connected == False):
+            if (not connected):
                 errorMessage = "Could not connect to the external MySQL database."
-                if (self._currentErrorMessageDict != None):
+                if (self._currentErrorMessageDict is not None):
                     errorMessage = errorMessage + " " + str(self._currentErrorMessageDict.get("message", ""))
                 result["errorMessage"] = errorMessage
                 return result
@@ -1409,10 +1404,10 @@ class DatabaseManager(object):
         insertMatch = re.match(
             r"^INSERT INTO `([A-Za-z0-9_]+)` \(((?:`[A-Za-z0-9_]+`, )*`[A-Za-z0-9_]+`)\) VALUES \((.*)\);$",
             statement, re.DOTALL)
-        if (insertMatch == None):
+        if (insertMatch is None):
             return None
         model = allowedModelsByTableName.get(insertMatch.group(1))
-        if (model == None):
+        if (model is None):
             return None
         columnNames = [columnName.strip("`") for columnName in insertMatch.group(2).split(", ")]
         if (len(columnNames) != len(set(columnNames))):
@@ -1420,10 +1415,10 @@ class DatabaseManager(object):
         if (columnNames[0] != "databaseId"):
             return None
         for columnName in columnNames:
-            if ((columnName in model._meta.columns) == False):
+            if (columnName not in model._meta.columns):
                 return None
         values = self._parseInsertValuesText(insertMatch.group(3))
-        if (values == None or len(values) != len(columnNames)):
+        if (values is None or len(values) != len(columnNames)):
             return None
         return (model, columnNames, values)
 
@@ -1442,16 +1437,16 @@ class DatabaseManager(object):
                 index += 1
                 continue
             if (character == ","):
-                if (expectValue == True):
+                if (expectValue):
                     return None
                 expectValue = True
                 index += 1
                 continue
-            if (expectValue == False):
+            if (not expectValue):
                 return None
             if (character == "'"):
                 parsedLiteral = self._parseQuotedDumpLiteral(valuesText, index)
-                if (parsedLiteral == None):
+                if (parsedLiteral is None):
                     return None
                 literalBody, index = parsedLiteral
                 values.append(self._unescapeMySQLStringLiteral(literalBody))
@@ -1460,11 +1455,11 @@ class DatabaseManager(object):
                 while (index < length and valuesText[index] != "," and valuesText[index] != " "):
                     index += 1
                 bareValue = self._convertBareDumpToken(valuesText[startIndex:index])
-                if (bareValue == None):
+                if (bareValue is None):
                     return None
                 values.append(bareValue[0])
             expectValue = False
-        if (expectValue == True):
+        if (expectValue):
             return None  # empty body or trailing comma
         return values
 
@@ -1498,9 +1493,9 @@ class DatabaseManager(object):
         # (NULL is a valid value, so a bare None cannot signal rejection)
         if ("NULL" == token):
             return (None,)
-        if (re.match(r"^-?\d+$", token) != None):
+        if (re.match(r"^-?\d+$", token) is not None):
             return (int(token),)
-        if (re.match(r"^-?(\d+\.\d*|\.\d+|\d+)([eE][+-]?\d+)?$", token) != None):
+        if (re.match(r"^-?(\d+\.\d*|\.\d+|\d+)([eE][+-]?\d+)?$", token) is not None):
             return (float(token),)
         return None
 
@@ -1529,14 +1524,14 @@ class DatabaseManager(object):
     ################################################################################################ DATABASE OPERATIONS
     def _handleReusableConnection(self, databaseCallMethode, withReusedConnection, methodeNameForLogging, defaultReturnValue=None):
         try:
-            if (withReusedConnection == True):
-                if (self._isConnected == False):
+            if (withReusedConnection):
+                if (not self._isConnected):
                     self._logger.error("Database not connected. Check database-settings!")
                     return defaultReturnValue
             else:
                 self.connectoToDatabase()
             return databaseCallMethode()
-        except Exception as e:
+        except Exception:
             errorMessage = "Database call error in methode " + methodeNameForLogging
             self._logger.exception(errorMessage)
 
@@ -1547,7 +1542,7 @@ class DatabaseManager(object):
             except Exception:
                 pass
 
-            if (self._schemeUpgradeNeeded == True):
+            if (self._schemeUpgradeNeeded):
                 # most likely cause: the model expects columns the old scheme doesn't have yet
                 self._passMessageToClient("error",
                                           "DatabaseManager",
@@ -1560,16 +1555,16 @@ class DatabaseManager(object):
             return defaultReturnValue
         finally:
             try:
-                if (withReusedConnection == False):
+                if (not withReusedConnection):
                     self._closeDatabase()
-            except:
+            except Exception:
                 pass # do nothing
         pass
 
     def loadDatabaseMetaInformations(self, databaseSettings = None):
 
         backupCurrentDatabaseSettings = None
-        if (databaseSettings != None):
+        if (databaseSettings is not None):
             backupCurrentDatabaseSettings = self._databaseSettings
         else:
             # use default settings
@@ -1618,7 +1613,7 @@ class DatabaseManager(object):
             # Use origin Database type to collect the other metadata (if needed)
             databaseSettings.type = currentDatabaseType
             databaseSettings.useExternal = currentUseExternal
-            if (databaseSettings.useExternal == True):
+            if (databaseSettings.useExternal):
                 # External DB
                 self._databaseSettings = databaseSettings
                 self.connectoToDatabase(sendErrorPopUp=False)
@@ -1635,7 +1630,7 @@ class DatabaseManager(object):
                 pass #ignore close exception
         finally:
             # restore orig. database settings
-            if (backupCurrentDatabaseSettings != None):
+            if (backupCurrentDatabaseSettings is not None):
                 self._databaseSettings = backupCurrentDatabaseSettings
 
         return {
@@ -1667,7 +1662,7 @@ class DatabaseManager(object):
 
     def loadSpoolTemplates(self, withReusedConnection=False):
         def databaseCallMethode():
-            return SpoolModel.select().where(SpoolModel.isTemplate == True)
+            return SpoolModel.select().where(SpoolModel.isTemplate == True)  # noqa: E711,E712 (peewee builds SQL from == None/True)
 
         return self._handleReusableConnection(databaseCallMethode, withReusedConnection, "loadSpoolTemplates")
 
@@ -1680,7 +1675,7 @@ class DatabaseManager(object):
     def loadAllSpoolsByQuery(self, tableQuery = None, withReusedConnection = False):
 
         def databaseCallMethode():
-            if (tableQuery == None):
+            if (tableQuery is None):
                 return SpoolModel.select().order_by(SpoolModel.created.desc())
 
             sortColumn = tableQuery["sortColumn"]
@@ -1699,14 +1694,14 @@ class DatabaseManager(object):
             # mySqlText = myQuery.sql()
 
             if ("onlyTemplates" in filterName):
-                myQuery = myQuery.where( (SpoolModel.isTemplate == True) )
+                myQuery = myQuery.where( (SpoolModel.isTemplate == True) )  # noqa: E711,E712 (peewee builds SQL from == None/True)
             else:
                 if ("noTemplates" in filterName):
-                    myQuery = myQuery.where( (SpoolModel.isTemplate == False) | (SpoolModel.isTemplate == None) )
+                    myQuery = myQuery.where( (SpoolModel.isTemplate == False) | (SpoolModel.isTemplate == None) )  # noqa: E711,E712 (peewee builds SQL from == None/True)
                 if ("hideEmptySpools" in filterName):
-                    myQuery = myQuery.where( (SpoolModel.remainingWeight > 0) | (SpoolModel.remainingWeight == None))
+                    myQuery = myQuery.where( (SpoolModel.remainingWeight > 0) | (SpoolModel.remainingWeight == None))  # noqa: E711,E712 (peewee builds SQL from == None/True)
                 if ("hideInactiveSpools" in filterName):
-                    myQuery = myQuery.where( (SpoolModel.isActive == True) )
+                    myQuery = myQuery.where( (SpoolModel.isActive == True) )  # noqa: E711,E712 (peewee builds SQL from == None/True)
 
             if ("displayName" == sortColumn):
                 if ("desc" == sortOrder):
@@ -1745,7 +1740,7 @@ class DatabaseManager(object):
         return self._handleReusableConnection(databaseCallMethode, withReusedConnection, "loadAllSpoolsByQuery")
 
     def _applyTableQueryFilters(self, myQuery, tableQuery):
-        if (tableQuery == None):
+        if (tableQuery is None):
             return myQuery
 
         filterName = StringUtils.to_native_str(tableQuery.get("filterName", ""))
@@ -1810,14 +1805,14 @@ class DatabaseManager(object):
             )
 
         if ("onlyTemplates" in filterName):
-            myQuery = myQuery.where( (SpoolModel.isTemplate == True) )
+            myQuery = myQuery.where( (SpoolModel.isTemplate == True) )  # noqa: E711,E712 (peewee builds SQL from == None/True)
         else:
             if ("noTemplates" in filterName):
-                myQuery = myQuery.where( (SpoolModel.isTemplate == False) | (SpoolModel.isTemplate == None) )
+                myQuery = myQuery.where( (SpoolModel.isTemplate == False) | (SpoolModel.isTemplate == None) )  # noqa: E711,E712 (peewee builds SQL from == None/True)
             if ("hideEmptySpools" in filterName):
-                myQuery = myQuery.where( (SpoolModel.remainingWeight > 0) | (SpoolModel.remainingWeight == None))
+                myQuery = myQuery.where( (SpoolModel.remainingWeight > 0) | (SpoolModel.remainingWeight == None))  # noqa: E711,E712 (peewee builds SQL from == None/True)
             if ("hideInactiveSpools" in filterName):
-                myQuery = myQuery.where( (SpoolModel.isActive == True) )
+                myQuery = myQuery.where( (SpoolModel.isActive == True) )  # noqa: E711,E712 (peewee builds SQL from == None/True)
 
         return myQuery
 
@@ -1848,20 +1843,20 @@ class DatabaseManager(object):
             with self._database.atomic() as transaction:  # Opens new transaction.
                 try:
                     databaseId = spoolModel.databaseId
-                    if (databaseId != None):
+                    if (databaseId is not None):
                         versionFromUI = None
                         # we need to update and we need to make sure nobody else modify the data
                         currentSpoolModel = self.loadSpool(databaseId, withReusedConnection)
-                        if (currentSpoolModel == None):
-                            if (suppressConflictMessage == False):
+                        if (currentSpoolModel is None):
+                            if (not suppressConflictMessage):
                                 self._passMessageToClient("error", "DatabaseManager",
                                                           "Could not update the Spool, because it is already deleted!")
                             return
                         else:
-                            versionFromUI = spoolModel.version if spoolModel.version != None else 1
-                            versionFromDatabase = currentSpoolModel.version if currentSpoolModel.version != None else 1
+                            versionFromUI = spoolModel.version if spoolModel.version is not None else 1
+                            versionFromDatabase = currentSpoolModel.version if currentSpoolModel.version is not None else 1
                             if (versionFromUI != versionFromDatabase):
-                                if (suppressConflictMessage == False):
+                                if (not suppressConflictMessage):
                                     self._passMessageToClient("error", "DatabaseManager",
                                                               "Could not update the Spool, because someone already modified the spool. Do a manuel reload!")
                                 return
@@ -1878,7 +1873,7 @@ class DatabaseManager(object):
                     databaseId = spoolModel.get_id()
                     # do expicit commit
                     transaction.commit()
-                except Exception as e:
+                except Exception:
                     # Because this block of code is wrapped with "atomic", a
                     # new transaction will begin automatically after the call
                     # to rollback().
@@ -1893,8 +1888,8 @@ class DatabaseManager(object):
         # always recalculate the remaing weight (total - used)
         totalWeight = spoolModel.totalWeight
         usedWeight = spoolModel.usedWeight
-        if (totalWeight != None):
-            if (usedWeight == None):
+        if (totalWeight is not None):
+            if (usedWeight is None):
                 usedWeight = 0.0
             remainingWeight = Transformer.calculateRemainingWeight(usedWeight, totalWeight)
             spoolModel.remainingWeight = remainingWeight
@@ -1924,9 +1919,9 @@ class DatabaseManager(object):
             myQuery = SpoolModel.select(SpoolModel.vendor).distinct()
             for spool in myQuery:
                 value = spool.vendor
-                if (value != None):
+                if (value is not None):
                     result.add(value)
-            return result;
+            return result
 
         return self._handleReusableConnection(databaseCallMethode, withReusedConnection, "loadCatalogVendors", set())
 
@@ -1936,9 +1931,9 @@ class DatabaseManager(object):
             myQuery = SpoolModel.select(SpoolModel.material).distinct()
             for spool in myQuery:
                 value = spool.material
-                if (value != None):
+                if (value is not None):
                     result.add(value)
-            return result;
+            return result
 
         return self._handleReusableConnection(databaseCallMethode, withReusedConnection, "loadCatalogMaterials", set())
 
@@ -1948,7 +1943,7 @@ class DatabaseManager(object):
             myQuery = SpoolModel.select(SpoolModel.labels).distinct()
             for spool in myQuery:
                 value = spool.labels
-                if (value != None):
+                if (value is not None):
                     # a row holding the string "null" (or any non-list payload) used to raise
                     # here and take the whole label catalog down, which disables the spool
                     # search in the UI. Skip such rows instead of failing the entire query.
@@ -1957,7 +1952,7 @@ class DatabaseManager(object):
                     except ValueError:
                         self._logger.warning("Ignoring unparsable labels value '" + str(value) + "'")
                         continue
-                    if (isinstance(spoolLabels, list) == False):
+                    if (not isinstance(spoolLabels, list)):
                         continue
                     for singleLabel in spoolLabels:
                         result.add(singleLabel)
@@ -1970,7 +1965,7 @@ class DatabaseManager(object):
             result = []
             myQuery = SpoolModel.select(SpoolModel.color, SpoolModel.colorName).distinct()
             for spool in myQuery:
-                if (spool.color != None and spool.colorName):
+                if (spool.color is not None and spool.colorName):
                     colorInfo = {
                         "colorId": spool.color + ";" + spool.colorName,
                         "color": spool.color,
@@ -2006,4 +2001,3 @@ class DatabaseManager(object):
                 pass
 
         return self._handleReusableConnection(databaseCallMethode, withReusedConnection, "deleteSpool")
-

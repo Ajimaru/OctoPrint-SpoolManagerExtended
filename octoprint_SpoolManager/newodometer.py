@@ -55,14 +55,6 @@ class NewFilamentOdometer(object):
 				y = self._getCodeFloat(line, "Y")
 				z = self._getCodeFloat(line, "Z")
 				e = self._getCodeFloat(line, "E")
-				f = self._getCodeFloat(line, "F")
-
-				if x is not None or y is not None or z is not None:
-					# this is a move
-					move = True
-				else:
-					# print head stays on position
-					move = False
 
 				if e is not None:
 					if self.relativeMode or self.relativeE:
@@ -201,7 +193,7 @@ class NewFilamentOdometer(object):
 		return self.maxExtrusion
 
 	def _fireExtrusionChangedEvent(self):
-		if (self.extrusionChangedListener != None):
+		if (self.extrusionChangedListener is not None):
 			self.extrusionChangedListener(self.getExtrusionAmount())
 
 	def _getCodeInt(self, line, code):
@@ -227,4 +219,3 @@ class NewFilamentOdometer(object):
 			return None
 
 		return result
-

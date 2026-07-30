@@ -90,7 +90,7 @@ class FilamentOdometer(object):
 			toolIndex = self._get_int(cmd, self.regexT)
 			if toolIndex is not None:
 				self.currentToolName = "Tool" + str(toolIndex)
-				if ( (self.currentToolName in self.allToolExtrusions) == False):
+				if (self.currentToolName not in self.allToolExtrusions):
 					self.allToolExtrusions[self.currentToolName] = self.ToolExtrusion()
 					# if len(self.lastExtrusion) <= self.currentTool:
 					# 	for i in xrange(len(self.lastExtrusion), self.currentTool + 1):

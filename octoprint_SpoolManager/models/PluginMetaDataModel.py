@@ -1,7 +1,7 @@
 # coding=utf-8
 
 from octoprint_SpoolManager.models.BaseModel import BaseModel
-from peewee import CharField, Model, DecimalField, FloatField, DateField, DateTimeField, TextField, ForeignKeyField
+from peewee import CharField
 
 
 class PluginMetaDataModel(BaseModel):
