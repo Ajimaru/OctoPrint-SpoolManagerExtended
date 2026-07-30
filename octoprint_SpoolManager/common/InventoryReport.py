@@ -22,7 +22,7 @@ LOOPBACK_HOSTS = ("localhost", "127.0.0.1", "::1")
 
 
 def _value(rawValue):
-    if (rawValue is None):
+    if rawValue is None:
         return ""
     return str(rawValue)
 
@@ -33,7 +33,7 @@ def _resolveHost(host):
     so the report stays meaningful when the external database happens to run on the same
     host as this OctoPrint instance. Falls back to the original value if resolution fails.
     """
-    if (host not in LOOPBACK_HOSTS):
+    if host not in LOOPBACK_HOSTS:
         return host
 
     try:
@@ -51,7 +51,7 @@ def _resolveHost(host):
 
 def _formatRemainingWeight(spoolModel):
     remaining = calculateRemainingWeight(spoolModel.usedWeight, spoolModel.totalWeight)
-    if (remaining is None):
+    if remaining is None:
         return "-"
     return "%.0f g" % remaining
 
@@ -66,11 +66,15 @@ def build_database_context_info(databaseSettings, instanceName):
     :param instanceName: OctoPrint instance name from Appearance settings (may be None/empty)
     :return: str
     """
-    if (databaseSettings is not None and databaseSettings.useExternal):
+    if databaseSettings is not None and databaseSettings.useExternal:
         host = _resolveHost(_value(databaseSettings.host))
         return "%s / %s" % (host, _value(databaseSettings.name))
 
-    name = instanceName if (instanceName is not None and str(instanceName).strip() != "") else "OctoPrint"
+    name = (
+        instanceName
+        if (instanceName is not None and str(instanceName).strip() != "")
+        else "OctoPrint"
+    )
     return "%s / spoolmanager.db" % name
 
 
@@ -87,7 +91,7 @@ def extract_report_rows(allSpoolModels):
     hasNotes = any((_value(spool.noteText).strip() != "") for spool in spools)
 
     headers = list(BASE_COLUMNS)
-    if (hasNotes):
+    if hasNotes:
         headers.append(NOTES_COLUMN)
 
     rows = []
@@ -98,7 +102,7 @@ def extract_report_rows(allSpoolModels):
             _value(spool.vendor),
             _formatRemainingWeight(spool),
         ]
-        if (hasNotes):
+        if hasNotes:
             row.append(_value(spool.noteText))
         rows.append(row)
 
@@ -107,14 +111,21 @@ def extract_report_rows(allSpoolModels):
 
 ####################################################################################### -> PDF
 
+
 def build_inventory_report_pdf(allSpoolModels, dbContextInfo=""):
     """Builds the inventory report as a landscape A4 PDF. Returns a BytesIO positioned at 0."""
     from reportlab.lib import colors
-    from reportlab.lib.pagesizes import A4, landscape
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.enums import TA_RIGHT
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.platypus import (
+        Paragraph,
+        SimpleDocTemplate,
+        Spacer,
+        Table,
+        TableStyle,
+    )
 
     headers, rows, hasNotes = extract_report_rows(allSpoolModels)
 
@@ -127,46 +138,73 @@ def build_inventory_report_pdf(allSpoolModels, dbContextInfo=""):
         tableData.append([Paragraph(cell, cellStyle) for cell in row])
 
     # Column widths tuned for A4 landscape (usable width ~277mm after margins).
-    if (hasNotes):
+    if hasNotes:
         colWidths = [40 * mm, 40 * mm, 45 * mm, 30 * mm, 122 * mm]
     else:
         colWidths = [55 * mm, 55 * mm, 90 * mm, 77 * mm]
 
     table = Table(tableData, colWidths=colWidths, repeatRows=1)
-    table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#34495e")),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#bdc3c7")),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f4f6f7")]),
-        ("TOPPADDING", (0, 0), (-1, -1), 3),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-        ("LEFTPADDING", (0, 0), (-1, -1), 4),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-    ]))
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#34495e")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#bdc3c7")),
+                (
+                    "ROWBACKGROUNDS",
+                    (0, 1),
+                    (-1, -1),
+                    [colors.white, colors.HexColor("#f4f6f7")],
+                ),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ]
+        )
+    )
 
     now = datetime.datetime.now()
-    titleStyle = ParagraphStyle("title", parent=styles["Title"], fontSize=16, spaceAfter=2)
-    subTitleStyle = ParagraphStyle("subTitle", parent=styles["Normal"], fontSize=9,
-                                   textColor=colors.HexColor("#7f8c8d"))
-    dbInfoStyle = ParagraphStyle("dbInfo", parent=styles["Normal"], fontSize=8,
-                                 textColor=colors.HexColor("#7f8c8d"), alignment=TA_RIGHT)
+    titleStyle = ParagraphStyle(
+        "title", parent=styles["Title"], fontSize=16, spaceAfter=2
+    )
+    subTitleStyle = ParagraphStyle(
+        "subTitle",
+        parent=styles["Normal"],
+        fontSize=9,
+        textColor=colors.HexColor("#7f8c8d"),
+    )
+    dbInfoStyle = ParagraphStyle(
+        "dbInfo",
+        parent=styles["Normal"],
+        fontSize=8,
+        textColor=colors.HexColor("#7f8c8d"),
+        alignment=TA_RIGHT,
+    )
 
     titleCell = [
         Paragraph("SpoolManager Inventory Report", titleStyle),
-        Paragraph("%d spool(s) &middot; generated %s" % (len(rows), now.strftime(FORMAT_DATETIME)),
-                  subTitleStyle),
+        Paragraph(
+            "%d spool(s) &middot; generated %s"
+            % (len(rows), now.strftime(FORMAT_DATETIME)),
+            subTitleStyle,
+        ),
     ]
     dbInfoCell = Paragraph(dbContextInfo, dbInfoStyle)
 
     # 1-row, borderless table as a layout trick to place the DB info top-right next to the title.
     headerTable = Table([[titleCell, dbInfoCell]], colWidths=[187 * mm, 90 * mm])
-    headerTable.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-        ("TOPPADDING", (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-    ]))
+    headerTable.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]
+        )
+    )
 
     story = [
         headerTable,
@@ -178,8 +216,10 @@ def build_inventory_report_pdf(allSpoolModels, dbContextInfo=""):
     doc = SimpleDocTemplate(
         pdfBuffer,
         pagesize=landscape(A4),
-        leftMargin=10 * mm, rightMargin=10 * mm,
-        topMargin=12 * mm, bottomMargin=12 * mm,
+        leftMargin=10 * mm,
+        rightMargin=10 * mm,
+        topMargin=12 * mm,
+        bottomMargin=12 * mm,
         title="SpoolManager Inventory Report",
     )
     doc.build(story)
@@ -188,6 +228,7 @@ def build_inventory_report_pdf(allSpoolModels, dbContextInfo=""):
 
 
 ####################################################################################### -> CSV
+
 
 def build_inventory_report_csv(allSpoolModels, dbContextInfo=""):
     """Builds the inventory report as CSV (comma-delimited, all fields quoted). Returns str."""
@@ -207,6 +248,7 @@ def build_inventory_report_csv(allSpoolModels, dbContextInfo=""):
 
 ####################################################################################### -> XLSX
 
+
 def build_inventory_report_xlsx(allSpoolModels, dbContextInfo=""):
     """Builds the inventory report as an .xlsx workbook. Returns a BytesIO positioned at 0."""
     from openpyxl import Workbook
@@ -224,7 +266,9 @@ def build_inventory_report_xlsx(allSpoolModels, dbContextInfo=""):
     ws.append([])
 
     headerFont = Font(bold=True, color="FFFFFF")
-    headerFill = PatternFill(start_color="34495E", end_color="34495E", fill_type="solid")
+    headerFill = PatternFill(
+        start_color="34495E", end_color="34495E", fill_type="solid"
+    )
 
     headerRowIndex = 3
     ws.append(headers)
@@ -240,9 +284,11 @@ def build_inventory_report_xlsx(allSpoolModels, dbContextInfo=""):
         maxLength = len(header)
         for row in rows:
             value = row[columnIndex - 1]
-            if (len(value) > maxLength):
+            if len(value) > maxLength:
                 maxLength = len(value)
-        ws.column_dimensions[ws.cell(row=headerRowIndex, column=columnIndex).column_letter].width = min(maxLength + 2, 60)
+        ws.column_dimensions[
+            ws.cell(row=headerRowIndex, column=columnIndex).column_letter
+        ].width = min(maxLength + 2, 60)
 
     xlsxBuffer = BytesIO()
     wb.save(xlsxBuffer)
