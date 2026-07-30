@@ -1,9 +1,8 @@
-# Linting for the SpoolManager plugin.
+# Linting and formatting for the SpoolManager plugin.
 #
-# Mirrors OctoPrint core's tooling choice (flake8 for Python) and adds the
-# frontend linters. Formatting (Black/isort/Prettier) is intentionally NOT part
-# of this config yet - see setup.cfg for why - so running these hooks does not
-# reformat the code base.
+# Mirrors OctoPrint core's tooling: Black + isort + flake8 for Python, plus the
+# frontend linters. The repo-wide Black reformat happened in one dedicated
+# commit - list it in .git-blame-ignore-revs so `git blame` skips it.
 #
 # Setup:  pre-commit install
 # Manual: pre-commit run --all-files
@@ -29,6 +28,17 @@ repos:
       - id: check-merge-conflict
       - id: check-added-large-files
         args: ["--maxkb=1024"]
+
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        args: ["--profile", "black"]
+
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
 
   - repo: https://github.com/PyCQA/flake8
     rev: 7.1.1

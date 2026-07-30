@@ -31,10 +31,7 @@ SECTION_AUX = "aux"
 # before enabling tag writing. None means "key unknown" - encodeSection() refuses to encode
 # a field whose key is still unresolved rather than inventing a number.
 FIELD_KEY_MAP = {
-    SECTION_META: {
-        "version": None,
-        "tagId": None
-    },
+    SECTION_META: {"version": None, "tagId": None},
     SECTION_MAIN: {
         "materialName": None,
         "colorName": None,
@@ -43,7 +40,7 @@ FIELD_KEY_MAP = {
         "density": None,
         "vendorName": None,
         "netWeight": None,
-        "spoolWeight": None
+        "spoolWeight": None,
     },
     SECTION_AUX: {
         "remainingWeight": None,
@@ -52,8 +49,8 @@ FIELD_KEY_MAP = {
         "enclosureTemperature": None,
         "serialNumber": None,
         "batchNumber": None,
-        "purchasedOn": None
-    }
+        "purchasedOn": None,
+    },
 }
 
 
@@ -64,46 +61,49 @@ class UnresolvedFieldKeyError(Exception):
 
 ##~~ CBOR (RFC 8949) - only the subset the tag payload needs
 
+
 def _encodeHead(majorType, value):
     prefix = majorType << 5
-    if (value < 24):
+    if value < 24:
         return struct.pack(">B", prefix | value)
-    if (value < 0x100):
+    if value < 0x100:
         return struct.pack(">BB", prefix | 24, value)
-    if (value < 0x10000):
+    if value < 0x10000:
         return struct.pack(">BH", prefix | 25, value)
-    if (value < 0x100000000):
+    if value < 0x100000000:
         return struct.pack(">BI", prefix | 26, value)
     return struct.pack(">BQ", prefix | 27, value)
 
 
 def encodeCBOR(value):
-    if (value is None):
+    if value is None:
         return b"\xf6"
-    if (value is True):
+    if value is True:
         return b"\xf5"
-    if (value is False):
+    if value is False:
         return b"\xf4"
-    if (isinstance(value, int)):
-        if (value >= 0):
+    if isinstance(value, int):
+        if value >= 0:
             return _encodeHead(0, value)
         return _encodeHead(1, -value - 1)
-    if (isinstance(value, float)):
+    if isinstance(value, float):
         return b"\xfb" + struct.pack(">d", value)
-    if (isinstance(value, bytes)):
+    if isinstance(value, bytes):
         return _encodeHead(2, len(value)) + value
-    if (isinstance(value, str)):
+    if isinstance(value, str):
         encoded = value.encode("utf-8")
         return _encodeHead(3, len(encoded)) + encoded
-    if (isinstance(value, (list, tuple))):
+    if isinstance(value, (list, tuple)):
         result = _encodeHead(4, len(value))
         for item in value:
             result += encodeCBOR(item)
         return result
-    if (isinstance(value, dict)):
+    if isinstance(value, dict):
         # canonical ordering: integer keys ascending, so the same spool always encodes
         # to the same bytes (makes the unit tests and a tag diff meaningful)
-        items = sorted(value.items(), key=lambda item: (isinstance(item[0], str), item[0]))
+        items = sorted(
+            value.items(), key=lambda item: (isinstance(item[0], str), item[0])
+        )
         result = _encodeHead(5, len(items))
         for key, item in items:
             result += encodeCBOR(key)
@@ -114,14 +114,17 @@ def encodeCBOR(value):
 
 ##~~ NDEF
 
+
 def buildNDEFMessage(payload, mimeType=OPENPRINTTAG_MIME_TYPE):
     # Single MIME record, TNF 0x02, both MB and ME set because it is the only record.
     typeBytes = mimeType.encode("ascii")
     isShortRecord = len(payload) < 256
 
-    header = 0xC2 if not isShortRecord else 0xD2  # MB|ME|TNF=2, SR set for short records
+    header = (
+        0xC2 if not isShortRecord else 0xD2
+    )  # MB|ME|TNF=2, SR set for short records
     record = struct.pack(">BB", header, len(typeBytes))
-    if (isShortRecord):
+    if isShortRecord:
         record += struct.pack(">B", len(payload))
     else:
         record += struct.pack(">I", len(payload))
@@ -132,28 +135,29 @@ def buildNDEFMessage(payload, mimeType=OPENPRINTTAG_MIME_TYPE):
 
 ##~~ Mapping
 
+
 def _colorHex(spoolModel):
     color = getattr(spoolModel, "color", None)
-    if (color is None or not str(color).strip()):
+    if color is None or not str(color).strip():
         return None
     return str(color).strip()
 
 
 def _isoDate(value):
-    if (value is None):
+    if value is None:
         return None
-    if (hasattr(value, "strftime")):
+    if hasattr(value, "strftime"):
         return value.strftime("%Y-%m-%d")
     return str(value)
 
 
 def _remainingWeight(spoolModel):
     remaining = getattr(spoolModel, "remainingWeight", None)
-    if (remaining is not None):
+    if remaining is not None:
         return remaining
     totalWeight = getattr(spoolModel, "totalWeight", None)
     usedWeight = getattr(spoolModel, "usedWeight", None)
-    if (totalWeight is None):
+    if totalWeight is None:
         return None
     return totalWeight - (usedWeight if usedWeight is not None else 0)
 
@@ -162,10 +166,7 @@ def spoolModelToFields(spoolModel):
     # Named-field view of a spool in OpenPrintTag terms. Values that the spool does not carry
     # are dropped instead of written as null, so an unconfigured field never claims "0 grams".
     fields = {
-        SECTION_META: {
-            "version": 1,
-            "tagId": spoolModel.databaseId
-        },
+        SECTION_META: {"version": 1, "tagId": spoolModel.databaseId},
         SECTION_MAIN: {
             "materialName": getattr(spoolModel, "material", None),
             "colorName": getattr(spoolModel, "colorName", None),
@@ -174,7 +175,7 @@ def spoolModelToFields(spoolModel):
             "density": getattr(spoolModel, "density", None),
             "vendorName": getattr(spoolModel, "vendor", None),
             "netWeight": getattr(spoolModel, "totalWeight", None),
-            "spoolWeight": getattr(spoolModel, "spoolWeight", None)
+            "spoolWeight": getattr(spoolModel, "spoolWeight", None),
         },
         SECTION_AUX: {
             "remainingWeight": _remainingWeight(spoolModel),
@@ -183,13 +184,15 @@ def spoolModelToFields(spoolModel):
             "enclosureTemperature": getattr(spoolModel, "enclosureTemperature", None),
             "serialNumber": getattr(spoolModel, "code", None),
             "batchNumber": getattr(spoolModel, "batchNumber", None),
-            "purchasedOn": _isoDate(getattr(spoolModel, "purchasedOn", None))
-        }
+            "purchasedOn": _isoDate(getattr(spoolModel, "purchasedOn", None)),
+        },
     }
 
     for sectionName in list(fields.keys()):
         fields[sectionName] = dict(
-            (key, value) for key, value in fields[sectionName].items() if value is not None
+            (key, value)
+            for key, value in fields[sectionName].items()
+            if value is not None
         )
     return fields
 
@@ -200,7 +203,7 @@ def getUnresolvedFieldNames(fields):
     for sectionName, sectionFields in fields.items():
         keyMap = FIELD_KEY_MAP.get(sectionName, {})
         for fieldName in sectionFields.keys():
-            if (keyMap.get(fieldName) is None):
+            if keyMap.get(fieldName) is None:
                 unresolved.append(sectionName + "." + fieldName)
     return sorted(unresolved)
 
@@ -211,23 +214,35 @@ def isEncodingComplete(fields):
 
 def encodeSection(sectionName, sectionFields):
     keyMap = FIELD_KEY_MAP.get(sectionName)
-    if (keyMap is None):
-        raise UnresolvedFieldKeyError("Unknown OpenPrintTag section '" + str(sectionName) + "'")
+    if keyMap is None:
+        raise UnresolvedFieldKeyError(
+            "Unknown OpenPrintTag section '" + str(sectionName) + "'"
+        )
 
     cborMap = {}
     for fieldName, value in sectionFields.items():
         integerKey = keyMap.get(fieldName)
-        if (integerKey is None):
+        if integerKey is None:
             raise UnresolvedFieldKeyError(
-                "No confirmed OpenPrintTag key for '" + sectionName + "." + fieldName
-                + "'. Transcribe it from the specification's data/ directory first.")
+                "No confirmed OpenPrintTag key for '"
+                + sectionName
+                + "."
+                + fieldName
+                + "'. Transcribe it from the specification's data/ directory first."
+            )
         cborMap[integerKey] = value
 
     encoded = encodeCBOR(cborMap)
-    if (len(encoded) > MAX_SECTION_SIZE_BYTES):
+    if len(encoded) > MAX_SECTION_SIZE_BYTES:
         raise ValueError(
-            "OpenPrintTag section '" + sectionName + "' is " + str(len(encoded))
-            + " bytes, the specification allows at most " + str(MAX_SECTION_SIZE_BYTES) + ".")
+            "OpenPrintTag section '"
+            + sectionName
+            + "' is "
+            + str(len(encoded))
+            + " bytes, the specification allows at most "
+            + str(MAX_SECTION_SIZE_BYTES)
+            + "."
+        )
     return encoded
 
 
@@ -235,7 +250,7 @@ def encodeFields(fields):
     # Full payload: a CBOR map of sections, each section itself a CBOR map with integer keys.
     sections = {}
     for sectionName, sectionFields in fields.items():
-        if (not sectionFields):
+        if not sectionFields:
             continue
         sections[sectionName] = encodeSection(sectionName, sectionFields)
     return encodeCBOR(sections)
