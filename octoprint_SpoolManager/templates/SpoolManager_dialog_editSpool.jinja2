@@ -378,7 +378,7 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                 <div class="span8">
                                     <label class="control-label">QR Code</label>
                                     <div class="controls">
-                                        <div class="">
+                                        <div>
         <!--                                        <a data-bind="attr: {href: '{{ url_for("index") }}plugin/SpoolManager/generateQRCode/'+spoolDialog.spoolItemForEditing.databaseId()}" target="_new">-->
         <!--                                            <img loading="lazy" class="qr-code" alt="QR Code" data-bind="attr: {src: '{{ url_for("index") }}plugin/SpoolManager/generateQRCode/'+spoolDialog.spoolItemForEditing.databaseId() }">-->
         <!--                                        </a>-->
@@ -392,8 +392,8 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                     </div>
                                 </div>
                                 <div class="span4">
-                                    <label class="">Database ID</label>
-                                    <div class="">
+                                    <label>Database ID</label>
+                                    <div>
                                         <input title="Used for QR-Code generation" data-bind="textInput: spoolDialog.spoolItemForEditing.databaseId"  type="text" class="input-mini text-right"  disabled="true"/>
                                     </div>
                                 </div>
@@ -427,7 +427,7 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                         </div>
 -->
                         <div class="control-group" style="margin-bottom: -20px;">
-                            <label class="">
+                            <label>
                                 <div><sup>1</sup><small>Mandatory field</small></div>
                                 <div><sup>2</sup><small>Needed for filament usage prediction</small></div>
                                 <div><sup>3</sup><small>See <a href="https://icezaza2543.github.io/SpoolmanDB-Community/" target="newTab">https://icezaza2543.github.io/SpoolmanDB-Community/ (without warranty)</a></small></div>
@@ -439,7 +439,7 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                     </div>
 <!-- RIGHT COLUMN -->
                     <div class="span6" >
-                        <div class="">
+                        <div>
                             <div class="row" data-bind="visible: !spoolDialog.simpleMode()">
                                 {# Separate date + time inputs: a single datetime-local input reports an empty #}
                                 {# value until both parts are filled, silently losing date-only entries on save. #}
@@ -733,8 +733,8 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
 
                             <div class="row">
                                 <div class="span12 text-center">
-                                    <div class="" style="margin-top:10px">
-                                        <div class="">
+                                    <div style="margin-top:10px">
+                                        <div>
 <!--                                                <div class="spool-note-editor-container">-->
                                                 <div id="spool-note-editor" style="min-height:120px;"></div>
 <!--                                                </div>-->
@@ -875,4 +875,3 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
         <button type="button" class="btn btn-primary" data-bind="click: spoolDialog.switchToFullViewFromWarning">Switch to Full view</button>
     </div>
 </div>
-
