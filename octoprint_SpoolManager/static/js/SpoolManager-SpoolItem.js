@@ -399,21 +399,21 @@ let SpoolItem;
         this.lastUse(updateData.lastUse);
         this.purchasedOn(updateData.purchasedOn);
         if (updateData.firstUse){
-            var convertedDateTime = moment(data.firstUse, PARSE_FORMAT_DATETIME).format(FORMAT_DATETIME_LOCAL)
+            let convertedDateTime = moment(data.firstUse, PARSE_FORMAT_DATETIME).format(FORMAT_DATETIME_LOCAL)
             this.firstUseKO(convertedDateTime);
         }
         else{
             this.firstUseKO(null);
         }
         if (updateData.lastUse){
-            var convertedDateTime = moment(data.lastUse, PARSE_FORMAT_DATETIME).format(FORMAT_DATETIME_LOCAL)
+            let convertedDateTime = moment(data.lastUse, PARSE_FORMAT_DATETIME).format(FORMAT_DATETIME_LOCAL)
             this.lastUseKO(convertedDateTime);
         }
         else{
             this.lastUseKO(null);
         }
         if (updateData.purchasedOn){
-            var convertedDateTime = moment(data.purchasedOn, PARSE_FORMAT_DATE).format(FORMAT_DATE)
+            let convertedDateTime = moment(data.purchasedOn, PARSE_FORMAT_DATE).format(FORMAT_DATE)
             this.purchasedOnKO(convertedDateTime);
         }
         else {
@@ -428,7 +428,7 @@ let SpoolItem;
         // update label selections
         if (updateData.labels != null){
             this.labels.removeAll();
-            selectedLabels = updateData.labels
+            var selectedLabels = updateData.labels
             if (Array.isArray(updateData.labels) == false){
                 selectedLabels = JSON.parse(updateData.labels)
             }

@@ -47,7 +47,6 @@ SPOOLMANAGER_DIALOGS = {
      * Never rejects, so call sites do not need a .catch().
      */
     _confirmationDialog: function (options) {
-        var self = this;
 
         return new Promise(function (resolve) {
             if (typeof showConfirmationDialog !== "function") {
