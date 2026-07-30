@@ -842,27 +842,9 @@ function SpoolManagerEditSpoolDialog() {
         self._reColorFilamentIcon(self.spoolItemForEditing.color());
         self.spoolItemForEditing.color.subscribe(function (newColor) {
             self._reColorFilamentIcon(newColor);
-            var colorParts = SPOOLMANAGER_UTILS.parseSpoolColor(newColor);
-            if (colorParts.isRainbow) {
-                self.spoolItemForEditing.colorName("Rainbow");
-                return;
-            }
-            var transparentPrefix = colorParts.isTransparent ? "Transparent" : "";
-            if (colorParts.isTransparent && colorParts.isUntinted) {
-                self.spoolItemForEditing.colorName(transparentPrefix);
-                return;
-            }
-            if (colorParts.colors.length > 1) {
-                // multi-color: keep the name the user typed
-                return;
-            }
-            var colorName = tinycolor(colorParts.colors[0]).toName();
-            if (colorName != false) {
-                self.spoolItemForEditing.colorName(
-                    transparentPrefix ? transparentPrefix + " " + colorName : colorName
-                );
-            } else if (transparentPrefix) {
-                self.spoolItemForEditing.colorName(transparentPrefix);
+            var suggestedName = SPOOLMANAGER_UTILS.colorNameForSpoolColor(newColor);
+            if (suggestedName != null) {
+                self.spoolItemForEditing.colorName(suggestedName);
             }
         });
         // ----------------- start: weight stuff
