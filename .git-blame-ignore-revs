@@ -8,5 +8,4 @@
 8fcaf9ce6c15e1789493f0c3da1f368660d02a5c
 
 # chore: reformat frontend assets with prettier
-# NOTE: add the full SHA of the prettier reformat commit here right after committing
-# it (git rev-parse HEAD), in a separate follow-up commit.
+4bdeca57f1b026bcb432418c3152ebab8909be8e
