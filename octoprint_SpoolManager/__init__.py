@@ -122,15 +122,15 @@ class SpoolmanagerPlugin(
         enclosureOffsetEnabled = self._settings.get_boolean([SettingsKeys.SETTINGS_KEY_ENCLOSURE_OFFSET_ENABLED])
 
         offset_dict = dict()
-        if toolOffsetEnabled == True and spoolModel is not None:
+        if toolOffsetEnabled and spoolModel is not None:
             if spoolModel.offsetTemperature is not None:
                 offset_dict["tool"+str(toolIndex)] = spoolModel.offsetTemperature
 
-        if bedOffsetEnabled == True and spoolModel is not None:
+        if bedOffsetEnabled and spoolModel is not None:
             if spoolModel.offsetBedTemperature is not None:
                 offset_dict["bed"] = spoolModel.offsetBedTemperature
 
-        if enclosureOffsetEnabled == True and spoolModel is not None:
+        if enclosureOffsetEnabled and spoolModel is not None:
             if spoolModel.offsetEnclosureTemperature is not None:
                 offset_dict["chamber"] = spoolModel.offsetEnclosureTemperature
 
@@ -677,7 +677,7 @@ class SpoolmanagerPlugin(
 
             if ((currentExtrusionLength is None or currentExtrusionLength <= 0.0)
                     and printStatus == "success"
-                    and self._slicedUsageAlreadyBooked == False
+                    and not self._slicedUsageAlreadyBooked
                     and slicedUsagePlausible):
                 # nothing streamed through octoprint (e.g. printer-storage prints via a
                 # connector plugin), so book the sliced filament usage instead
@@ -697,7 +697,7 @@ class SpoolmanagerPlugin(
                 self._logger.info("Tool %d: No filament extruded" % toolIndex)
                 continue
             self._logger.info("Tool %d: Extruded filament length: %s" % (toolIndex, str(currentExtrusionLength)))
-            spoolUsedLength = 0.0 if StringUtils.isEmpty(spoolModel.usedLength) == True else spoolModel.usedLength
+            spoolUsedLength = 0.0 if StringUtils.isEmpty(spoolModel.usedLength) else spoolModel.usedLength
             self._logger.info("Tool %d: Current Spool used filament length: %s" % (toolIndex, str(spoolUsedLength)))
             newUsedLength = spoolUsedLength + currentExtrusionLength
             self._logger.info("Tool %d: New Spool used filament length: %s" % (toolIndex, str(newUsedLength)))
@@ -777,7 +777,7 @@ class SpoolmanagerPlugin(
         connectionErrorResult = self._databaseManager.testDatabaseConnection()
 
         # Don't show already shown message
-        if (self.databaseConnectionProblemConfirmed == False and
+        if (not self.databaseConnectionProblemConfirmed and
                 connectionErrorResult is not None):
             databaseErrorMessageDict = self._databaseManager.getCurrentErrorMessageDict()
             # The databaseErrorMessages should always be present in that case.
@@ -946,13 +946,13 @@ class SpoolmanagerPlugin(
 
         offsetCleanup = False
         offset_dict = dict()
-        if newToolOffsetEnabled == False and oldToolOffsetEnabled == True:
+        if not newToolOffsetEnabled and oldToolOffsetEnabled:
             offsetCleanup = True
             offset_dict["tool0"] = 0
-        if newBedOffsetEnabled == False and oldBedOffsetEnabled == True:
+        if not newBedOffsetEnabled and oldBedOffsetEnabled:
             offsetCleanup = True
             offset_dict["bed"] = 0
-        if newEnclosureOffsetEnabled == False and oldEnclosureOffsetEnabled == True:
+        if not newEnclosureOffsetEnabled and oldEnclosureOffsetEnabled:
             offsetCleanup = True
             offset_dict["chamber"] = 0
 
@@ -1227,4 +1227,3 @@ def __plugin_load__():
         # "octoprint.comm.protocol.scripts": __plugin_implementation__.message_on_connect
         "octoprint.events.register_custom_events":  __plugin_implementation__.register_custom_events
     }
-

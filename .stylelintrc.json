@@ -1,0 +1,35 @@
+{
+  "extends": "stylelint-config-standard",
+  "ignoreFiles": [
+    "octoprint_SpoolManager/static/css/quill.snow.css",
+    "3rdPartySoftware/**",
+    "node_modules/**",
+    "build/**",
+    "dist/**"
+  ],
+  "rules": {
+    "comment-empty-line-before": null,
+    "comment-whitespace-inside": null,
+    "rule-empty-line-before": null,
+    "declaration-empty-line-before": null,
+    "at-rule-empty-line-before": null,
+
+    "selector-id-pattern": null,
+    "selector-class-pattern": null,
+
+    "color-function-notation": null,
+    "alpha-value-notation": null,
+    "value-keyword-case": null,
+
+    "no-descending-specificity": null,
+    "property-no-vendor-prefix": null,
+
+    "media-feature-range-notation": "prefix"
+  },
+  "overrides": [
+    {
+      "files": ["**/*.less"],
+      "customSyntax": "postcss-less"
+    }
+  ]
+}

@@ -2,8 +2,7 @@
 
 import datetime
 
-from peewee import Model, DateTimeField, AutoField, BigAutoField, IntegerField, FixedCharField, TimestampField, \
-	SmallIntegerField
+from peewee import Model, DateTimeField, AutoField, FixedCharField, SmallIntegerField
 
 
 # model definitions -- the standard "pattern" is to define a base model class

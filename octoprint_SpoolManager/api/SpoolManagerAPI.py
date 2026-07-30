@@ -1,7 +1,6 @@
 # coding=utf-8
 
 import base64
-import logging
 import os
 
 import octoprint.plugin
@@ -89,7 +88,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
         spoolModel.version = self._toIntFromJSONOrNone("version", jsonData, validationErrors)
         # if statement is needed because assigning None is alos detected as an dirtyField
-        if (self._getValueFromJSONOrNone("databaseId", jsonData) != None):
+        if (self._getValueFromJSONOrNone("databaseId", jsonData) is not None):
             spoolModel.databaseId = self._toIntFromJSONOrNone("databaseId", jsonData, validationErrors, minValue=1)
 
         spoolModel.isTemplate = self._getValueFromJSONOrNone("isTemplate", jsonData)
@@ -138,7 +137,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # such row breaks the label catalog (and with it the spool search) for the whole table.
         # The edit dialog always sends an array, so this only bites API clients that omit it.
         labels = self._getValueFromJSONOrNone("labels", jsonData)
-        if (labels == None):
+        if (labels is None):
             labels = []
         labelsJson = json.dumps(labels)
         if (len(labelsJson) > maxTextLength):
@@ -154,7 +153,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
         # required-field checks (mirrors the client-side rules so a direct API call cannot bypass them),
         # but only for real spools - templates are allowed to be incomplete
-        if (spoolModel.isTemplate != True):
+        if (not spoolModel.isTemplate):
             if (StringUtils.isEmpty(spoolModel.displayName)):
                 validationErrors.append("Displayname must not be empty")
             if (StringUtils.isEmpty(spoolModel.colorName)):
@@ -171,17 +170,17 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     def _toStringFromJSONOrNone(self, key, json, validationErrors=None, maxLength=255):
         # defense-in-depth: rejects oversized strings before they reach the database layer
         value = self._getValueFromJSONOrNone(key, json)
-        if (value == None):
+        if (value is None):
             return None
-        if (isinstance(value, str) == False):
+        if (not isinstance(value, str)):
             value = str(value)
-        if (maxLength != None and len(value) > maxLength and validationErrors is not None):
+        if (maxLength is not None and len(value) > maxLength and validationErrors is not None):
             validationErrors.append(self._fieldLabel(key) + " must not be longer than " + str(maxLength) + " characters")
         return value
 
     def _toFloatFromJSONOrNone(self, key, json, validationErrors=None, minValue=None):
         value = self._getValueFromJSONOrNone(key, json)
-        if (value != None):
+        if (value is not None):
             if (StringUtils.isNotEmpty(value)):
                 try:
                     value = float(value)
@@ -200,7 +199,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
     def _toIntFromJSONOrNone(self, key, json, validationErrors=None, minValue=None):
         value = self._getValueFromJSONOrNone(key, json)
-        if (value != None):
+        if (value is not None):
             if (StringUtils.isNotEmpty(value)):
                 try:
                     value = int(value)
@@ -243,15 +242,15 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
         for toolIndex, databaseId in enumerate(databaseIds):
             spoolModel = None
-            if (databaseId != None):
+            if (databaseId is not None):
                 self._databaseManager.connectoToDatabase()
                 spoolModel = self._databaseManager.loadSpool(databaseId)
                 self._databaseManager.closeDatabase()
-                if (spoolModel == None):
+                if (spoolModel is None):
                     self._logger.warning(
                         "Last selected Spool for Tool %d from plugin-settings not found in database. Maybe deleted in the meantime." % toolIndex)
             spoolModelList.append(spoolModel)
-            if (spoolModel != None):
+            if (spoolModel is not None):
                 eventPayload = {
                     "toolId": toolIndex,
                     "databaseId": spoolModel.databaseId,
@@ -269,14 +268,11 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         for spoolDict in allSpoolLegacyList:
             spoolModel = SpoolModel()
 
-            spoolIdInt = spoolDict["id"]
             nameUnicode = spoolDict["name"]
             usedWeightFloat = spoolDict["used"]
             totalWeightFloat = spoolDict["weight"]
-            tempOffsetInt = spoolDict["temp_offset"]
             costFloat = spoolDict["cost"]
             profileDict = spoolDict["profile"]
-            profileIdInt = profileDict["id"]
             diameterFloat = profileDict["diameter"]
             materialUnicode = profileDict["material"]
             vendorUnicode = profileDict["vendor"]
@@ -300,7 +296,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         return allSpoolModels
 
     def _calculateUsedLength(self, usedWeight, density, diameter):
-        if (diameter == None or density == None or usedWeight == None):
+        if (diameter is None or density is None or usedWeight is None):
             self._logger.info("Could not calculate used length because some values (usedWeigth, density, diameter) were missing")
             return None
         radius = diameter / 2.0
@@ -312,7 +308,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # of the plugin computes for such a spool.
         length = (volume * 1000) / (PI * radius * radius)
         lengthRounded = int(round(length))
-        return lengthRounded;
+        return lengthRounded
 
     def _resetSelectedSpools(self):
         self._settings.set([SettingsKeys.SETTINGS_KEY_SELECTED_SPOOLS_DATABASE_IDS], [])
@@ -329,7 +325,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         spoolModel = None
         if (databaseId != -1):
             spoolModel = self._databaseManager.loadSpool(databaseId)
-            if (spoolModel != None):
+            if (spoolModel is not None):
                 self._logger.info(
                     "Store selected spool %s for tool %d in settings." %
                     (spoolModel.displayName, toolIndex)
@@ -337,7 +333,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 # assign model to selected toolId
                 if (toolIndex != -1):
                     databaseIds = databaseIds + [None] * (toolIndex + 1 - len(databaseIds))  # pad list to the needed length
-                    idx = 0;
+                    idx = 0
                     for selectedSpoolDBId in databaseIds:
                         if (selectedSpoolDBId == databaseId):
                             databaseIds[idx] = None
@@ -493,7 +489,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             # ]
 
             # TODO: remove combined attribute - possibly API breaking change
-            if (requiredWeightResult["metaDataMissing"] == True or requiredWeightResult["attributesMissing"] == True):
+            if (requiredWeightResult["metaDataMissing"] or requiredWeightResult["attributesMissing"]):
                 metaOrAttributesMissing = True
             metaDataMissing = metaDataMissing or requiredWeightResult["metaDataMissing"]
             attributesMissing = attributesMissing or requiredWeightResult["attributesMissing"]
@@ -502,9 +498,9 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             if ("detailedSpoolResult" in requiredWeightResult and len(requiredWeightResult["detailedSpoolResult"]) > 0):
                 detailedSpoolResult = requiredWeightResult["detailedSpoolResult"][0]
 
-            if spoolModel is not None and detailedSpoolResult is not None and detailedSpoolResult["spoolSelected"] == True:
+            if spoolModel is not None and detailedSpoolResult is not None and detailedSpoolResult["spoolSelected"]:
                 if (detailedSpoolResult["requiredLength"] > 0):
-                    if (detailedSpoolResult["notEnough"] == True):
+                    if (detailedSpoolResult["notEnough"]):
                         # if not enough or needed amount could not calculated
                         result['filamentNotEnough'].append(infoData)
                     # add every spool for reminding, if more the 0gr is needed
@@ -534,10 +530,10 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             #       result['noSpoolSelected'].append(infoData)
 
         # check if the user want a popup
-        if (checkForFilamentLength == False):
+        if (not checkForFilamentLength):
             result['filamentNotEnough'] = []
 
-        if (reminderSelectingSpool == False):
+        if (not reminderSelectingSpool):
             # no popup, because turned off by user
             result['reminderSpoolSelection'] = []
 
@@ -563,7 +559,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # for toolIndex, filamentLength in enumerate(self.metaDataFilamentLengths):
         for toolIndex in range(printerProfileToolCount):
             spoolModel = spoolModels[toolIndex] if toolIndex < len(spoolModels) else None
-            if (spoolModel != None):
+            if (spoolModel is not None):
                 # - assign temp-offset here, because after the print is started (event: ) it is too late Events.PRINT_STARTED
                 try:
                     self.set_temp_offsets(toolIndex, spoolModel)
@@ -599,7 +595,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         spoolModel = self._selectSpool(toolIndex, databaseId)
 
         spoolModelAsDict = None
-        if (spoolModel != None):
+        if (spoolModel is not None):
             spoolModelAsDict = Transformer.transformSpoolModelToDict(spoolModel)
 
         try:
@@ -620,7 +616,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     def getSpoolById(self, databaseId):
         spoolModel = self._databaseManager.loadSpool(databaseId)
 
-        if (spoolModel == None):
+        if (spoolModel is None):
             abort(404)
 
         return flask.jsonify({
@@ -638,12 +634,12 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     #    hence the clamping below.
     # Returns the resolved remaining weight, or None if the spool lacks the reference values.
     def _applyMeasuredGrossWeight(self, spoolModel, grossWeight, spoolWeightOverride, validationErrors):
-        spoolWeight = spoolWeightOverride if spoolWeightOverride != None else spoolModel.spoolWeight
-        if (spoolWeight == None):
+        spoolWeight = spoolWeightOverride if spoolWeightOverride is not None else spoolModel.spoolWeight
+        if (spoolWeight is None):
             # without the empty spool weight a gross reading carries no usable information
             validationErrors.append(self._fieldLabel("spoolWeight") + " is not set for this spool, so a gross weight cannot be interpreted")
             return None
-        if (spoolModel.totalWeight == None):
+        if (spoolModel.totalWeight is None):
             validationErrors.append(self._fieldLabel("totalWeight") + " is not set for this spool, so a gross weight cannot be interpreted")
             return None
 
@@ -669,7 +665,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # 38% used by weight and 0% used by length at the same time. Needs density+diameter;
         # if either is missing the helper logs and returns None, and we leave the old value alone.
         usedLength = self._calculateUsedLength(spoolModel.usedWeight, spoolModel.density, spoolModel.diameter)
-        if (usedLength != None):
+        if (usedLength is not None):
             spoolModel.usedLength = usedLength
 
         return remainingWeight
@@ -678,7 +674,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     # payload so MQTT/HA can republish the tool state for a spool that is currently in use.
     def _findSelectedToolIndexForSpool(self, databaseId):
         databaseIds = self._settings.get([SettingsKeys.SETTINGS_KEY_SELECTED_SPOOLS_DATABASE_IDS])
-        if (databaseIds == None):
+        if (databaseIds is None):
             return None
         for toolIndex, selectedDatabaseId in enumerate(databaseIds):
             if (selectedDatabaseId == databaseId):
@@ -693,7 +689,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # edit dialog and nulls every field the caller omits, which a scale has no way to supply.
         self._logger.info("API update measured weight for spool with database id '" + str(databaseId) + "'")
         jsonData = request.json
-        if (jsonData == None):
+        if (jsonData is None):
             return make_response(jsonify({"validationErrors": ["Request body must be JSON"]}), 400)
 
         validationErrors = []
@@ -701,7 +697,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # optional: correct the stored empty spool weight in the same call, handy when a
         # brand new spool is weighed for the first time
         spoolWeightOverride = self._toFloatFromJSONOrNone("spoolWeight", jsonData, validationErrors, minValue=0)
-        if (grossWeight == None and not validationErrors):
+        if (grossWeight is None and not validationErrors):
             validationErrors.append(self._fieldLabel("grossWeight") + " must not be empty")
         if (validationErrors):
             self._logger.warning("Update measured weight rejected, validation errors: " + str(validationErrors))
@@ -709,7 +705,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
         self._databaseManager.connectoToDatabase()
         spoolModel = self._databaseManager.loadSpool(databaseId, withReusedConnection=True)
-        if (spoolModel == None):
+        if (spoolModel is None):
             self._databaseManager.closeDatabase()
             abort(404)
 
@@ -724,7 +720,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         savedDatabaseId = self._databaseManager.saveSpool(spoolModel, withReusedConnection=True, suppressConflictMessage=True)
         self._databaseManager.closeDatabase()
 
-        if (savedDatabaseId == None):
+        if (savedDatabaseId is None):
             # saveSpool returns None on a version conflict or a deleted row - without this
             # check we would answer 200 while nothing was written.
             self._logger.warning("Could not store measured weight for spool with database id '" + str(databaseId) + "'")
@@ -742,7 +738,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             "usedWeight": spoolModel.usedWeight
         }
         toolIndex = self._findSelectedToolIndexForSpool(spoolModel.databaseId)
-        if (toolIndex != None):
+        if (toolIndex is not None):
             # spool is currently loaded -> MQTT can republish this tool's state
             eventPayload["toolId"] = toolIndex
         self._sendPayload2EventBus(EventBusKeys.EVENT_BUS_SPOOL_WEIGHT_MEASURED, eventPayload)
@@ -770,7 +766,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # answers with an empty body - the caller would have to guess the id it just created.
         self._logger.info("API create spool")
         jsonData = request.json
-        if (jsonData == None):
+        if (jsonData is None):
             return make_response(jsonify({"validationErrors": ["Request body must be JSON"]}), 400)
 
         spoolModel = SpoolModel()
@@ -784,17 +780,16 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # totalLength is derived from totalWeight in the edit dialog's JS and only ever reaches
         # the backend as a submitted field. An API client has no such conversion, so derive it
         # here when it was not supplied - otherwise every length based display stays empty.
-        if (spoolModel.totalLength == None):
+        if (spoolModel.totalLength is None):
             totalLength = self._calculateUsedLength(spoolModel.totalWeight, spoolModel.density, spoolModel.diameter)
-            if (totalLength != None):
+            if (totalLength is not None):
                 spoolModel.totalLength = totalLength
 
         # optional convenience: let a scale send its gross reading directly instead of
         # pre-calculating usedWeight itself
         grossWeight = self._toFloatFromJSONOrNone("grossWeight", jsonData, validationErrors, minValue=0)
-        remainingWeight = None
-        if (grossWeight != None and not validationErrors):
-            remainingWeight = self._applyMeasuredGrossWeight(spoolModel, grossWeight, None, validationErrors)
+        if (grossWeight is not None and not validationErrors):
+            self._applyMeasuredGrossWeight(spoolModel, grossWeight, None, validationErrors)
 
         if (validationErrors):
             self._logger.warning("Create spool rejected, validation errors: " + str(validationErrors))
@@ -802,13 +797,13 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
         self._databaseManager.connectoToDatabase()
         savedDatabaseId = self._databaseManager.saveSpool(spoolModel, withReusedConnection=True)
-        if (savedDatabaseId == None):
+        if (savedDatabaseId is None):
             self._databaseManager.closeDatabase()
             self._logger.error("Could not create spool")
             return make_response(jsonify({"error": "Could not create the spool."}), 500)
 
         # resolve display name variables ({id} is only known after the initial save), but never inside templates
-        if (spoolModel.isTemplate != True):
+        if (not spoolModel.isTemplate):
             if (self._resolveDisplayNameVariables(spoolModel)):
                 self._databaseManager.saveSpool(spoolModel, withReusedConnection=True)
         self._databaseManager.closeDatabase()
@@ -852,7 +847,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
     def _getOctoScaleBaseUrl(self):
         # Returns (baseUrl, errorResponse). errorResponse is None when OctoScale is usable.
-        if (self._settings.get_boolean([SettingsKeys.SETTINGS_KEY_OCTOSCALE_ENABLED]) != True):
+        if (not self._settings.get_boolean([SettingsKeys.SETTINGS_KEY_OCTOSCALE_ENABLED])):
             return (None, make_response(jsonify({
                 "success": False,
                 "error": "OctoScale is not enabled in the SpoolManager settings."
@@ -860,7 +855,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
         baseUrl = self._settings.get([SettingsKeys.SETTINGS_KEY_OCTOSCALE_URL])
         baseUrl = self._normalizeOctoScaleUrl(baseUrl)
-        if (baseUrl == None):
+        if (baseUrl is None):
             return (None, make_response(jsonify({
                 "success": False,
                 "error": "No OctoScale address configured in the SpoolManager settings."
@@ -868,7 +863,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         return (baseUrl, None)
 
     def _normalizeOctoScaleUrl(self, baseUrl):
-        if (baseUrl == None):
+        if (baseUrl is None):
             return None
         baseUrl = str(baseUrl).strip().rstrip("/")
         if (not baseUrl):
@@ -885,7 +880,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
         url = baseUrl + path
         try:
-            response = requests.get(url, timeout=timeout if timeout != None else self.OCTOSCALE_TIMEOUT_SECONDS)
+            response = requests.get(url, timeout=timeout if timeout is not None else self.OCTOSCALE_TIMEOUT_SECONDS)
         except requests.exceptions.Timeout:
             return (None, "OctoScale did not answer in time (" + url + ")")
         except requests.exceptions.RequestException as e:
@@ -908,17 +903,17 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # test what they just typed without saving first (same idea as testDatabaseConnection).
         jsonData = request.json
         baseUrl = None
-        if (jsonData != None):
+        if (jsonData is not None):
             baseUrl = jsonData.get("octoScaleUrl")
-        if (baseUrl == None or not str(baseUrl).strip()):
+        if (baseUrl is None or not str(baseUrl).strip()):
             baseUrl = self._settings.get([SettingsKeys.SETTINGS_KEY_OCTOSCALE_URL])
 
         baseUrl = self._normalizeOctoScaleUrl(baseUrl)
-        if (baseUrl == None):
+        if (baseUrl is None):
             return flask.jsonify({"success": False, "error": "Please enter the OctoScale address first."})
 
         response, errorMessage = self._callOctoScale(baseUrl, "/version")
-        if (errorMessage != None):
+        if (errorMessage is not None):
             return flask.jsonify({"success": False, "error": errorMessage})
 
         return flask.jsonify({
@@ -931,15 +926,15 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     def getOctoScaleWeight(self):
         # Polled roughly once per second while a weighing panel is open, so it stays quiet in the log.
         baseUrl, errorResponse = self._getOctoScaleBaseUrl()
-        if (errorResponse != None):
+        if (errorResponse is not None):
             return errorResponse
 
         response, errorMessage = self._callOctoScale(baseUrl, "/weight")
-        if (errorMessage != None):
+        if (errorMessage is not None):
             return flask.jsonify({"success": False, "error": errorMessage})
 
         grams, errorMessage = self._octoScaleFloatOrError(response)
-        if (errorMessage != None):
+        if (errorMessage is not None):
             return flask.jsonify({"success": False, "error": errorMessage})
 
         return flask.jsonify({"success": True, "grams": grams})
@@ -948,12 +943,12 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     @no_firstrun_access
     def tareOctoScale(self):
         baseUrl, errorResponse = self._getOctoScaleBaseUrl()
-        if (errorResponse != None):
+        if (errorResponse is not None):
             return errorResponse
 
         self._logger.info("Taring OctoScale")
         response, errorMessage = self._callOctoScale(baseUrl, "/tare")
-        if (errorMessage != None):
+        if (errorMessage is not None):
             return flask.jsonify({"success": False, "error": errorMessage})
 
         return flask.jsonify({"success": True})
@@ -964,11 +959,11 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # Device answers {ready, present, uid, data}; "data" holds the spool id already on the tag
         # (as ASCII digits) or an empty string for a blank tag.
         baseUrl, errorResponse = self._getOctoScaleBaseUrl()
-        if (errorResponse != None):
+        if (errorResponse is not None):
             return errorResponse
 
         response, errorMessage = self._callOctoScale(baseUrl, "/nfc")
-        if (errorMessage != None):
+        if (errorMessage is not None):
             return flask.jsonify({"success": False, "error": errorMessage})
 
         try:
@@ -978,22 +973,22 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
         existingSpoolId = None
         rawTagData = nfcData.get("data")
-        if (rawTagData != None and str(rawTagData).strip().isdigit()):
+        if (rawTagData is not None and str(rawTagData).strip().isdigit()):
             existingSpoolId = int(str(rawTagData).strip())
 
         result = {
             "success": True,
-            "ready": nfcData.get("ready") == True,
-            "present": nfcData.get("present") == True,
+            "ready": nfcData.get("ready"),
+            "present": nfcData.get("present"),
             "uid": nfcData.get("uid"),
             "spoolId": existingSpoolId
         }
 
         # Resolve the id already on the tag to a name, so the UI can warn with something
         # meaningful ("this tag belongs to <name>") before overwriting it.
-        if (existingSpoolId != None):
+        if (existingSpoolId is not None):
             existingSpool = self._databaseManager.loadSpool(existingSpoolId)
-            result["spoolDisplayName"] = existingSpool.displayName if existingSpool != None else None
+            result["spoolDisplayName"] = existingSpool.displayName if existingSpool is not None else None
 
         return flask.jsonify(result)
 
@@ -1001,42 +996,42 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     @no_firstrun_access
     def writeOctoScaleTag(self):
         baseUrl, errorResponse = self._getOctoScaleBaseUrl()
-        if (errorResponse != None):
+        if (errorResponse is not None):
             return errorResponse
 
         jsonData = request.json
-        if (jsonData == None):
+        if (jsonData is None):
             return make_response(jsonify({"success": False, "error": "Request body must be JSON"}), 400)
 
         databaseId = jsonData.get("databaseId")
-        if (databaseId == None or not str(databaseId).strip().isdigit()):
+        if (databaseId is None or not str(databaseId).strip().isdigit()):
             return make_response(jsonify({"success": False, "error": "A numeric databaseId is required"}), 400)
         databaseId = int(str(databaseId).strip())
 
         # The tag format is routed through the registry so an OpenPrintTag writer can be added
         # later without touching this endpoint's contract (issue #56).
         tagFormatId = jsonData.get("tagFormat")
-        if (tagFormatId == None):
+        if (tagFormatId is None):
             tagFormatId = TagFormats.TAG_FORMAT_SPOOL_ID_NTAG
         tagFormat = TagFormats.getTagFormat(tagFormatId)
-        if (tagFormat == None):
+        if (tagFormat is None):
             return make_response(jsonify({
                 "success": False,
                 "error": "Unknown tag format '" + str(tagFormatId) + "'"
             }), 400)
-        if (tagFormat["supported"] != True):
+        if (not tagFormat["supported"]):
             return make_response(jsonify({
                 "success": False,
                 "error": tagFormat["label"] + " cannot be written by the connected hardware yet."
             }), 400)
 
         spoolModel = self._databaseManager.loadSpool(databaseId)
-        if (spoolModel == None):
+        if (spoolModel is None):
             abort(404)
 
         self._logger.info("Writing NFC tag for spool with database id '" + str(databaseId) + "'")
         response, errorMessage = self._callOctoScale(baseUrl, "/nfcwriteid?id=" + str(databaseId), timeout=8.0)
-        if (errorMessage != None):
+        if (errorMessage is not None):
             return flask.jsonify({"success": False, "error": errorMessage})
 
         # The firmware writes and verifies, then answers with a short status text. Anything
@@ -1061,7 +1056,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # the mapping can be checked against real spools and an NFC-V capable writer can be
         # developed against a stable payload endpoint.
         spoolModel = self._databaseManager.loadSpool(databaseId)
-        if (spoolModel == None):
+        if (spoolModel is None):
             abort(404)
 
         fields = OpenPrintTag.spoolModelToFields(spoolModel)
@@ -1080,7 +1075,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             "databaseId": databaseId,
             "fields": fields,
             "payloadBase64": payloadBase64,
-            "encodingComplete": payloadBase64 != None,
+            "encodingComplete": payloadBase64 is not None,
             "unresolvedFields": unresolvedFields,
             "error": encodingError,
             "notes": ("The OpenPrintTag integer key map is not transcribed from the specification yet, "
@@ -1110,8 +1105,8 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
         if ("qrPreviewId" == databaseId):
             #Just pick a single spool
-            spoolModel = self._databaseManager.loadFirstSingleSpool();
-            if (spoolModel == None):
+            spoolModel = self._databaseManager.loadFirstSingleSpool()
+            if (spoolModel is None):
                 # empty database - nothing to preview
                 abort(404)
             databaseId = spoolModel.databaseId
@@ -1125,7 +1120,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             databaseId = int(databaseId)
         except (TypeError, ValueError):
             databaseId = None
-        if (databaseId == None):
+        if (databaseId is None):
             # no usable spool id -> no meaningful tab to redirect to
             abort(400)
 
@@ -1140,7 +1135,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # unknown id _selectSpool() treats the situation as "the spool stored for this tool
         # vanished" and clears the tool's slot, which would deselect whatever is currently
         # loaded just because someone scanned a stale QR code.
-        if (self._databaseManager.loadSpool(databaseId) == None):
+        if (self._databaseManager.loadSpool(databaseId) is None):
             self._logger.warning("Scanned QR code for spool id %d, which is not in the database." % databaseId)
             return self._buildQRCodeRedirect(databaseId, "notfound")
 
@@ -1170,7 +1165,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
         spoolModel = self._selectSpool(toolIndex, databaseId)
 
-        if (spoolModel != None):
+        if (spoolModel is not None):
             # Push a live update to all connected OctoPrint clients so an already-open
             # SpoolManager UI reflects the QR-triggered selection without a manual refresh.
             # The internal /selectSpool (PUT) path updates its own client-side state after
@@ -1229,11 +1224,11 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 useURLPrefix = True
                 qrCodeUrlPrefix = requestParameters["urlPrefix"]
 
-            if (useURLPrefix == None):
+            if (useURLPrefix is None):
                 useURLPrefix = self._settings.get_boolean([SettingsKeys.SETTINGS_KEY_QR_CODE_USE_URL_PREFIX])
 
             if (useURLPrefix):
-                if (qrCodeUrlPrefix == None):
+                if (qrCodeUrlPrefix is None):
                     qrCodeUrlPrefix = self._settings.get([SettingsKeys.SETTINGS_KEY_QR_CODE_URL_PREFIX])
 
                 spoolSelectionUrl = qrCodeUrlPrefix + "/plugin/SpoolManager/selectSpoolByQRCode/"+databaseId
@@ -1487,7 +1482,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                     updateParsingStatus(currentSpoolNumber)
 
                     remainingWeight = Transformer.calculateRemainingWeight(spool.usedWeight, spool.totalWeight)
-                    if (remainingWeight != None):
+                    if (remainingWeight is not None):
                         spool.remainingWeight = remainingWeight
                         # spool.save()
 
@@ -1540,7 +1535,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     @no_firstrun_access
     def createDatabaseBackup(self):
         backupResult = self._databaseManager.createLocalDatabaseBackup()
-        if (backupResult["success"] == False):
+        if (not backupResult["success"]):
             return flask.make_response("Database backup failed: " + str(backupResult["errorMessage"]), 400)
         return flask.jsonify({
             "backupFileName": os.path.basename(backupResult["backupFilePath"])
@@ -1552,7 +1547,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     @no_firstrun_access
     def downloadDatabaseBackup(self):
         backupFileName = flask.request.args.get("fileName")
-        if (backupFileName == None or backupFileName == ""):
+        if (backupFileName is None or backupFileName == ""):
             return flask.make_response("No backup file name provided.", 400)
 
         # only allow a plain file name inside the plugin data folder (no path traversal)
@@ -1561,7 +1556,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
         baseFolder = self._databaseManager.getDatabaseSettings().baseFolder
         backupFilePath = os.path.join(baseFolder, backupFileName)
-        if (os.path.isfile(backupFilePath) == False):
+        if (not os.path.isfile(backupFilePath)):
             return flask.make_response("Backup file not found.", 404)
 
         return send_file(backupFilePath,
@@ -1585,10 +1580,10 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     @no_firstrun_access
     def createImportBackup(self):
         databaseSettings = self._databaseManager.getDatabaseSettings()
-        if (databaseSettings == None):
+        if (databaseSettings is None):
             return flask.make_response("No database settings available.", 400)
 
-        useExternal = databaseSettings.useExternal == True
+        useExternal = databaseSettings.useExternal
         baseFolder = databaseSettings.baseFolder
         now = datetime.datetime.now()
         currentDate = now.strftime("%Y%m%d-%H%M%S")
@@ -1602,18 +1597,18 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
         try:
             # --- mandatory backup ---
-            if (useExternal == False):
+            if (not useExternal):
                 # internal SQLite: copy the .db file (backupDatabaseFile already stores it in baseFolder)
                 backupResult = self._databaseManager.createLocalDatabaseBackup()
-                if (backupResult["success"] == False):
+                if (not backupResult["success"]):
                     return flask.make_response("Database backup failed: " + str(backupResult["errorMessage"]), 400)
                 mandatoryBackupFile = os.path.basename(backupResult["backupFilePath"])
             else:
                 # external database: a full .sql dump is only available for MySQL
-                if (self._isExternalMySQLConfigured() == False):
+                if (not self._isExternalMySQLConfigured()):
                     return flask.make_response("A full backup before import is only available for external MySQL databases. Save the storage settings first.", 400)
                 dumpResult = self._databaseManager.exportMySQLDatabaseDump()
-                if (dumpResult["success"] == False):
+                if (not dumpResult["success"]):
                     return flask.make_response("Database dump backup failed: " + str(dumpResult["errorMessage"]), 400)
                 sqlFileName = "SpoolManager-backup-external-" + currentDate + ".sql"
                 with open(os.path.join(baseFolder, sqlFileName), "w") as sqlFile:
@@ -1651,19 +1646,19 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
     def _isExternalMySQLConfigured(self):
         databaseSettings = self._databaseManager.getDatabaseSettings()
-        return databaseSettings != None and \
-               databaseSettings.useExternal == True and \
+        return databaseSettings is not None and \
+               databaseSettings.useExternal and \
                "mysql" == databaseSettings.type
 
     @octoprint.plugin.BlueprintPlugin.route("/exportDatabaseDump", methods=["GET"])
     @no_firstrun_access
     def exportDatabaseDump(self):
 
-        if (self._isExternalMySQLConfigured() == False):
+        if (not self._isExternalMySQLConfigured()):
             return flask.make_response("Database dump export is only available for external MySQL databases. Save the storage settings first.", 400)
 
         exportResult = self._databaseManager.exportMySQLDatabaseDump()
-        if (exportResult["success"] == False):
+        if (not exportResult["success"]):
             return flask.make_response("Database dump export failed: " + str(exportResult["errorMessage"]), 400)
 
         now = datetime.datetime.now()
@@ -1678,7 +1673,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     @no_firstrun_access
     def importDatabaseDump(self):
 
-        if (self._isExternalMySQLConfigured() == False):
+        if (not self._isExternalMySQLConfigured()):
             return flask.make_response("Database dump import is only available for external MySQL databases. Save the storage settings first.", 400)
 
         input_name = "file"
@@ -1699,7 +1694,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
         importResult = self._databaseManager.importMySQLDatabaseDump(dumpText, importMode)
 
-        if (importResult["success"] == True and SettingsKeys.KEY_IMPORTCSV_MODE_REPLACE == importMode):
+        if (importResult["success"] and SettingsKeys.KEY_IMPORTCSV_MODE_REPLACE == importMode):
             # same behaviour as the CSV replace-import
             self._resetSelectedSpools()
 
@@ -1722,7 +1717,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     def importDatabaseFile(self):
 
         databaseSettings = self._databaseManager.getDatabaseSettings()
-        if (databaseSettings == None or databaseSettings.useExternal == True):
+        if (databaseSettings is None or databaseSettings.useExternal):
             return flask.make_response("A .db restore is only available for the local SQLite database.", 400)
 
         input_name = "file"
@@ -1738,7 +1733,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
         restoreResult = self._databaseManager.restoreFromSQLiteFile(sourceLocation, importMode)
 
-        if (restoreResult["success"] == True and SettingsKeys.KEY_IMPORTCSV_MODE_REPLACE == importMode):
+        if (restoreResult["success"] and SettingsKeys.KEY_IMPORTCSV_MODE_REPLACE == importMode):
             # same behaviour as the CSV/SQL replace-import
             self._resetSelectedSpools()
 
@@ -1837,13 +1832,13 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         jsonData = request.json if request.is_json else {}
         # the frontend downloads the backup dump via /exportDatabaseDump before triggering the upgrade;
         # without that flag a backup file is written to the plugin data folder instead
-        backupDownloaded = self._getValueFromJSONOrNone("backupDownloaded", jsonData) == True
+        backupDownloaded = self._getValueFromJSONOrNone("backupDownloaded", jsonData)
 
-        upgradeResult = self._databaseManager.upgradeExternalDatabaseScheme(createBackupFile=(backupDownloaded == False))
+        upgradeResult = self._databaseManager.upgradeExternalDatabaseScheme(createBackupFile=(not backupDownloaded))
         # fresh metadata so the frontend can update the scheme version badges
         metaDataResult = self._databaseManager.loadDatabaseMetaInformations(None)
 
-        if (upgradeResult["success"] == True):
+        if (upgradeResult["success"]):
             # refresh spool table and sidebar in all connected clients of this instance
             self._sendDataToClient(dict(action="reloadTable and sidebarSpools"))
 
@@ -1919,7 +1914,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         else:
             if (exportType == "legacyFilamentManager"):
                 allSpoolLegacyList = self._filamentManagerPluginImplementation.filamentManager.get_all_spools()
-                if (allSpoolLegacyList != None):
+                if (allSpoolLegacyList is not None):
 
                     allSpoolModelList = self._createSpoolModelFromLegacy(allSpoolLegacyList)
 
@@ -2028,7 +2023,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             self._logger.exception("loadSpoolsByQuery failed")
             schemeUpgradeNeeded = self._databaseManager.recheckSchemeUpgradeNeeded()
             return flask.jsonify({
-                                    "databaseConnectionProblem": schemeUpgradeNeeded == False,
+                                    "databaseConnectionProblem": not schemeUpgradeNeeded,
                                     "templateSpools": [],
                                     "catalogs": {
                                         "vendors": [],
@@ -2087,7 +2082,6 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         labels = sorted(labels, key=lambda item: item.lower())
         colors = sorted(colors, key=lambda item: item["colorName"].lower())
 
-        tempateSpoolAsDict = None
         allTemplateSpools = self._databaseManager.loadSpoolTemplates()
         allTemplateSpoolsAsDict = Transformer.transformAllSpoolModelsToDict(allTemplateSpools)
 
@@ -2108,7 +2102,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         #   "labels": ["", "good", "bad"]
         # }
         schemeUpgradeNeeded = self._databaseManager.isSchemeUpgradeNeeded()
-        if (schemeUpgradeNeeded == True):
+        if (schemeUpgradeNeeded):
             # queries succeed again, so another OctoPrint instance sharing the database
             # may have performed the upgrade in the meantime - re-evaluate the stale flag
             schemeUpgradeNeeded = self._databaseManager.recheckSchemeUpgradeNeeded()
@@ -2189,7 +2183,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             "PPSU"
         ]
         for currentMaterial in allMeterials:
-            if ( (currentMaterial.upper() in databaseMaterials) == False and (currentMaterial.lower() in databaseMaterials) == False):
+            if (currentMaterial.upper() not in databaseMaterials and currentMaterial.lower() not in databaseMaterials):
                 databaseMaterials.append(currentMaterial)
         return databaseMaterials
 
@@ -2209,7 +2203,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # replaces variables like {material}-{color}-{id} in the display name with the spool's field values,
         # see https://github.com/WildRikku/OctoPrint-SpoolManager/issues/49
         displayName = spoolModel.displayName
-        if (StringUtils.isEmpty(displayName) or ("{" in displayName) == False):
+        if (StringUtils.isEmpty(displayName) or "{" not in displayName):
             return False
 
         def asText(value):
@@ -2240,17 +2234,17 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
         validationErrors = []
         databaseId = None
-        if (self._getValueFromJSONOrNone("databaseId", jsonData) != None):
+        if (self._getValueFromJSONOrNone("databaseId", jsonData) is not None):
             databaseId = self._toIntFromJSONOrNone("databaseId", jsonData, validationErrors, minValue=1)
             if (validationErrors):
                 # reject a non-numeric id before it reaches the database layer
                 self._logger.warning("Save spool rejected, validation errors: " + str(validationErrors))
                 return make_response(jsonify({"validationErrors": validationErrors}), 400)
         self._databaseManager.connectoToDatabase()
-        if (databaseId != None):
+        if (databaseId is not None):
             self._logger.info("Load spool for update with database id '"+str(databaseId)+"'")
             spoolModel = self._databaseManager.loadSpool(databaseId, withReusedConnection=True)
-            if (spoolModel == None):
+            if (spoolModel is None):
                 # the row is gone - answering 200 here would let the dialog close as if the
                 # edit had been stored, and saveSpool(None) below would fail anyway
                 self._databaseManager.closeDatabase()
@@ -2276,30 +2270,30 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # choice, so the generic socket popup would only be a second error to dismiss
         newDatabaseId = self._databaseManager.saveSpool(spoolModel, withReusedConnection=True, suppressConflictMessage=True)
 
-        if (newDatabaseId == None):
+        if (newDatabaseId is None):
             # saveSpool signals a version conflict only via a socket message and returns None.
             # Answering 200 here made the dialog close as if everything had been stored, so the
             # user silently lost the edit - now the client gets a 409 plus the current server
             # state and can offer to reload or overwrite.
-            currentSpoolModel = self._databaseManager.loadSpool(databaseId, withReusedConnection=True) if databaseId != None else None
+            currentSpoolModel = self._databaseManager.loadSpool(databaseId, withReusedConnection=True) if databaseId is not None else None
             self._databaseManager.closeDatabase()
             self._logger.warning("Save spool failed for database id '" + str(databaseId) + "', concurrent modification.")
             responseBody = {
                 "conflict": "version",
                 "error": "This spool was modified elsewhere while you were editing it."
             }
-            if (currentSpoolModel != None):
+            if (currentSpoolModel is not None):
                 responseBody["spool"] = Transformer.transformSpoolModelToDict(currentSpoolModel)
             return make_response(jsonify(responseBody), 409)
 
         # resolve display name variables ({id} is only known after the initial save), but never inside templates
-        if (databaseId == None and spoolModel.isTemplate != True):
+        if (databaseId is None and not spoolModel.isTemplate):
             if (self._resolveDisplayNameVariables(spoolModel)):
                 self._databaseManager.saveSpool(spoolModel, withReusedConnection=True)
 
         self._databaseManager.closeDatabase()
 
-        if (databaseId == None):
+        if (databaseId is None):
             # New spool was created
             eventPayload = {
                 "databaseId": spoolModel.databaseId,
@@ -2322,12 +2316,10 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     def deleteSpool(self, databaseId):
         self._logger.info("API Delete spool with database id '" + str(databaseId) + "'")
         databaseId = self._databaseManager.deleteSpool(databaseId)
-        if (databaseId != None):
+        if (databaseId is not None):
             eventPayload = {
                 "databaseId": databaseId
             }
             self._sendPayload2EventBus(EventBusKeys.EVENT_BUS_SPOOL_DELETED, eventPayload)
 
         return flask.jsonify()
-
-

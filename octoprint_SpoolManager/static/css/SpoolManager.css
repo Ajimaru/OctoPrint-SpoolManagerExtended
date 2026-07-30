@@ -332,7 +332,7 @@
     white-space: nowrap;
 }
 .spm-template-combo-list li:hover {
-    background-color: #0088cc;
+    background-color: #08c;
     color: #fff;
 }
 .spm-template-combo-list li .color-preview {
@@ -470,7 +470,7 @@ input.spm-number-invalid {
     border-color: rgba(128, 128, 128, 0.35);
     box-shadow: 0 5px 10px rgba(0, 0, 0, 0.35);
 }
-#dialog_spool_edit .ql-snow .ql-tooltip input[type=text] {
+#dialog_spool_edit .ql-snow .ql-tooltip input[type="text"] {
     background-color: rgba(255, 255, 255, 0.08);
     color: inherit;
     border-color: rgba(128, 128, 128, 0.35);
