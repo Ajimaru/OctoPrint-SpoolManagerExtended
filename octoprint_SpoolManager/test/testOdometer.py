@@ -21,30 +21,29 @@ class TestOdometer(unittest.TestCase):
         lineCounter = 0
         with open(filename) as fp:
             for line in fp:
-                lineCounter = lineCounter +1
+                lineCounter = lineCounter + 1
                 stripedLine = line.strip()
                 # print(stripedLine)
                 gcode = None
 
-                if (stripedLine.startswith("G1")):
+                if stripedLine.startswith("G1"):
                     gcode = "G1"
-                if (stripedLine.startswith("G0")):
+                if stripedLine.startswith("G0"):
                     gcode = "G0"
-                if (stripedLine.startswith("G90")):
+                if stripedLine.startswith("G90"):
                     gcode = "G90"
-                if (stripedLine.startswith("G91")):
+                if stripedLine.startswith("G91"):
                     gcode = "G91"
-                if (stripedLine.startswith("G92")):
+                if stripedLine.startswith("G92"):
                     gcode = "G92"
-                if (stripedLine.startswith("M82")):
+                if stripedLine.startswith("M82"):
                     gcode = "M82"
-                if (stripedLine.startswith("M83")):
+                if stripedLine.startswith("M83"):
                     gcode = "M83"
-                if (stripedLine.startswith("T")):
+                if stripedLine.startswith("T"):
                     gcode = stripedLine.split()[0]
 
-
-                if (lineCounter == 358):
+                if lineCounter == 358:
                     # break
                     pass
                 self.filamentOdometer.parse(gcode, stripedLine)
@@ -64,7 +63,8 @@ class TestOdometer(unittest.TestCase):
         print("New-Implementation")
         print(myExtrusion)
 
-if __name__ == '__main__':
-	print("Start Odometer Test")
-	unittest.main()
-	print("Finished")
+
+if __name__ == "__main__":
+    print("Start Odometer Test")
+    unittest.main()
+    print("Finished")

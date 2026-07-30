@@ -1,81 +1,96 @@
 # coding=utf-8
 
-from peewee import CharField, FloatField, DateField, DateTimeField, TextField, IntegerField, \
-	BooleanField
+from peewee import (
+    BooleanField,
+    CharField,
+    DateField,
+    DateTimeField,
+    FloatField,
+    IntegerField,
+    TextField,
+)
 
 from octoprint_SpoolManager.models.BaseModel import BaseModel
 
 
 class SpoolModel(BaseModel):
 
-	########################################################
-	## SPOOL, MATERIAL, FILAMENT, PRINTER SETTINGS - FIELDS
-	########################################################
+    ########################################################
+    ## SPOOL, MATERIAL, FILAMENT, PRINTER SETTINGS - FIELDS
+    ########################################################
 
-	######################
-	## SPOOL - FIELDS
-	######################
+    ######################
+    ## SPOOL - FIELDS
+    ######################
 
-	# version = IntegerField(null=True) # since V3, since V4: moved to BaseModel
-	isActive = BooleanField(null=True) # since V4
-	isTemplate = BooleanField(null=True)
-	displayName = CharField(null=True)
-	vendor = CharField(null=True, index=True) # since V4: added index
-	# in g
-	totalWeight = FloatField(null=True)
-	spoolWeight = FloatField(null=True) # since V3
-	# in g
-	usedWeight = FloatField(null=True)
-	# in g
-	remainingWeight = FloatField(null=True)
+    # version = IntegerField(null=True) # since V3, since V4: moved to BaseModel
+    isActive = BooleanField(null=True)  # since V4
+    isTemplate = BooleanField(null=True)
+    displayName = CharField(null=True)
+    vendor = CharField(null=True, index=True)  # since V4: added index
+    # in g
+    totalWeight = FloatField(null=True)
+    spoolWeight = FloatField(null=True)  # since V3
+    # in g
+    usedWeight = FloatField(null=True)
+    # in g
+    remainingWeight = FloatField(null=True)
 
-	# in mm
-	totalLength = IntegerField(null=True) # since V3
-	usedLength = IntegerField(null=True)
-	# Bar or QR Code
-	code = CharField(null=True)
-	# Manufacturer batch/lot number, shared by spools of the same production batch # since V8
-	batchNumber = CharField(null=True)
+    # in mm
+    totalLength = IntegerField(null=True)  # since V3
+    usedLength = IntegerField(null=True)
+    # Bar or QR Code
+    code = CharField(null=True)
+    # Manufacturer batch/lot number, shared by spools of the same production batch # since V8
+    batchNumber = CharField(null=True)
 
-	firstUse = DateTimeField(null=True)
-	lastUse = DateTimeField(null=True)
+    firstUse = DateTimeField(null=True)
+    lastUse = DateTimeField(null=True)
 
-	purchasedFrom = CharField(null=True)
-	purchasedOn = DateField(null=True)
-	cost = FloatField(null=True)
-	costUnit = CharField(null=True)	# deprecated needs to be removed, value should be used from pluginSettings
+    purchasedFrom = CharField(null=True)
+    purchasedOn = DateField(null=True)
+    cost = FloatField(null=True)
+    costUnit = CharField(
+        null=True
+    )  # deprecated needs to be removed, value should be used from pluginSettings
 
-	labels = TextField(null=True)
+    labels = TextField(null=True)
 
-	noteText = TextField(null=True)
-	noteDeltaFormat = TextField(null=True)
-	noteHtml = TextField(null=True)
+    noteText = TextField(null=True)
+    noteDeltaFormat = TextField(null=True)
+    noteHtml = TextField(null=True)
 
-	######################
-	## MATERIAL - FIELDS
-	######################
-	material = CharField(null=True, index=True)	# since V4: added index
-	materialCharacteristic = CharField(null=True, index=True) # strong, soft,... # since V4: new #TODO refactoring: list of predefined values
-	density = FloatField(null=True)
+    ######################
+    ## MATERIAL - FIELDS
+    ######################
+    material = CharField(null=True, index=True)  # since V4: added index
+    materialCharacteristic = CharField(
+        null=True, index=True
+    )  # strong, soft,... # since V4: new #TODO refactoring: list of predefined values
+    density = FloatField(null=True)
 
-	######################
-	## FILAMENT - FIELDS
-	######################
-	diameter = FloatField(null=True)
-	diameterTolerance = FloatField(null=True) # since V3
-	colorName = CharField(null=True)
-	color = CharField(null=True)
-	finish = CharField(null=True) # since V9: silk, matt, marble, metal, glow or custom text
+    ######################
+    ## FILAMENT - FIELDS
+    ######################
+    diameter = FloatField(null=True)
+    diameterTolerance = FloatField(null=True)  # since V3
+    colorName = CharField(null=True)
+    color = CharField(null=True)
+    finish = CharField(
+        null=True
+    )  # since V9: silk, matt, marble, metal, glow or custom text
 
-	######################
-	## PRINTER SETTINGS - FIELDS
-	######################
-	flowRateCompensation = IntegerField(null=True) #since V3
-	# Temperature
-	temperature = IntegerField(null=True)
-	bedTemperature = IntegerField(null=True) # since V3
-	enclosureTemperature = IntegerField(null=True) # since V3, V4 renamed from encloser to enclosure
-	# Offset Temperature
-	offsetTemperature = IntegerField(null=True) # since V6
-	offsetBedTemperature = IntegerField(null=True) # since V6
-	offsetEnclosureTemperature = IntegerField(null=True) # since V6
+    ######################
+    ## PRINTER SETTINGS - FIELDS
+    ######################
+    flowRateCompensation = IntegerField(null=True)  # since V3
+    # Temperature
+    temperature = IntegerField(null=True)
+    bedTemperature = IntegerField(null=True)  # since V3
+    enclosureTemperature = IntegerField(
+        null=True
+    )  # since V3, V4 renamed from encloser to enclosure
+    # Offset Temperature
+    offsetTemperature = IntegerField(null=True)  # since V6
+    offsetBedTemperature = IntegerField(null=True)  # since V6
+    offsetEnclosureTemperature = IntegerField(null=True)  # since V6

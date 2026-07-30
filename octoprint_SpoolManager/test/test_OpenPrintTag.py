@@ -15,12 +15,16 @@ import unittest
 # Loaded by path rather than by package import: octoprint_SpoolManager/__init__.py pulls in flask
 # and OctoPrint, which are not available in a bare test environment. Both modules under test are
 # dependency-free on purpose, so this keeps them runnable with plain pytest.
-_COMMON_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "common")
+_COMMON_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "common"
+)
 
 
 def _loadModule(moduleName):
     modulePath = os.path.join(_COMMON_DIR, moduleName + ".py")
-    spec = importlib.util.spec_from_file_location("spoolmanager_test_" + moduleName, modulePath)
+    spec = importlib.util.spec_from_file_location(
+        "spoolmanager_test_" + moduleName, modulePath
+    )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -50,7 +54,7 @@ class SpoolStub(object):
             "enclosureTemperature": None,
             "code": "SN-1",
             "batchNumber": "B-7",
-            "purchasedOn": datetime.date(2026, 1, 15)
+            "purchasedOn": datetime.date(2026, 1, 15),
         }
         defaults.update(attributes)
         for key, value in defaults.items():
@@ -76,7 +80,9 @@ class TestCBOREncoder(unittest.TestCase):
         self.assertEqual(OpenPrintTag.encodeCBOR(-1000), b"\x39\x03\xe7")
 
     def test_floats_use_double_precision(self):
-        self.assertEqual(OpenPrintTag.encodeCBOR(1.5), b"\xfb\x3f\xf8\x00\x00\x00\x00\x00\x00")
+        self.assertEqual(
+            OpenPrintTag.encodeCBOR(1.5), b"\xfb\x3f\xf8\x00\x00\x00\x00\x00\x00"
+        )
 
     def test_simple_values(self):
         self.assertEqual(OpenPrintTag.encodeCBOR(True), b"\xf5")
@@ -93,7 +99,9 @@ class TestCBOREncoder(unittest.TestCase):
         self.assertEqual(OpenPrintTag.encodeCBOR("ü"), b"\x62\xc3\xbc")
 
     def test_byte_strings(self):
-        self.assertEqual(OpenPrintTag.encodeCBOR(b"\x01\x02\x03\x04"), b"\x44\x01\x02\x03\x04")
+        self.assertEqual(
+            OpenPrintTag.encodeCBOR(b"\x01\x02\x03\x04"), b"\x44\x01\x02\x03\x04"
+        )
 
     def test_arrays(self):
         self.assertEqual(OpenPrintTag.encodeCBOR([1, 2, 3]), b"\x83\x01\x02\x03")
@@ -122,7 +130,10 @@ class TestNDEFMessage(unittest.TestCase):
         self.assertEqual(message[2], 2)
         typeStart = 3
         typeEnd = typeStart + len(OpenPrintTag.OPENPRINTTAG_MIME_TYPE)
-        self.assertEqual(message[typeStart:typeEnd].decode("ascii"), OpenPrintTag.OPENPRINTTAG_MIME_TYPE)
+        self.assertEqual(
+            message[typeStart:typeEnd].decode("ascii"),
+            OpenPrintTag.OPENPRINTTAG_MIME_TYPE,
+        )
         self.assertEqual(message[typeEnd:], b"\x01\x02")
 
     def test_long_record_uses_four_byte_length(self):
@@ -155,7 +166,9 @@ class TestSpoolMapping(unittest.TestCase):
         self.assertEqual(fields["meta"]["tagId"], 7)
 
     def test_remaining_weight_is_derived_when_not_stored(self):
-        fields = OpenPrintTag.spoolModelToFields(SpoolStub(remainingWeight=None, totalWeight=1000.0, usedWeight=250.0))
+        fields = OpenPrintTag.spoolModelToFields(
+            SpoolStub(remainingWeight=None, totalWeight=1000.0, usedWeight=250.0)
+        )
         self.assertEqual(fields["aux"]["remainingWeight"], 750.0)
 
     def test_stored_remaining_weight_wins(self):
@@ -168,7 +181,9 @@ class TestSpoolMapping(unittest.TestCase):
 
     def test_empty_values_are_dropped(self):
         # a field without a value must not end up on the tag claiming "0"
-        fields = OpenPrintTag.spoolModelToFields(SpoolStub(batchNumber=None, enclosureTemperature=None))
+        fields = OpenPrintTag.spoolModelToFields(
+            SpoolStub(batchNumber=None, enclosureTemperature=None)
+        )
         self.assertNotIn("batchNumber", fields["aux"])
         self.assertNotIn("enclosureTemperature", fields["aux"])
 
@@ -196,9 +211,12 @@ class TestFieldKeyResolution(unittest.TestCase):
             OpenPrintTag.FIELD_KEY_MAP = {
                 "meta": {"version": 0, "tagId": 1},
                 "main": {"materialName": 0, "colorName": 1},
-                "aux": {}
+                "aux": {},
             }
-            fields = {"meta": {"version": 1, "tagId": 42}, "main": {"materialName": "PETG", "colorName": "Silver"}}
+            fields = {
+                "meta": {"version": 1, "tagId": 42},
+                "main": {"materialName": "PETG", "colorName": "Silver"},
+            }
             self.assertTrue(OpenPrintTag.isEncodingComplete(fields))
             encoded = OpenPrintTag.encodeFields(fields)
             self.assertIsInstance(encoded, bytes)
@@ -210,7 +228,9 @@ class TestFieldKeyResolution(unittest.TestCase):
         originalKeyMap = OpenPrintTag.FIELD_KEY_MAP
         try:
             OpenPrintTag.FIELD_KEY_MAP = {"main": {"colorName": 0}}
-            oversizedSection = {"colorName": "x" * (OpenPrintTag.MAX_SECTION_SIZE_BYTES + 10)}
+            oversizedSection = {
+                "colorName": "x" * (OpenPrintTag.MAX_SECTION_SIZE_BYTES + 10)
+            }
             with self.assertRaises(ValueError):
                 OpenPrintTag.encodeSection("main", oversizedSection)
         finally:
