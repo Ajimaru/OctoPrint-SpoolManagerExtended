@@ -1,0 +1,25 @@
+# Vendored/minified third-party assets. Running Prettier over a minified file would
+# expand its single line into thousands, destroying both the file size and the point
+# of shipping a minified build.
+*.min.js
+octoprint_SpoolManager/static/css/quill.snow.css
+3rdPartySoftware/
+
+# Jinja2 templates are handled by djlint - Prettier cannot parse Jinja syntax
+octoprint_SpoolManager/templates/
+
+# Not our code / generated
+node_modules/
+build/
+dist/
+translations/
+*.egg-info/
+.pytest_cache/
+
+# Out of scope for the frontend reformat: docs, CI workflows and editor/tool config
+# are not plugin code. Kept unformatted so this stays a pure static-asset reformat.
+*.md
+.github/
+.vscode/
+.codacy/
+eslint.config.js

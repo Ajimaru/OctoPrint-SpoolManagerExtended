@@ -25,7 +25,6 @@ const OCTOSCALE_NFC_POLL_INTERVAL_MS = 1200;
 const OCTOSCALE_TOLERATED_CONSECUTIVE_FAILURES = 3;
 
 function SpoolManagerOctoScaleWeighing(apiClient, pluginSettings) {
-
     var self = this;
 
     self.apiClient = apiClient;
@@ -39,28 +38,31 @@ function SpoolManagerOctoScaleWeighing(apiClient, pluginSettings) {
 
     var pollTimerId = null;
 
-    self.hasReading = ko.pureComputed(function(){
+    self.hasReading = ko.pureComputed(function () {
         return self.currentWeight() != null;
     });
 
-    self.currentWeightText = ko.pureComputed(function(){
+    self.currentWeightText = ko.pureComputed(function () {
         var weight = self.currentWeight();
-        if (weight == null){
+        if (weight == null) {
             return "--";
         }
         // the device always reports grams (responseData.grams); only the label converts
-        return SPOOLMANAGER_UTILS.formatWeightForDisplay(Math.round(weight * 10) / 10, self.pluginSettings);
+        return SPOOLMANAGER_UTILS.formatWeightForDisplay(
+            Math.round(weight * 10) / 10,
+            self.pluginSettings
+        );
     });
 
     var consecutiveFailures = 0;
 
-    var readWeight = function(){
-        self.apiClient.getOctoScaleWeight(function(responseData){
+    var readWeight = function () {
+        self.apiClient.getOctoScaleWeight(function (responseData) {
             // a late answer arriving after the panel was closed must not revive the display
-            if (self.isActive() == false){
+            if (self.isActive() == false) {
                 return;
             }
-            if (responseData && responseData.success === true){
+            if (responseData && responseData.success === true) {
                 consecutiveFailures = 0;
                 self.currentWeight(responseData.grams);
                 self.errorMessage(null);
@@ -68,17 +70,21 @@ function SpoolManagerOctoScaleWeighing(apiClient, pluginSettings) {
             }
 
             consecutiveFailures++;
-            if (consecutiveFailures < OCTOSCALE_TOLERATED_CONSECUTIVE_FAILURES){
+            if (consecutiveFailures < OCTOSCALE_TOLERATED_CONSECUTIVE_FAILURES) {
                 // single hiccup: keep showing the last reading instead of flickering
                 return;
             }
             self.currentWeight(null);
-            self.errorMessage((responseData && responseData.error) ? responseData.error : "Could not read the weight.");
+            self.errorMessage(
+                responseData && responseData.error
+                    ? responseData.error
+                    : "Could not read the weight."
+            );
         });
     };
 
-    self.start = function(){
-        if (pollTimerId != null){
+    self.start = function () {
+        if (pollTimerId != null) {
             return;
         }
         self.isActive(true);
@@ -88,8 +94,8 @@ function SpoolManagerOctoScaleWeighing(apiClient, pluginSettings) {
         pollTimerId = setInterval(readWeight, OCTOSCALE_WEIGHT_POLL_INTERVAL_MS);
     };
 
-    self.stop = function(){
-        if (pollTimerId != null){
+    self.stop = function () {
+        if (pollTimerId != null) {
             clearInterval(pollTimerId);
             pollTimerId = null;
         }
@@ -98,20 +104,24 @@ function SpoolManagerOctoScaleWeighing(apiClient, pluginSettings) {
         self.errorMessage(null);
     };
 
-    self.toggle = function(){
-        if (self.isActive()){
+    self.toggle = function () {
+        if (self.isActive()) {
             self.stop();
         } else {
             self.start();
         }
     };
 
-    self.tare = function(){
+    self.tare = function () {
         self.isTaring(true);
-        self.apiClient.tareOctoScale(function(responseData){
+        self.apiClient.tareOctoScale(function (responseData) {
             self.isTaring(false);
-            if (!responseData || responseData.success !== true){
-                self.errorMessage((responseData && responseData.error) ? responseData.error : "Could not tare the scale.");
+            if (!responseData || responseData.success !== true) {
+                self.errorMessage(
+                    responseData && responseData.error
+                        ? responseData.error
+                        : "Could not tare the scale."
+                );
             } else {
                 self.errorMessage(null);
             }
@@ -120,14 +130,13 @@ function SpoolManagerOctoScaleWeighing(apiClient, pluginSettings) {
 }
 
 function SpoolManagerOctoScaleTagWriter(apiClient) {
-
     var self = this;
 
     self.apiClient = apiClient;
 
     self.isActive = ko.observable(false);
     self.tagPresent = ko.observable(false);
-    self.tagSpoolId = ko.observable(null);          // spool id already stored on the tag, if any
+    self.tagSpoolId = ko.observable(null); // spool id already stored on the tag, if any
     self.tagSpoolDisplayName = ko.observable(null);
     self.errorMessage = ko.observable(null);
     self.isWriting = ko.observable(false);
@@ -141,34 +150,44 @@ function SpoolManagerOctoScaleTagWriter(apiClient) {
 
     // A tag that already carries a *different* spool id would be silently re-labelled by a
     // write, so the user has to confirm first.
-    self.needsOverwriteConfirmation = ko.pureComputed(function(){
+    self.needsOverwriteConfirmation = ko.pureComputed(function () {
         var existingId = self.tagSpoolId();
-        if (existingId == null){
+        if (existingId == null) {
             return false;
         }
         return existingId != self.targetDatabaseId();
     });
 
-    self.overwriteWarningText = ko.pureComputed(function(){
+    self.overwriteWarningText = ko.pureComputed(function () {
         var existingId = self.tagSpoolId();
-        if (existingId == null){
+        if (existingId == null) {
             return "";
         }
         var displayName = self.tagSpoolDisplayName();
-        if (displayName){
-            return "This tag already belongs to '" + displayName + "' (id " + existingId + ").";
+        if (displayName) {
+            return (
+                "This tag already belongs to '" +
+                displayName +
+                "' (id " +
+                existingId +
+                ")."
+            );
         }
-        return "This tag already carries spool id " + existingId + ", which is not in this database.";
+        return (
+            "This tag already carries spool id " +
+            existingId +
+            ", which is not in this database."
+        );
     });
 
-    self.canWrite = ko.pureComputed(function(){
-        if (self.isWriting() || self.targetDatabaseId() == null){
+    self.canWrite = ko.pureComputed(function () {
+        if (self.isWriting() || self.targetDatabaseId() == null) {
             return false;
         }
-        if (self.tagPresent() != true){
+        if (self.tagPresent() != true) {
             return false;
         }
-        if (self.needsOverwriteConfirmation() && self.overwriteConfirmed() != true){
+        if (self.needsOverwriteConfirmation() && self.overwriteConfirmed() != true) {
             return false;
         }
         return true;
@@ -176,19 +195,23 @@ function SpoolManagerOctoScaleTagWriter(apiClient) {
 
     var consecutiveFailures = 0;
 
-    var readNfcStatus = function(){
-        self.apiClient.getOctoScaleNfcStatus(function(responseData){
-            if (self.isActive() == false){
+    var readNfcStatus = function () {
+        self.apiClient.getOctoScaleNfcStatus(function (responseData) {
+            if (self.isActive() == false) {
                 return;
             }
-            if (responseData && responseData.success === true){
+            if (responseData && responseData.success === true) {
                 consecutiveFailures = 0;
                 var previousSpoolId = self.tagSpoolId();
                 self.tagPresent(responseData.present === true);
-                self.tagSpoolId(responseData.present === true ? responseData.spoolId : null);
-                self.tagSpoolDisplayName(responseData.present === true ? responseData.spoolDisplayName : null);
+                self.tagSpoolId(
+                    responseData.present === true ? responseData.spoolId : null
+                );
+                self.tagSpoolDisplayName(
+                    responseData.present === true ? responseData.spoolDisplayName : null
+                );
                 // a different tag on the reader invalidates a confirmation given for the previous one
-                if (previousSpoolId != self.tagSpoolId()){
+                if (previousSpoolId != self.tagSpoolId()) {
                     self.overwriteConfirmed(false);
                 }
                 self.errorMessage(null);
@@ -196,21 +219,25 @@ function SpoolManagerOctoScaleTagWriter(apiClient) {
             }
 
             consecutiveFailures++;
-            if (consecutiveFailures < OCTOSCALE_TOLERATED_CONSECUTIVE_FAILURES){
+            if (consecutiveFailures < OCTOSCALE_TOLERATED_CONSECUTIVE_FAILURES) {
                 // hold the current tag state through a hiccup rather than claiming the tag vanished
                 return;
             }
             self.tagPresent(false);
-            self.errorMessage((responseData && responseData.error) ? responseData.error : "Could not read the NFC status.");
+            self.errorMessage(
+                responseData && responseData.error
+                    ? responseData.error
+                    : "Could not read the NFC status."
+            );
         });
     };
 
-    self.start = function(databaseId){
+    self.start = function (databaseId) {
         self.targetDatabaseId(databaseId);
         self.writeSucceeded(false);
         self.overwriteConfirmed(false);
         self.errorMessage(null);
-        if (pollTimerId != null){
+        if (pollTimerId != null) {
             return;
         }
         self.isActive(true);
@@ -219,8 +246,8 @@ function SpoolManagerOctoScaleTagWriter(apiClient) {
         pollTimerId = setInterval(readNfcStatus, OCTOSCALE_NFC_POLL_INTERVAL_MS);
     };
 
-    self.stop = function(){
-        if (pollTimerId != null){
+    self.stop = function () {
+        if (pollTimerId != null) {
             clearInterval(pollTimerId);
             pollTimerId = null;
         }
@@ -232,26 +259,34 @@ function SpoolManagerOctoScaleTagWriter(apiClient) {
         self.errorMessage(null);
     };
 
-    self.confirmOverwrite = function(){
+    self.confirmOverwrite = function () {
         self.overwriteConfirmed(true);
     };
 
-    self.writeTag = function(){
-        if (self.canWrite() == false){
+    self.writeTag = function () {
+        if (self.canWrite() == false) {
             return;
         }
         self.isWriting(true);
         self.errorMessage(null);
         // "spoolIdNtag" is the only format the current hardware can write; see common/TagFormats.py
-        self.apiClient.writeOctoScaleTag(self.targetDatabaseId(), "spoolIdNtag", function(responseData){
-            self.isWriting(false);
-            if (responseData && responseData.success === true){
-                self.writeSucceeded(true);
-                self.errorMessage(null);
-            } else {
-                self.writeSucceeded(false);
-                self.errorMessage((responseData && responseData.error) ? responseData.error : "Could not write the tag.");
+        self.apiClient.writeOctoScaleTag(
+            self.targetDatabaseId(),
+            "spoolIdNtag",
+            function (responseData) {
+                self.isWriting(false);
+                if (responseData && responseData.success === true) {
+                    self.writeSucceeded(true);
+                    self.errorMessage(null);
+                } else {
+                    self.writeSucceeded(false);
+                    self.errorMessage(
+                        responseData && responseData.error
+                            ? responseData.error
+                            : "Could not write the tag."
+                    );
+                }
             }
-        });
+        );
     };
 }
