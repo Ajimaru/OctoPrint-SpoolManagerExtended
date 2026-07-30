@@ -108,6 +108,35 @@ SPOOLMANAGER_UTILS = {
         return composed;
     },
 
+    // Derives the color name to suggest for a stored color value. Returns null when there is no
+    // sensible suggestion, in which case callers must leave the existing name alone.
+    //
+    // Shared by the edit dialog, the wizard and SpoolItem.update() so that picking a color leads
+    // to the same name everywhere.
+    colorNameForSpoolColor: function (colorValue) {
+        var colorParts = SPOOLMANAGER_UTILS.parseSpoolColor(colorValue);
+        if (colorParts.isRainbow === true) {
+            return "Rainbow";
+        }
+
+        var transparentPrefix = colorParts.isTransparent === true ? "Transparent" : "";
+        if (colorParts.isTransparent === true && colorParts.isUntinted === true) {
+            // no base tint to name, the spool is simply clear
+            return transparentPrefix;
+        }
+        if (colorParts.colors.length > 1) {
+            // multi-color: no single name describes it, keep whatever the user typed
+            return null;
+        }
+
+        var baseName = tinycolor(colorParts.colors[0]).toName();
+        if (baseName != false) {
+            return transparentPrefix ? transparentPrefix + " " + baseName : baseName;
+        }
+        // a hex value without a known name still tells us it is transparent
+        return transparentPrefix ? transparentPrefix : null;
+    },
+
     // The three fields a spool cannot be tracked without. Both the edit dialog and the wizard
     // gate saving on these, so the rule lives here rather than in each of them.
     // Takes the SpoolItem, reads the observables itself.

@@ -57,17 +57,6 @@ function SpoolManagerAddSpoolWizard() {
     // transparent with no base tint at all -> stored as plain "transparent"
     self.isColorless = ko.observable(false);
 
-    // A colorless spool has no hex value to derive a name from, so replace a name that was
-    // suggested for the previous base color ("Red" would be wrong for clear filament).
-    self.isColorless.subscribe(function (newValue) {
-        if (newValue === true && self.spoolItemForCreation != null) {
-            var currentName = (self.spoolItemForCreation.colorName() || "").trim();
-            if (currentName.length === 0 || tinycolor(currentName).isValid()) {
-                self.spoolItemForCreation.colorName("Transparent");
-            }
-        }
-    });
-
     self.addColor = function () {
         if (self.colorCount() < 3) {
             self.colorCount(self.colorCount() + 1);
@@ -405,6 +394,11 @@ function SpoolManagerAddSpoolWizard() {
             "costUnit",
             "labels"
         ];
+        // The template's composed color has to be split back into the wizard's own inputs. Done
+        // before the fields are copied: it triggers the color name suggestion, and the template's
+        // own colorName (copied below) has to win over it.
+        self._applyColorValue(templateData.color);
+
         copiedFields.forEach(function (fieldName) {
             var observable = self.spoolItemForCreation[fieldName];
             if (
@@ -423,9 +417,6 @@ function SpoolManagerAddSpoolWizard() {
                 totalWeight + (isNaN(spoolWeight) ? 0 : spoolWeight)
             );
         }
-
-        // the template's composed color has to be split back into the wizard's own inputs
-        self._applyColorValue(templateData.color);
 
         self.selectedTemplateSpool(templateSpoolItem);
     };
@@ -505,21 +496,9 @@ function SpoolManagerAddSpoolWizard() {
     // two from echoing each other.
     self._createColorPickers = function () {
         var pickerSpecs = [
-            {
-                elementId: "wizard-color-picker",
-                observable: self.colorHex,
-                suggestsName: true
-            },
-            {
-                elementId: "wizard-color-picker2",
-                observable: self.colorHex2,
-                suggestsName: false
-            },
-            {
-                elementId: "wizard-color-picker3",
-                observable: self.colorHex3,
-                suggestsName: false
-            }
+            {elementId: "wizard-color-picker", observable: self.colorHex},
+            {elementId: "wizard-color-picker2", observable: self.colorHex2},
+            {elementId: "wizard-color-picker3", observable: self.colorHex3}
         ];
 
         self.colorPickers = pickerSpecs.map(function (spec) {
@@ -535,10 +514,6 @@ function SpoolManagerAddSpoolWizard() {
                 syncing = true;
                 try {
                     spec.observable(newColor);
-                    if (spec.suggestsName == true) {
-                        // used to hang off the native input's change event
-                        self.suggestColorName();
-                    }
                 } finally {
                     syncing = false;
                 }
@@ -560,28 +535,13 @@ function SpoolManagerAddSpoolWizard() {
         });
     };
 
-    // Suggest a color name from the picked value, but never overwrite something the user typed.
-    self.suggestColorName = function () {
-        if ((self.spoolItemForCreation.colorName() || "").trim().length > 0) {
-            return;
-        }
-        if (self.isRainbow()) {
-            self.spoolItemForCreation.colorName("Rainbow");
-            return;
-        }
-        if (self.isTransparent() && self.isColorless()) {
-            self.spoolItemForCreation.colorName("Transparent");
-            return;
-        }
-        if (self.colorCount() > 1) {
-            // multi-color: no sensible single name to derive
-            return;
-        }
-        var suggestion = tinycolor(self.colorHex()).toName();
-        if (suggestion !== false) {
-            self.spoolItemForCreation.colorName(
-                self.isTransparent() ? "Transparent " + suggestion : suggestion
-            );
+    // Applies the name that belongs to the currently composed color. The edit dialog does the same
+    // from its own color subscription; both go through SPOOLMANAGER_UTILS so a given color always
+    // yields the same name.
+    self._applySuggestedColorName = function (colorValue) {
+        var suggestedName = SPOOLMANAGER_UTILS.colorNameForSpoolColor(colorValue);
+        if (suggestedName != null) {
+            self.spoolItemForCreation.colorName(suggestedName);
         }
     };
 
@@ -789,6 +749,13 @@ function SpoolManagerAddSpoolWizard() {
         );
 
         self._createColorPickers();
+
+        // Every color input (pickers, rainbow, transparent, colorless, the color count) ends up in
+        // _composeColor(), so subscribing to the composed value renames on all of them at once.
+        self.spoolItemForCreation.color.subscribe(function (newColor) {
+            self._applySuggestedColorName(newColor);
+        });
+
         self.spoolItemForCreation.isInActive.subscribe(function (newValue) {
             self.spoolItemForCreation.isActive(!newValue);
         });
@@ -861,6 +828,9 @@ function SpoolManagerAddSpoolWizard() {
         self.isTransparent(false);
         self.isColorless(false);
         self._composeColor();
+        // _composeColor() may not have changed the observable (a previous run left the default
+        // color in place), and then the subscription above never fired - name it explicitly.
+        self._applySuggestedColorName(self.spoolItemForCreation.color());
 
         // clear the dropdowns too, otherwise the previous run's selection is still shown (and its
         // density already applied) before the user picks anything
