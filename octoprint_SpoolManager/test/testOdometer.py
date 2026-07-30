@@ -10,7 +10,6 @@ class TestOdometer(unittest.TestCase):
     def test_loadJobSettings(self):
 
         logging.basicConfig(level=logging.DEBUG)
-        testLogger = logging.getLogger("testLogger")
         logging.info("Start Odometer-Test")
 
         self.filamentOdometer = FilamentOdometer()
@@ -23,7 +22,7 @@ class TestOdometer(unittest.TestCase):
         with open(filename) as fp:
             for line in fp:
                 lineCounter = lineCounter +1
-                stripedLine = line.strip();
+                stripedLine = line.strip()
                 # print(stripedLine)
                 gcode = None
 

@@ -149,13 +149,13 @@ def _isoDate(value):
 
 def _remainingWeight(spoolModel):
     remaining = getattr(spoolModel, "remainingWeight", None)
-    if (remaining != None):
+    if (remaining is not None):
         return remaining
     totalWeight = getattr(spoolModel, "totalWeight", None)
     usedWeight = getattr(spoolModel, "usedWeight", None)
     if (totalWeight is None):
         return None
-    return totalWeight - (usedWeight if usedWeight != None else 0)
+    return totalWeight - (usedWeight if usedWeight is not None else 0)
 
 
 def spoolModelToFields(spoolModel):
@@ -189,7 +189,7 @@ def spoolModelToFields(spoolModel):
 
     for sectionName in list(fields.keys()):
         fields[sectionName] = dict(
-            (key, value) for key, value in fields[sectionName].items() if value != None
+            (key, value) for key, value in fields[sectionName].items() if value is not None
         )
     return fields
 

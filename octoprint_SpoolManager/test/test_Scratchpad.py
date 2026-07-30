@@ -1,5 +1,6 @@
 import math
-import socket, errno
+import socket
+import errno
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
@@ -37,7 +38,7 @@ print('err: {0}'.format(err))
 length = 150
 diameter = 1.0
 density = 1.0
-radius = diameter / 2.0;
+radius = diameter / 2.0
 volume = length * math.pi * (radius * radius) / 1000
 result = volume * density
 

@@ -1,7 +1,5 @@
 # coding=utf-8
 
-import io
-from io import StringIO
 import csv
 import datetime
 import os
@@ -78,12 +76,12 @@ class CSVColumn:
 class DefaultCSVFormattorParser:
 
 	def formatValue(self, printJob, fieldName):
-		if (hasattr(printJob, fieldName) == False):
+		if (not hasattr(printJob, fieldName)):
 			return "-"
 		valueToFormat = getattr(printJob, fieldName)
 
 		adjustedValue = valueToFormat if valueToFormat is not None else '-'
-		if (type(adjustedValue) is int or type(adjustedValue) is float or type(adjustedValue) is str or type(adjustedValue) is unicode):
+		if (type(adjustedValue) is int or type(adjustedValue) is float or type(adjustedValue) is str):
 			adjustedValue = StringUtils.to_native_str(adjustedValue)
 			adjustedValue = adjustedValue.replace('\n', ' ').replace('\r', '')
 		else:
@@ -92,7 +90,7 @@ class DefaultCSVFormattorParser:
 		return adjustedValue
 
 	def parseAndAssignFieldValue(self, fieldLabel, fieldName, fieldValue, printJobModel, errorCollection, lineNumber):
-		if ("" == fieldValue or "-" == fieldValue or fieldValue == None):
+		if ("" == fieldValue or "-" == fieldValue or fieldValue is None):
 			# check if mandatory
 			return
 
@@ -105,7 +103,7 @@ class DefaultCSVFormattorParser:
 class DateTimeCSVFormattorParser:
 
 	def formatValue(self, printJob, fieldName):
-		if (hasattr(printJob, fieldName) == False):
+		if (not hasattr(printJob, fieldName)):
 			return "-"
 		valueToFormat = getattr(printJob, fieldName)
 
@@ -116,7 +114,7 @@ class DateTimeCSVFormattorParser:
 		return valueToFormat
 
 	def parseAndAssignFieldValue(self, fieldLabel, fieldName, fieldValue, printJobModel, errorCollection, lineNumber):
-		if ("" == fieldValue or "-" == fieldValue or fieldValue == None):
+		if ("" == fieldValue or "-" == fieldValue or fieldValue is None):
 			# check if mandatory
 			return
 		if (":" in fieldValue):
@@ -133,12 +131,12 @@ class DateTimeCSVFormattorParser:
 class NumberCSVFormattorParser:
 
 	def formatValue(self, printJob, fieldName):
-		if (hasattr(printJob, fieldName) == False):
+		if (not hasattr(printJob, fieldName)):
 			return "-"
 		valueToFormat = getattr(printJob, fieldName)
 
 		adjustedValue = valueToFormat if valueToFormat is not None else '-'
-		if (type(adjustedValue) is int or type(adjustedValue) is float or type(adjustedValue) is str or type(adjustedValue) is unicode):
+		if (type(adjustedValue) is int or type(adjustedValue) is float or type(adjustedValue) is str):
 			adjustedValue = StringUtils.to_native_str(adjustedValue)
 			adjustedValue = adjustedValue.replace('\n', ' ').replace('\r', '')
 		else:
@@ -146,7 +144,7 @@ class NumberCSVFormattorParser:
 		return adjustedValue
 
 	def parseAndAssignFieldValue(self, fieldLabel, fieldName, fieldValue, spoolModel, errorCollection, lineNumber):
-		if ("" == fieldValue or "-" == fieldValue or fieldValue == None):
+		if ("" == fieldValue or "-" == fieldValue or fieldValue is None):
 			# check if mandatory
 			return
 
@@ -257,11 +255,6 @@ ALL_COLUMNS = {
 ####################################################################################################### -> EXPORT TO CSV
 
 def transform2CSV(allJobs):
-	result = None
-	si = StringIO()	#TODO maybe a bad idea to use a internal memory based string, needs to be switched to response stream
-	# si = io.BytesIO()
-
-	writer = csv.writer(si, quoting=csv.QUOTE_ALL)
 	#  Write HEADER
 	headerList = list()
 	csvLine = ""
@@ -276,7 +269,7 @@ def transform2CSV(allJobs):
 	yield csvLine
 
 	# Write CSV-Content
-	if (allJobs != None):
+	if (allJobs is not None):
 		for job in allJobs:
 			csvRow = list()
 			for columnKey in ALL_COLUMNS_SORTED:
@@ -360,7 +353,7 @@ def parseCSV(csvFile4Import, updateParsingStatus, errorCollection, logger, delet
 					for columnValue in row:
 						if columnIndex in columnOrderInFile:
 							csvColumn = columnOrderInFile[columnIndex]
-							if not csvColumn == None:
+							if csvColumn is not None:
 								columnValue = columnValue.strip()
 								# check if mandatory value is missing
 								if (len(columnValue) == 0):

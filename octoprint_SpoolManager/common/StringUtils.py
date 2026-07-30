@@ -121,7 +121,7 @@ def compactTimeDeltaFormatter(tdelta, inputtype='timedelta'):
 
 # result is a valid string
 def formatSave(pattern, value, defaultString):
-	if (value == None):
+	if (value is None):
 		return defaultString
 	return pattern.format(value)
 
@@ -129,7 +129,7 @@ def formatSave(pattern, value, defaultString):
 # result is a string: "15.11.2020 20:21"
 def formatDateTime(dateTimeValue):
 	result = ""
-	if (dateTimeValue != None):
+	if (dateTimeValue is not None):
 		if (type(dateTimeValue) is datetime.datetime):
 			result = dateTimeValue.strftime('%d.%m.%Y %H:%M')
 		elif (type(dateTimeValue) is datetime.date):
@@ -140,7 +140,7 @@ def formatDateTime(dateTimeValue):
 
 def formatFloat(floatValue):
 	result = ""
-	if (floatValue != None ):
+	if (floatValue is not None ):
 		try:
 			result = "{:.1f}".format(float(floatValue))
 		except ValueError:
@@ -149,7 +149,7 @@ def formatFloat(floatValue):
 
 def formatInt(intValue):
 	result = ""
-	if (intValue != None ):
+	if (intValue is not None ):
 		try:
 			result = "{:.0f}".format(float(intValue))
 		except ValueError:
@@ -158,7 +158,7 @@ def formatInt(intValue):
 
 # input: dd.mm.yyyy hh:mm -> return: datetime-object or None if the format is not valid
 def transformToDateTimeOrNone(dateTimeString):
-	if dateTimeString != None and len(dateTimeString) != 0:
+	if dateTimeString is not None and len(dateTimeString) != 0:
 		index = dateTimeString.find(" ")
 		if (index != -1):
 			return datetime.datetime.strptime(dateTimeString, '%d.%m.%Y %H:%M')
@@ -167,7 +167,7 @@ def transformToDateTimeOrNone(dateTimeString):
 
 # input: YYYY-MM-DDTHH:mm -> return: datetime-object or None if the format is not valid
 def transformFromIsoToDateTimeOrNone(dateTimeString):
-	if dateTimeString != None and len(dateTimeString) != 0:
+	if dateTimeString is not None and len(dateTimeString) != 0:
 		index = dateTimeString.find("T")
 		if (index != -1):
 			return datetime.datetime.strptime(dateTimeString, '%Y-%m-%dT%H:%M')
@@ -175,12 +175,12 @@ def transformFromIsoToDateTimeOrNone(dateTimeString):
 	return None
 
 def isEmpty(value):
-	if (value == None or len(str(value).strip())==0 ):
+	if (value is None or len(str(value).strip())==0 ):
 		return True
 	return False
 
 def isNotEmpty(value):
-	return isEmpty(value) == False
+	return not isEmpty(value)
 
 def to_bytes(s_or_u, encoding="utf-8", errors="strict"):
 	# type: (Union[str, bytes], str, str) -> bytes

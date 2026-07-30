@@ -66,7 +66,7 @@ def build_database_context_info(databaseSettings, instanceName):
     :param instanceName: OctoPrint instance name from Appearance settings (may be None/empty)
     :return: str
     """
-    if (databaseSettings is not None and databaseSettings.useExternal == True):
+    if (databaseSettings is not None and databaseSettings.useExternal):
         host = _resolveHost(_value(databaseSettings.host))
         return "%s / %s" % (host, _value(databaseSettings.name))
 

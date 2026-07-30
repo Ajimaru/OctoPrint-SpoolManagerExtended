@@ -1,8 +1,6 @@
-import os
-import pprint
 import unittest
 
-from octoprint_SpoolManager import DatabaseManager, SpoolManagerAPI
+from octoprint_SpoolManager import DatabaseManager
 import logging
 
 from octoprint_SpoolManager.models.SpoolModel import SpoolModel
@@ -61,14 +59,14 @@ class TestDatabase(unittest.TestCase):
 	def _test_connectToSQLite(self):
 		self.testLogger.info("--------------------- SQLITE CONNECTION")
 		self.databaseManager.initDatabase(self.sqliteDatabaseSettings, self._clientOutput)
-		self.assertTrue( self.databaseManager.testDatabaseConnection() == None, "No Database connection")
+		self.assertTrue( self.databaseManager.testDatabaseConnection() is None, "No Database connection")
 		self.testLogger.info("--------------------- SQLITE CONNECTION - DONE")
 
 	##################################################################################################   POSTGRES CONNECTION
 	def _test_connectToPostgres(self):
 		self.testLogger.info("--------------------- POSTGRESS CONNECTION")
 		self.databaseManager.initDatabase(self.postgresDatabaseSettings, self._clientOutput)
-		self.assertTrue(self.databaseManager.testDatabaseConnection() == None, "No Database connection")
+		self.assertTrue(self.databaseManager.testDatabaseConnection() is None, "No Database connection")
 		self.testLogger.info("--------------------- POSTGRESS CONNECTION - DONE")
 
 	##################################################################################################   MYSQL CONNECTION
@@ -76,7 +74,7 @@ class TestDatabase(unittest.TestCase):
 		self.testLogger.info("--------------------- MYSQL CONNECTION")
 		self.databaseManager.initDatabase(self.mysqlDatabaseSettings, self._clientOutput)
 		self.databaseManager.connectoToDatabase()
-		self.assertTrue(self.databaseManager.testDatabaseConnection() == None, "No Database connection")
+		self.assertTrue(self.databaseManager.testDatabaseConnection() is None, "No Database connection")
 		self.testLogger.info("--------------------- MYSQL CONNECTION - DONE")
 
 	##################################################################################################   LOAD META DATA
@@ -113,7 +111,7 @@ class TestDatabase(unittest.TestCase):
 		import time
 		time.sleep(3)
 
-		if (allSpoolModels != None):
+		if (allSpoolModels is not None):
 			for spoolModel in allSpoolModels:
 				print(spoolModel.displayName)
 
@@ -150,10 +148,9 @@ class TestDatabase(unittest.TestCase):
 		# import time
 		# time.sleep(3)
 
-		if (allSpoolModels != None):
+		if (allSpoolModels is not None):
 			for spoolModel in allSpoolModels:
 				displayName = spoolModel.displayName
-				remainingWeight = str(spoolModel.remainingWeight)
 				color = spoolModel.color + " " + spoolModel.colorName
 				material = spoolModel.material
 				print("Spool:'"+ displayName + "' Color:'" + color + "' Material:'"+material+"'")
@@ -166,10 +163,10 @@ class TestDatabase(unittest.TestCase):
 		self.databaseManager.initDatabase(self.postgresDatabaseSettings, self._clientOutput)
 		databaseId = self.databaseManager.saveSpool(spoolModel)
 		print(databaseId)
-		self.assertTrue( databaseId != None, "Spool not saved")
+		self.assertTrue( databaseId is not None, "Spool not saved")
 
 		spoolModel = self.databaseManager.loadSpool(databaseId)
-		self.assertTrue(spoolModel != None, "Spool not loaded")
+		self.assertTrue(spoolModel is not None, "Spool not loaded")
 		self.assertEqual("TESTSPOOL - Number1", spoolModel.displayName, "Spool not saved")
 
 	##################################################################################################   DELETE SPOOL
