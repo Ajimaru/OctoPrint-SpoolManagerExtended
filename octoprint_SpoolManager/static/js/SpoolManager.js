@@ -57,7 +57,6 @@ window.spmSpoolColorCss = function(color) {
 
 $(function() {
 
-    var PLUGIN_ID = "SpoolManager"; // from setup.py plugin_identifier
 
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////////// VIEW MODEL
@@ -84,7 +83,7 @@ $(function() {
 
         //////////////////////////////////////////////////////////////////////////////////////////////// HELPER FUNCTION
 
-        loadSettingsFromBrowserStore = function(){
+        var loadSettingsFromBrowserStore = function(){
             // TODO maybe in a separate js-file
             // load all settings from browser storage
             if (!Modernizr.localstorage) {
@@ -729,7 +728,6 @@ $(function() {
         $("#spoolmanger-settings-tab").find('a[data-toggle="tab"]').on('shown', function (e) {
 
               var activatedTab = e.target.hash; // activated tab
-              var prevTab = e.relatedTarget.hash; // previous tab
 
               if (self.pluginSettings.useExternal() == true) {
                 self.databaseInUse("External")
@@ -739,11 +737,10 @@ $(function() {
 
               if ("#tab-spool-Storage" == activatedTab){
                   self.resetDatabaseMessages()
-                  
+
                   self.showLocalBusyIndicator(self.pluginSettings.useExternal() == false);
-                  self.showExternalBusyIndicator(self.pluginSettings.databasePassword() == true);      
-                  
-                  var databaseSettings = self.buildDatabaseSettings();
+                  self.showExternalBusyIndicator(self.pluginSettings.databasePassword() == true);
+
                   self.apiClient.loadDatabaseMetaData(function(responseData) {
                         self.handleDatabaseMetaDataResponse(responseData);
                         self.showExternalSuccessMessage(false);
@@ -784,9 +781,8 @@ $(function() {
             },
             error: function(response, data, errorMessage){
                 self.csvImportInProgress(false);
-                statusCode = response.status;       // e.g. 400
-                statusText = response.statusText;   // e.g. BAD REQUEST
-                responseText = response.responseText; // e.g. Invalid request
+                // e.g. 400 / BAD REQUEST / Invalid request
+                console.error("CSV import upload failed:", response.status, response.statusText, response.responseText);
             }
         });
         // Spool count of the CURRENTLY ACTIVE database (for the replace-confirm dialog).
@@ -870,7 +866,7 @@ $(function() {
         const origSaveSettingsFunction = self.settingsViewModel.saveData;
         const newSaveSettingsFunction = function confirmSpoolSelectionBeforeStartPrint(data, successCallback, setAsSending) {
             if (self.pluginSettings.useExternal() == true &&
-                (self.showExternalDatabaseErrorMessage() == true || self.showInternalDatabaseErrorMessage() == true || 
+                (self.showExternalDatabaseErrorMessage() == true || self.showInternalDatabaseErrorMessage() == true ||
                     self.showUpdateSchemeMessage() == true)
                 ){
                 return origSaveSettingsFunction(data, successCallback, setAsSending);
@@ -920,7 +916,7 @@ $(function() {
             var filamentList = requiredFilament["detailedSpoolResult"];
             var filteredFilamentList = [];
             // filter not required tools
-            for (filamentItem of filamentList){
+            for (let filamentItem of filamentList){
                 if (filamentItem.requiredLength > 0){
                     filteredFilamentList.push(filamentItem)
                 }
@@ -956,7 +952,7 @@ $(function() {
             $('#state').find('.accordion-inner').contents().each(function (index, item) {
                 if (item.nodeType === Node.COMMENT_NODE) {
                     if (item.nodeValue === ' ko foreach: filament ' || item.nodeValue === ' ko foreach: [] ') {
-                        item.nodeValue = ' ko foreach: [] '; // eslint-disable-line no-param-reassign
+                        item.nodeValue = ' ko foreach: [] ';
                         var element = '<!-- ko if: spoolsWithWeight().length < 1 -->  <span><strong>Required Filament unknown</strong></span><br/> <!-- /ko -->';
                         element += '<!-- ko foreach: spoolsWithWeight --> <span data-bind="text: \'Tool \' + toolIndex + \': \', attr: {title: \'Filament usage for Spool \' + spoolName}"></span><strong data-bind="html: $root.formatSpoolsWithWeight($data)"></strong><br> <!-- /ko -->';
 
@@ -1147,7 +1143,7 @@ $(function() {
         };
         // ----------------- end: display units
 
-        _buildRemainingText = function(spoolItem){
+        var _buildRemainingText = function(spoolItem){
             var remainingInfo = "";
             // if (  spoolItem.remainingWeight() != null && spoolItem.remainingWeight().length != 0
             //     && spoolItem.remainingPercentage() != null && spoolItem.remainingPercentage().length != 0){
@@ -1435,7 +1431,7 @@ $(function() {
                 return false;
             }
 
-            assignVisibility = function(attributeName){
+            var assignVisibility = function(attributeName){
                 var storageKey = "spoolmanager.table.visible." + attributeName;
                 if (localStorage[storageKey] == null){
                     // localStorage[storageKey] = true; // default value
@@ -1481,8 +1477,8 @@ $(function() {
                     self.loadSidebarSpoolWidgetsData();
                 }
 
-                totalItemCount = responseData["totalItemCount"];
-                allSpoolItems = responseData["allSpools"];
+                var totalItemCount = responseData["totalItemCount"];
+                var allSpoolItems = responseData["allSpools"];
                 var allCatalogs = responseData["catalogs"];
 
                 // assign catalogs to tablehelper
@@ -1491,7 +1487,7 @@ $(function() {
                 self.spoolDialog.updateCatalogs(allCatalogs);
                 self.addSpoolWizard.updateCatalogs(allCatalogs);
 
-                templateSpoolsData = responseData["templateSpools"];
+                var templateSpoolsData = responseData["templateSpools"];
                 self.spoolDialog.updateTemplateSpools(templateSpoolsData);
                 // the wizard reuses the SpoolItems the dialog just built from the same data
                 self.addSpoolWizard.updateTemplateSpools(self.spoolDialog.templateSpools());
@@ -1534,7 +1530,7 @@ $(function() {
             var isLoadedInTool = false;
             if (currentDatabaseId) {
                 for (var i = 0; i < self.selectedSpoolsForSidebar().length; i++) {
-                    spoolItem = self.selectedSpoolsForSidebar()[i]();
+                    var spoolItem = self.selectedSpoolsForSidebar()[i]();
                     if (spoolItem !== null && spoolItem.databaseId() === currentDatabaseId) {
                         selectedSpoolItem.selectedForTool(i);
                         isLoadedInTool = true;
@@ -1548,7 +1544,7 @@ $(function() {
         // `toolIndexOverride` added for the dropdown "Select for printing" button, adapted from
         // mdziekon/OctoPrint-SpoolManager PR #29 (GH-24). Optional/backwards-compatible: existing
         // positional callers (save/delete paths) omit it and keep the selectedForTool() behaviour.
-        closeDialogHandler = function(shouldTableReload, specialAction, currentSpoolItem, toolIndexOverride){
+        var closeDialogHandler = function(shouldTableReload, specialAction, currentSpoolItem, toolIndexOverride){
 
             if (specialAction === "selectSpoolForPrinting"){
                 // the dropdown button passes the chosen tool explicitly; the save-path falls back to the spool's tool
@@ -1608,7 +1604,7 @@ $(function() {
                             return Promise.resolve(true);
                         }
                         var itemList = [];
-                        for (item of result.noSpoolSelected) {
+                        for (let item of result.noSpoolSelected) {
                             itemList.push(SPOOLMANAGER_DIALOGS.escapeHtml('Tool ' + item.toolIndex))
                         }
                         var message;
@@ -1636,7 +1632,7 @@ $(function() {
                             return Promise.resolve(true);
                         }
                         var itemList = [];
-                        for (item of result.filamentNotEnough) {
+                        for (let item of result.filamentNotEnough) {
                             itemList.push(buildSpoolLabel(item));
                         }
                         var message;
@@ -1662,7 +1658,7 @@ $(function() {
                         }
                         var itemList = [];
                         // build message for each tool
-                        for (item of result.reminderSpoolSelection) {
+                        for (let item of result.reminderSpoolSelection) {
                             var offsets = [];
                             if (responseData.toolOffsetEnabled && item.toolOffset != null) offsets.push("Tool Offset: " + item.toolOffset + '\u00B0');
                             if (responseData.bedOffsetEnabled && item.bedOffset != null) offsets.push("Bed Offset: " + item.bedOffset + '\u00B0');
