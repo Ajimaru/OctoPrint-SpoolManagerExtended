@@ -34,7 +34,6 @@ function DatabaseConnectionProblemDialog(){
         // Bind problem message
         var title = problemResponseData.title;
         var message = problemResponseData.message;
-        var problemMessage = title + "<br/>" + message;
 
         self.dialogTitle(title);
         self.dialogMessage(message);

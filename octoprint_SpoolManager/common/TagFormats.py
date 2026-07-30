@@ -47,4 +47,4 @@ def getTagFormat(formatId):
 
 def isSupported(formatId):
     tagFormat = getTagFormat(formatId)
-    return tagFormat != None and tagFormat["supported"] == True
+    return tagFormat is not None and tagFormat["supported"]

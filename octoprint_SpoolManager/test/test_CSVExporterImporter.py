@@ -1,5 +1,3 @@
-import logging
-
 # from octoprint_PrintJobHistory.api import TransformPrintJob2JSON
 # from octoprint_PrintJobHistory.common.CSVExportImporter import parseCSV, transform2CSV
 #

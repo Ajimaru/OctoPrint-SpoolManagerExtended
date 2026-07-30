@@ -1,6 +1,6 @@
 # coding=utf-8
 
-from peewee import CharField, Model, DecimalField, FloatField, DateField, DateTimeField, TextField, IntegerField, \
+from peewee import CharField, FloatField, DateField, DateTimeField, TextField, IntegerField, \
 	BooleanField
 
 from octoprint_SpoolManager.models.BaseModel import BaseModel

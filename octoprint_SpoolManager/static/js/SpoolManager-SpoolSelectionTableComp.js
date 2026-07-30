@@ -187,7 +187,6 @@ function SpoolSelectionTableComp() {
 
         //  - do sorting
         self.sortSpoolArray = function(sortField, requestedSortOrder){
-                var sortResult = 0;
                 var sorted = self.allSpools();
 
                 if (requestedSortOrder){
@@ -306,7 +305,7 @@ function SpoolSelectionTableComp() {
             filterQuery = filterQuery.toLowerCase();
             var totalShownCount = 0;
             //console.error(self.allSpoolsKOArray().length)
-            for (spool of self.allSpools()) {
+            for (let spool of self.allSpools()) {
 
                 var spoolProperties = spool.material() + " " +
                                       spool.vendor() + " " +

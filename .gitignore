@@ -8,4 +8,6 @@ dist
 .DS_Store
 *.zip
 .venv
-.vscode
+node_modules
+package-lock.json
+.eslintcache
