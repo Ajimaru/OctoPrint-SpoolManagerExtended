@@ -3,9 +3,10 @@
 # Enable locally once:
 #   git config blame.ignoreRevsFile .git-blame-ignore-revs
 # GitHub's blame view picks this file up automatically.
-#
-# After committing the repo-wide Black/isort reformat, replace the placeholder
-# below with that commit's full SHA (git rev-parse HEAD) and amend.
 
 # chore: reformat python sources with black and isort
-REPLACE-WITH-REFORMAT-COMMIT-SHA
+8fcaf9ce6c15e1789493f0c3da1f368660d02a5c
+
+# chore: reformat frontend assets with prettier
+# NOTE: add the full SHA of the prettier reformat commit here right after committing
+# it (git rev-parse HEAD), in a separate follow-up commit.

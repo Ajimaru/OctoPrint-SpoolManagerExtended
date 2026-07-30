@@ -11,7 +11,6 @@
 // Trying to use OctoPrint's showConfirmationDialog() here instead of the PR's plain confirm()
 // does not work — see the comment at the reset button's click handler below.
 function ResetSettingsUtilV3(pluginSettings) {
-
     const pluginSettingsFromPlugin = pluginSettings;
 
     const RESET_BUTTON_ID = "resetSettingsButton";
@@ -31,7 +30,7 @@ function ResetSettingsUtilV3(pluginSettings) {
     // did nothing (the previous implementation had no try/catch, so the throw disappeared
     // inside jQuery's .done()). Anything that is not an observable is therefore skipped.
     const resetPluginSettings = (pluginSettingsStorage, newSettings) => {
-        Object.entries(newSettings).forEach(([ key, value ]) => {
+        Object.entries(newSettings).forEach(([key, value]) => {
             const target = pluginSettingsStorage[key];
 
             if (!ko.isObservable(target)) {
@@ -53,7 +52,7 @@ function ResetSettingsUtilV3(pluginSettings) {
                 return;
             }
 
-            Object.entries(value).forEach(([ nestedKey, nestedValue ]) => {
+            Object.entries(value).forEach(([nestedKey, nestedValue]) => {
                 if (!ko.isObservable(target[nestedKey])) {
                     return;
                 }
@@ -65,7 +64,10 @@ function ResetSettingsUtilV3(pluginSettings) {
         });
     };
 
-    this.assignResetSettingsFeature = function (PLUGIN_ID_string, mapSettingsToViewModel_function) {
+    this.assignResetSettingsFeature = function (
+        PLUGIN_ID_string,
+        mapSettingsToViewModel_function
+    ) {
         /**
          * NOTE (from mdziekon/OctoPrint-SpoolManager PR #19, GH-18): PrintJobHistory uses the
          * same name ("resetSettingsButtonFunction") to check for event listener existence.
@@ -80,12 +82,13 @@ function ResetSettingsUtilV3(pluginSettings) {
         const $settingsDialog = $("#settings_dialog");
         const settingsDialogDOMElement = $settingsDialog.get(0);
 
-        const eventObject = $._data(settingsDialogDOMElement, 'events');
+        const eventObject = $._data(settingsDialogDOMElement, "events");
         if (
-            !eventObject || !eventObject.hide ||
+            !eventObject ||
+            !eventObject.hide ||
             eventObject.hide[0].handler.name !== resetSettingsButtonFunction.name
         ) {
-            $settingsDialog.on('hide', resetSettingsButtonFunction);
+            $settingsDialog.on("hide", resetSettingsButtonFunction);
         }
 
         const $settingsTabs = $("#settingsTabs");
@@ -94,7 +97,9 @@ function ResetSettingsUtilV3(pluginSettings) {
         // Prefix match (^=) is kept from the original rather than PR #19's exact match: some
         // OctoPrint versions suffix the tab href (e.g. "#settings_plugin_SpoolManager_link"),
         // and an exact match would silently disable the whole feature there.
-        const pluginSettingsLink = $settingsTabs.find(`a[href^="#settings_plugin_${PLUGIN_ID_string}"]:not([hooked="${PLUGIN_ID_string}"])`);
+        const pluginSettingsLink = $settingsTabs.find(
+            `a[href^="#settings_plugin_${PLUGIN_ID_string}"]:not([hooked="${PLUGIN_ID_string}"])`
+        );
         pluginSettingsLink.attr("hooked", PLUGIN_ID_string);
         pluginSettingsLink.click(function () {
             // noinspection JSJQueryEfficiency - result changes after HTML insertion
@@ -120,7 +125,7 @@ function ResetSettingsUtilV3(pluginSettings) {
                 // onproceed never ran. This is the one spot that intentionally keeps a native confirm().
                 const hasConfirmed = confirm(
                     "Reset all SpoolManager plugin settings to their default values?\n\n" +
-                    "The change is only applied in the UI and takes effect once you save the settings."
+                        "The change is only applied in the UI and takes effect once you save the settings."
                 );
 
                 if (!hasConfirmed) {
@@ -143,7 +148,8 @@ function ResetSettingsUtilV3(pluginSettings) {
                     // it before the loop meant a failing reset still showed "restored!".
                     SPOOLMANAGER_DIALOGS.notify({
                         title: "Default settings restored!",
-                        message: "The plugin settings have been reset but not yet been saved.<br>Remember to save. If you reset the settings accidentally, you can reload the page to revert.",
+                        message:
+                            "The plugin settings have been reset but not yet been saved.<br>Remember to save. If you reset the settings accidentally, you can reload the page to revert.",
                         type: "info"
                     });
                 } catch (error) {
@@ -153,7 +159,8 @@ function ResetSettingsUtilV3(pluginSettings) {
 
                     SPOOLMANAGER_DIALOGS.notify({
                         title: "Plugin settings reset",
-                        message: "An error occurred while loading the default settings. The settings have not been changed.",
+                        message:
+                            "An error occurred while loading the default settings. The settings have not been changed.",
                         type: "error"
                     });
                 }
@@ -163,11 +170,12 @@ function ResetSettingsUtilV3(pluginSettings) {
         });
 
         // default behaviour -> hide reset button --> if not already assigned
-        const otherSettingsLink = $settingsTabs.find(`a[href^="#settings_"]:not([hooked])`);
+        const otherSettingsLink = $settingsTabs.find(
+            `a[href^="#settings_"]:not([hooked])`
+        );
         if (otherSettingsLink.length !== 0) {
             otherSettingsLink.attr("hooked", "otherSettings");
             otherSettingsLink.click(resetSettingsButtonFunction);
         }
-    }
-
+    };
 }

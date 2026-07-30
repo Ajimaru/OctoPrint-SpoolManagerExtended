@@ -1,8 +1,9 @@
 # Linting and formatting for the SpoolManager plugin.
 #
-# Mirrors OctoPrint core's tooling: Black + isort + flake8 for Python, plus the
-# frontend linters. The repo-wide Black reformat happened in one dedicated
-# commit - list it in .git-blame-ignore-revs so `git blame` skips it.
+# Mirrors OctoPrint core's tooling: Black + isort + flake8 for Python, Prettier for
+# the frontend (same .prettierrc values as OctoPrint core), plus ESLint/stylelint/djlint
+# for correctness. The repo-wide reformats each happened in one dedicated commit - both
+# are listed in .git-blame-ignore-revs so `git blame` skips them.
 #
 # Setup:  pre-commit install
 # Manual: pre-commit run --all-files
@@ -69,4 +70,14 @@ repos:
         entry: npx --no-install stylelint
         language: system
         files: ^octoprint_SpoolManager/static/.*\.(css|less)$
+        pass_filenames: true
+
+      # --check instead of --write: the hook reports, it never rewrites files
+      # behind the author's back. Run `npm run format` to apply.
+      - id: prettier
+        name: prettier
+        entry: npx --no-install prettier --check
+        language: system
+        files: ^octoprint_SpoolManager/static/.*\.(js|css|less)$
+        exclude: \.min\.js$|quill\.snow\.css$
         pass_filenames: true
