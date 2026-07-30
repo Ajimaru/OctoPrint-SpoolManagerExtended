@@ -1,0 +1,11 @@
+# Commits to skip in `git blame` (bulk reformats, no semantic changes).
+#
+# Enable locally once:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+# GitHub's blame view picks this file up automatically.
+#
+# After committing the repo-wide Black/isort reformat, replace the placeholder
+# below with that commit's full SHA (git rev-parse HEAD) and amend.
+
+# chore: reformat python sources with black and isort
+REPLACE-WITH-REFORMAT-COMMIT-SHA

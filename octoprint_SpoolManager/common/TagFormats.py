@@ -17,9 +17,7 @@ TAG_FORMAT_OPENPRINTTAG = "openPrintTag"
 
 
 def _buildSpoolIdPayload(spoolModel):
-    return {
-        "databaseId": spoolModel.databaseId
-    }
+    return {"databaseId": spoolModel.databaseId}
 
 
 TAG_FORMATS = {
@@ -28,7 +26,7 @@ TAG_FORMATS = {
         "label": "Spool ID (NTAG)",
         "supported": True,
         "buildPayload": _buildSpoolIdPayload,
-        "description": "Writes only the database id; all spool data stays in SpoolManager."
+        "description": "Writes only the database id; all spool data stays in SpoolManager.",
     },
     TAG_FORMAT_OPENPRINTTAG: {
         "id": TAG_FORMAT_OPENPRINTTAG,
@@ -36,8 +34,8 @@ TAG_FORMATS = {
         # needs an ISO 15693 / NFC-V reader, the current OctoScale hardware (PN532) cannot write these
         "supported": False,
         "buildPayload": None,
-        "description": "Stores the spool data on the tag itself. Requires NFC-V capable hardware."
-    }
+        "description": "Stores the spool data on the tag itself. Requires NFC-V capable hardware.",
+    },
 }
 
 
