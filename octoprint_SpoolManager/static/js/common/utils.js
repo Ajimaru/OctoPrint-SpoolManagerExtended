@@ -49,7 +49,7 @@ SPOOLMANAGER_UTILS = {
             isTransparent: false,
             // transparent without any base tint (plain "transparent", no ":#hex")
             isUntinted: false,
-            colors: [defaultColor],
+            colors: [defaultColor]
         };
         if (colorValue == null) {
             return result;
@@ -92,7 +92,10 @@ SPOOLMANAGER_UTILS = {
             return SPOOLMANAGER_CONSTANTS.COLORS.TRANSPARENT;
         }
 
-        var colors = (parts.colors && parts.colors.length > 0) ? parts.colors : [SPOOLMANAGER_CONSTANTS.COLORS.DEFAULT];
+        var colors =
+            parts.colors && parts.colors.length > 0
+                ? parts.colors
+                : [SPOOLMANAGER_CONSTANTS.COLORS.DEFAULT];
         var composed = colors
             .map(function (entry) {
                 return entry || SPOOLMANAGER_CONSTANTS.COLORS.DEFAULT;
@@ -109,11 +112,11 @@ SPOOLMANAGER_UTILS = {
     // gate saving on these, so the rule lives here rather than in each of them.
     // Takes the SpoolItem, reads the observables itself.
     isDisplayNamePresent: function (spoolItem) {
-        return ((spoolItem.displayName() || "").trim().length > 0);
+        return (spoolItem.displayName() || "").trim().length > 0;
     },
 
     isColorNamePresent: function (spoolItem) {
-        return ((spoolItem.colorName() || "").trim().length > 0);
+        return (spoolItem.colorName() || "").trim().length > 0;
     },
 
     isTotalCombinedWeightPresent: function (spoolItem) {
@@ -138,15 +141,16 @@ SPOOLMANAGER_UTILS = {
     // these tables from before this file existed. They are left alone on purpose; new code uses
     // the functions here.
 
-    WEIGHT_UNIT_FACTORS: { "g": 1, "kg": 1000 },
-    UNIT_DISPLAY_DECIMALS: { "mm": 1, "cm": 2, "m": 3, "g": 1, "kg": 3 },
+    WEIGHT_UNIT_FACTORS: {g: 1, kg: 1000},
+    UNIT_DISPLAY_DECIMALS: {mm: 1, cm: 2, m: 3, g: 1, kg: 3},
 
     // pluginSettings may still be null while a dialog is constructed but not yet bound, and an
     // unknown unit from a hand-edited config must not produce NaN, so both fall back to grams.
     selectedWeightUnit: function (pluginSettings) {
-        var unit = (pluginSettings != null && pluginSettings.weightUnit != null)
-            ? pluginSettings.weightUnit()
-            : "g";
+        var unit =
+            pluginSettings != null && pluginSettings.weightUnit != null
+                ? pluginSettings.weightUnit()
+                : "g";
         return SPOOLMANAGER_UTILS.WEIGHT_UNIT_FACTORS[unit] ? unit : "g";
     },
 
@@ -156,7 +160,9 @@ SPOOLMANAGER_UTILS = {
             return rawGram;
         }
         var factor = SPOOLMANAGER_UTILS.WEIGHT_UNIT_FACTORS[unit];
-        return parseFloat((value / factor).toFixed(SPOOLMANAGER_UTILS.UNIT_DISPLAY_DECIMALS[unit]));
+        return parseFloat(
+            (value / factor).toFixed(SPOOLMANAGER_UTILS.UNIT_DISPLAY_DECIMALS[unit])
+        );
     },
 
     // "1234.5 g" / "1.234 kg" - with a space, unlike the older copy in SpoolManager.js
@@ -178,7 +184,10 @@ SPOOLMANAGER_UTILS = {
     makeWeightDisplayKo: function (baseKo, unitFunction) {
         return ko.pureComputed({
             read: function () {
-                return SPOOLMANAGER_UTILS.convertWeightForDisplay(baseKo(), unitFunction());
+                return SPOOLMANAGER_UTILS.convertWeightForDisplay(
+                    baseKo(),
+                    unitFunction()
+                );
             },
             write: function (newValue) {
                 var value = parseFloat(newValue);
@@ -225,8 +234,12 @@ SPOOLMANAGER_UTILS = {
         }
         // Explicit scheme ("https:", "mailto:", "tel:"), protocol-relative ("//host"), a fragment
         // or a root path - all deliberate, leave them alone
-        if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed) || /^\/\//.test(trimmed) ||
-            trimmed.charAt(0) === "#" || trimmed.charAt(0) === "/") {
+        if (
+            /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed) ||
+            /^\/\//.test(trimmed) ||
+            trimmed.charAt(0) === "#" ||
+            trimmed.charAt(0) === "/"
+        ) {
             return trimmed;
         }
         return "https://" + trimmed;
@@ -241,8 +254,14 @@ SPOOLMANAGER_UTILS = {
             return delta;
         }
         delta.ops.forEach(function (op) {
-            if (op != null && op.attributes != null && typeof op.attributes.link === "string") {
-                op.attributes.link = SPOOLMANAGER_UTILS.normalizeLinkUrl(op.attributes.link);
+            if (
+                op != null &&
+                op.attributes != null &&
+                typeof op.attributes.link === "string"
+            ) {
+                op.attributes.link = SPOOLMANAGER_UTILS.normalizeLinkUrl(
+                    op.attributes.link
+                );
             }
         });
         return delta;
@@ -263,12 +282,15 @@ SPOOLMANAGER_UTILS = {
             var link = links[index];
             // getAttribute, not .href: the property is already browser-resolved and would hand
             // back http://<octoprint>/web.de, hiding the very value that needs fixing
-            link.setAttribute("href", SPOOLMANAGER_UTILS.normalizeLinkUrl(link.getAttribute("href")));
+            link.setAttribute(
+                "href",
+                SPOOLMANAGER_UTILS.normalizeLinkUrl(link.getAttribute("href"))
+            );
             link.setAttribute("target", "_blank");
             link.setAttribute("rel", "noopener noreferrer");
         }
         return container.innerHTML;
-    },
+    }
 };
 
 // Expose to jinja templates (used by the "Last/First use" column binding in SpoolManager_tab.jinja2)

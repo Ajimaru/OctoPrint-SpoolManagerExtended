@@ -1,0 +1,15 @@
+# Prettier configuration.
+#
+# These values are taken verbatim from OctoPrint core's own .prettierrc.yaml so the
+# plugin's frontend is formatted exactly like OctoPrint itself.
+printWidth: 90
+tabWidth: 4
+semi: true
+trailingComma: "none"
+singleQuote: false
+quoteProps: consistent
+bracketSpacing: false
+overrides:
+  - files: ["*.yaml", "*.yml", "*.json", "*.less"]
+    options:
+      tabWidth: 2

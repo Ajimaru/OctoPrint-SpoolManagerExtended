@@ -7,14 +7,15 @@
 // TODO: Figure out better way to export things from closure
 let SpoolItem;
 
-(function() {
+(function () {
     /**
      * Note: depends on sources concatenation order as defined in __init__.py & performed by Octoprint.
      * If it ever fails because of architectural change in Octoprint,
      * consider moving these "imports" to a closure ensured to run after everything loads.
      */
     var MATERIALS_DENSITY_MAP = SPOOLMANAGER_CONSTANTS.MATERIALS_DENSITY_MAPPING;
-    var FORMAT_DATETIME_LOCAL = SPOOLMANAGER_CONSTANTS.DATES.DISPLAY_FORMATS.DATETIME_LOCAL;
+    var FORMAT_DATETIME_LOCAL =
+        SPOOLMANAGER_CONSTANTS.DATES.DISPLAY_FORMATS.DATETIME_LOCAL;
     var FORMAT_DATE = SPOOLMANAGER_CONSTANTS.DATES.DISPLAY_FORMATS.DATE;
     var PARSE_FORMAT_DATETIME = SPOOLMANAGER_CONSTANTS.DATES.PARSE_FORMATS.DATETIME;
     var PARSE_FORMAT_DATE = SPOOLMANAGER_CONSTANTS.DATES.PARSE_FORMATS.DATE;
@@ -25,15 +26,15 @@ let SpoolItem;
     var DEFAULT_COLOR = SPOOLMANAGER_CONSTANTS.COLORS.DEFAULT;
 
     function _getValueOrZero(x) {
-        if (!x){
-            x = 0
+        if (!x) {
+            x = 0;
         }
         return parseFloat(x);
     }
 
-    SpoolItem = function(spoolData, params) {
-        var isEditable = (params != null) && params.isEditable == true;
-        var catalogs = (params != null) ? params.catalogs : null;
+    SpoolItem = function (spoolData, params) {
+        var isEditable = params != null && params.isEditable == true;
+        var catalogs = params != null ? params.catalogs : null;
 
         // Init Item
 
@@ -41,7 +42,7 @@ let SpoolItem;
         // if we just use this Item in readonly-mode we need simple ko.observer
 
         this.selectedFromQRCode = ko.observable(false);
-        this.selectedForTool = ko.observable(0);    // Default Tool 0
+        this.selectedForTool = ko.observable(0); // Default Tool 0
         this.isFilteredForSelection = ko.observable(false);
         // - list all attributes
         this.version = ko.observable();
@@ -69,18 +70,18 @@ let SpoolItem;
         this.finishSelection = ko.observable();
         this.finishCustomText = ko.observable();
         this.finish = ko.computed({
-            read: function(){
-                if (this.finishSelection() === "custom"){
+            read: function () {
+                if (this.finishSelection() === "custom") {
                     return this.finishCustomText();
                 }
                 return this.finishSelection();
             },
-            write: function(value){
+            write: function (value) {
                 var predefinedFinishes = ["silk", "matt", "marble", "metal", "glow"];
-                if (!value){
+                if (!value) {
                     this.finishSelection(undefined);
                     this.finishCustomText(undefined);
-                } else if (predefinedFinishes.indexOf(value) !== -1){
+                } else if (predefinedFinishes.indexOf(value) !== -1) {
                     this.finishSelection(value);
                     this.finishCustomText(undefined);
                 } else {
@@ -103,9 +104,9 @@ let SpoolItem;
         this.usedPercentage = ko.observable();
         this.code = ko.observable();
         this.batchNumber = ko.observable();
-        this.noteText = ko.observable()
-        this.noteDeltaFormat = ko.observable()
-        this.noteHtml = ko.observable()
+        this.noteText = ko.observable();
+        this.noteDeltaFormat = ko.observable();
+        this.noteHtml = ko.observable();
 
         this.firstUse = ko.observable();
         this.lastUse = ko.observable();
@@ -118,32 +119,33 @@ let SpoolItem;
         // reports an empty value until BOTH date and time are filled in, so a date-only
         // entry was silently lost on save. Separate date + time inputs avoid that; a
         // missing time defaults to 00:00.
-        var createDatePartKO = function(dateTimeKO){
+        var createDatePartKO = function (dateTimeKO) {
             return ko.pureComputed({
-                read: function(){
+                read: function () {
                     var value = dateTimeKO();
-                    return (value) ? value.split("T")[0] : "";
+                    return value ? value.split("T")[0] : "";
                 },
-                write: function(newDate){
-                    if (!newDate){
+                write: function (newDate) {
+                    if (!newDate) {
                         dateTimeKO(null);
                         return;
                     }
                     var value = dateTimeKO();
-                    var timePart = (value && value.indexOf("T") != -1) ? value.split("T")[1] : "00:00";
+                    var timePart =
+                        value && value.indexOf("T") != -1 ? value.split("T")[1] : "00:00";
                     dateTimeKO(newDate + "T" + timePart);
                 }
             });
         };
-        var createTimePartKO = function(dateTimeKO){
+        var createTimePartKO = function (dateTimeKO) {
             return ko.pureComputed({
-                read: function(){
+                read: function () {
                     var value = dateTimeKO();
-                    return (value && value.indexOf("T") != -1) ? value.split("T")[1] : "";
+                    return value && value.indexOf("T") != -1 ? value.split("T")[1] : "";
                 },
-                write: function(newTime){
+                write: function (newTime) {
                     var value = dateTimeKO();
-                    if (!value){
+                    if (!value) {
                         // time without a date is meaningless - wait for a date
                         return;
                     }
@@ -157,7 +159,6 @@ let SpoolItem;
         this.lastUseDateKO = createDatePartKO(this.lastUseKO);
         this.lastUseTimeKO = createTimePartKO(this.lastUseKO);
 
-
         this.purchasedFrom = ko.observable();
         this.cost = ko.observable();
         this.costUnit = ko.observable();
@@ -169,7 +170,7 @@ let SpoolItem;
         this.labels = ko.observableArray();
         this.allLabels = ko.observableArray();
 
-        if (isEditable == true){
+        if (isEditable == true) {
             // Editing mode: bind to the dialog's picker widgets. Widget creation only happens
             // here (never for read-only table items) - adopted from mdziekon/OctoPrint-SpoolManager
             // PR #11 (GH-10), so the table items cannot reach into the dialog's DOM nodes.
@@ -186,33 +187,48 @@ let SpoolItem;
             // "transparent without a base tint" is the "completely colorless" checkbox in the
             // dialog (bound to transparentUntinted); it used to be pick-a-color's translucent
             // swatch, which went away with the widget.
-            var colorViewModel = ComponentFactory.createColorPicker("filament-color-picker", DEFAULT_COLOR);
-            var colorViewModel2 = ComponentFactory.createColorPicker("filament-color-picker2", "#0000ff");
-            var colorViewModel3 = ComponentFactory.createColorPicker("filament-color-picker3", "#ffff00");
-            var pickerColors = [colorViewModel.selectedColor, colorViewModel2.selectedColor, colorViewModel3.selectedColor];
+            var colorViewModel = ComponentFactory.createColorPicker(
+                "filament-color-picker",
+                DEFAULT_COLOR
+            );
+            var colorViewModel2 = ComponentFactory.createColorPicker(
+                "filament-color-picker2",
+                "#0000ff"
+            );
+            var colorViewModel3 = ComponentFactory.createColorPicker(
+                "filament-color-picker3",
+                "#ffff00"
+            );
+            var pickerColors = [
+                colorViewModel.selectedColor,
+                colorViewModel2.selectedColor,
+                colorViewModel3.selectedColor
+            ];
             var applyingColor = false;
-            var composeColor = function(){
-                if (applyingColor == true){
+            var composeColor = function () {
+                if (applyingColor == true) {
                     return;
                 }
                 var colors = [];
-                for (var i = 0; i < spoolItemInstance.colorCount(); i++){
+                for (var i = 0; i < spoolItemInstance.colorCount(); i++) {
                     colors.push(pickerColors[i]() || DEFAULT_COLOR);
                 }
-                spoolItemInstance.color(SPOOLMANAGER_UTILS.composeSpoolColor({
-                    isRainbow: spoolItemInstance.isRainbow() == true,
-                    isTransparent: spoolItemInstance.isTransparent() == true,
-                    isUntinted: spoolItemInstance.transparentUntinted() == true,
-                    colors: colors
-                }));
+                spoolItemInstance.color(
+                    SPOOLMANAGER_UTILS.composeSpoolColor({
+                        isRainbow: spoolItemInstance.isRainbow() == true,
+                        isTransparent: spoolItemInstance.isTransparent() == true,
+                        isUntinted: spoolItemInstance.transparentUntinted() == true,
+                        colors: colors
+                    })
+                );
             };
             // picking a real base color after "translucent" turns it into a tinted transparent
-            var onBaseColorPicked = function(newValue){
-                if (applyingColor == true){
+            var onBaseColorPicked = function (newValue) {
+                if (applyingColor == true) {
                     // color is being loaded programmatically, keep the untinted flag as set
                     return;
                 }
-                if (newValue && spoolItemInstance.transparentUntinted() == true){
+                if (newValue && spoolItemInstance.transparentUntinted() == true) {
                     spoolItemInstance.transparentUntinted(false);
                 }
                 composeColor();
@@ -225,37 +241,37 @@ let SpoolItem;
             this.isTransparent.subscribe(composeColor);
             this.transparentUntinted.subscribe(composeColor);
             // unchecking the transparent checkbox also clears the untinted flag
-            this.isTransparent.subscribe(function(newValue){
-                if (newValue == false){
+            this.isTransparent.subscribe(function (newValue) {
+                if (newValue == false) {
                     spoolItemInstance.transparentUntinted(false);
                 }
             });
             // rainbow and transparent are mutually exclusive
-            this.isRainbow.subscribe(function(newValue){
-                if (newValue == true && spoolItemInstance.isTransparent() == true){
+            this.isRainbow.subscribe(function (newValue) {
+                if (newValue == true && spoolItemInstance.isTransparent() == true) {
                     spoolItemInstance.isTransparent(false);
                 }
             });
-            this.isTransparent.subscribe(function(newValue){
-                if (newValue == true && spoolItemInstance.isRainbow() == true){
+            this.isTransparent.subscribe(function (newValue) {
+                if (newValue == true && spoolItemInstance.isRainbow() == true) {
                     spoolItemInstance.isRainbow(false);
                 }
             });
             // pushes a stored color value into the picker widgets/flags
-            this.applyColorToEditor = function(colorValue){
+            this.applyColorToEditor = function (colorValue) {
                 applyingColor = true;
                 try {
                     var parts = SPOOLMANAGER_UTILS.parseSpoolColor(colorValue);
                     spoolItemInstance.isRainbow(parts.isRainbow);
                     spoolItemInstance.isTransparent(parts.isTransparent);
                     spoolItemInstance.transparentUntinted(parts.isUntinted);
-                    if (parts.isRainbow){
+                    if (parts.isRainbow) {
                         spoolItemInstance.colorCount(1);
                         pickerColors[0](DEFAULT_COLOR);
                     } else {
                         spoolItemInstance.colorCount(Math.min(parts.colors.length, 3));
-                        for (var i = 0; i < 3; i++){
-                            if (i < parts.colors.length && parts.colors[i]){
+                        for (var i = 0; i < 3; i++) {
+                            if (i < parts.colors.length && parts.colors[i]) {
                                 pickerColors[i](parts.colors[i]);
                             }
                         }
@@ -264,14 +280,19 @@ let SpoolItem;
                     applyingColor = false;
                 }
             };
-            this.color(DEFAULT_COLOR);  // needed
+            this.color(DEFAULT_COLOR); // needed
             pickerColors[0](DEFAULT_COLOR);
             pickerColors[1]("#0000ff");
             pickerColors[2]("#ffff00");
 
-            var firstUseViewModel = ComponentFactory.createDateTimePicker("firstUse-date-picker");
-            var lastUseViewModel = ComponentFactory.createDateTimePicker("lastUse-date-picker");
-            var purchasedOnViewModel = ComponentFactory.createDateTimePicker("purchasedOn-date-picker", false);
+            var firstUseViewModel =
+                ComponentFactory.createDateTimePicker("firstUse-date-picker");
+            var lastUseViewModel =
+                ComponentFactory.createDateTimePicker("lastUse-date-picker");
+            var purchasedOnViewModel = ComponentFactory.createDateTimePicker(
+                "purchasedOn-date-picker",
+                false
+            );
             this.firstUse = firstUseViewModel.currentDateTime;
             this.lastUse = lastUseViewModel.currentDateTime;
             this.purchasedOn = purchasedOnViewModel.currentDateTime;
@@ -280,18 +301,18 @@ let SpoolItem;
         // Autosuggest for "density" (data source: SpoolmanDB-derived mapping, see common/constants.js).
         // Guarded so it only fires for the item currently open in the edit dialog.
         var densitySuggestItem = this;
-        this.material.subscribe(function(newMaterial){
-            if ($(SPOOL_DIALOG_SELECTOR).is(":visible") == false){
+        this.material.subscribe(function (newMaterial) {
+            if ($(SPOOL_DIALOG_SELECTOR).is(":visible") == false) {
                 return;
             }
-            if (densitySuggestItem.isSpoolVisible() != true){
+            if (densitySuggestItem.isSpoolVisible() != true) {
                 return;
             }
-            if (!newMaterial){
+            if (!newMaterial) {
                 return;
             }
             var density = MATERIALS_DENSITY_MAP[normalizeMaterialKey(newMaterial)];
-            if (density){
+            if (density) {
                 densitySuggestItem.density(density);
             }
         });
@@ -303,30 +324,30 @@ let SpoolItem;
         this.drivenScopeOptions = ko.observableArray([
             {
                 text: "Filament Amount",
-                value: FILAMENT_STATS_CALC_MODES.FILAMENT,
+                value: FILAMENT_STATS_CALC_MODES.FILAMENT
             },
             {
                 text: "Spool Weight",
-                value: FILAMENT_STATS_CALC_MODES.SPOOL,
+                value: FILAMENT_STATS_CALC_MODES.SPOOL
             },
             {
                 text: "Combined Weight",
-                value: FILAMENT_STATS_CALC_MODES.COMBINED,
-            },
+                value: FILAMENT_STATS_CALC_MODES.COMBINED
+            }
         ]);
 
         // Fill Item with data
-        this.update(spoolData, { catalogs: catalogs });
-    }
+        this.update(spoolData, {catalogs: catalogs});
+    };
 
     SpoolItem.prototype.update = function (data, params) {
-        var updateData = data || {}
-        var catalogs = (params != null) ? params.catalogs : null;
+        var updateData = data || {};
+        var catalogs = params != null ? params.catalogs : null;
 
         // update latest all catalog
         // (vendors/materials are no longer mirrored here: the edit dialog's datalists bind
         //  straight to the dialog-level spoolDialog.allVendors / allMaterials arrays)
-        if (catalogs != null){
+        if (catalogs != null) {
             // labels
             this.allLabels.removeAll();
             ko.utils.arrayPushAll(this.allLabels, catalogs.labels);
@@ -350,23 +371,26 @@ let SpoolItem;
         this.finish(updateData.finish);
         // first update color code, and then update the color name
         var rawColor = updateData.color == null ? DEFAULT_COLOR : updateData.color;
-        if (this.applyColorToEditor != null){
+        if (this.applyColorToEditor != null) {
             this.applyColorToEditor(rawColor);
         }
         this.color(rawColor);
         // if no custom color name present, use predefined name
-        if (updateData.colorName == null || updateData.colorName.length == 0){
+        if (updateData.colorName == null || updateData.colorName.length == 0) {
             var colorParts = SPOOLMANAGER_UTILS.parseSpoolColor(rawColor);
             var preDefinedColorName = false;
-            if (colorParts.isRainbow){
+            if (colorParts.isRainbow) {
                 preDefinedColorName = "Rainbow";
-            } else if (colorParts.isTransparent){
-                var baseName = colorParts.isUntinted ? false : tinycolor(colorParts.colors[0]).toName();
-                preDefinedColorName = baseName != false ? "Transparent " + baseName : "Transparent";
+            } else if (colorParts.isTransparent) {
+                var baseName = colorParts.isUntinted
+                    ? false
+                    : tinycolor(colorParts.colors[0]).toName();
+                preDefinedColorName =
+                    baseName != false ? "Transparent " + baseName : "Transparent";
             } else {
                 preDefinedColorName = tinycolor(colorParts.colors[0]).toName();
             }
-            if (preDefinedColorName != false){
+            if (preDefinedColorName != false) {
                 this.colorName(preDefinedColorName);
             }
         } else {
@@ -398,25 +422,28 @@ let SpoolItem;
         this.firstUse(updateData.firstUse);
         this.lastUse(updateData.lastUse);
         this.purchasedOn(updateData.purchasedOn);
-        if (updateData.firstUse){
-            let convertedDateTime = moment(data.firstUse, PARSE_FORMAT_DATETIME).format(FORMAT_DATETIME_LOCAL)
+        if (updateData.firstUse) {
+            let convertedDateTime = moment(data.firstUse, PARSE_FORMAT_DATETIME).format(
+                FORMAT_DATETIME_LOCAL
+            );
             this.firstUseKO(convertedDateTime);
-        }
-        else{
+        } else {
             this.firstUseKO(null);
         }
-        if (updateData.lastUse){
-            let convertedDateTime = moment(data.lastUse, PARSE_FORMAT_DATETIME).format(FORMAT_DATETIME_LOCAL)
+        if (updateData.lastUse) {
+            let convertedDateTime = moment(data.lastUse, PARSE_FORMAT_DATETIME).format(
+                FORMAT_DATETIME_LOCAL
+            );
             this.lastUseKO(convertedDateTime);
-        }
-        else{
+        } else {
             this.lastUseKO(null);
         }
-        if (updateData.purchasedOn){
-            let convertedDateTime = moment(data.purchasedOn, PARSE_FORMAT_DATE).format(FORMAT_DATE)
+        if (updateData.purchasedOn) {
+            let convertedDateTime = moment(data.purchasedOn, PARSE_FORMAT_DATE).format(
+                FORMAT_DATE
+            );
             this.purchasedOnKO(convertedDateTime);
-        }
-        else {
+        } else {
             this.purchasedOnKO(null);
         }
 
@@ -426,11 +453,11 @@ let SpoolItem;
         this.costUnit(updateData.costUnit);
 
         // update label selections
-        if (updateData.labels != null){
+        if (updateData.labels != null) {
             this.labels.removeAll();
-            var selectedLabels = updateData.labels
-            if (Array.isArray(updateData.labels) == false){
-                selectedLabels = JSON.parse(updateData.labels)
+            var selectedLabels = updateData.labels;
+            if (Array.isArray(updateData.labels) == false) {
+                selectedLabels = JSON.parse(updateData.labels);
             }
             ko.utils.arrayPushAll(this.labels, selectedLabels);
         }
@@ -439,7 +466,7 @@ let SpoolItem;
         // fill Obseravbles
         this.noteText(updateData.noteText);
         this.noteDeltaFormat(updateData.noteDeltaFormat);
-        if (updateData.noteHtml != null){
+        if (updateData.noteHtml != null) {
             // Notes saved before the link normalisation landed can still contain href="web.de",
             // which the browser resolves against OctoPrint's own URL. Repairing it on the way
             // into the table leaves stored rows untouched (no migration needed) - a note re-saved
@@ -451,7 +478,13 @@ let SpoolItem;
         }
 
         // Calculate derived fields (these exists only in this view model)
-        this.totalCombinedWeight(_getValueOrZero(updateData.totalWeight) + _getValueOrZero(updateData.spoolWeight));
-        this.remainingCombinedWeight(_getValueOrZero(updateData.remainingWeight) + _getValueOrZero(updateData.spoolWeight));
+        this.totalCombinedWeight(
+            _getValueOrZero(updateData.totalWeight) +
+                _getValueOrZero(updateData.spoolWeight)
+        );
+        this.remainingCombinedWeight(
+            _getValueOrZero(updateData.remainingWeight) +
+                _getValueOrZero(updateData.spoolWeight)
+        );
     };
 })();
