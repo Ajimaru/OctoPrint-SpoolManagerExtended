@@ -18,6 +18,9 @@ from octoprint_SpoolManager.api import Transformer
 from octoprint_SpoolManager.api.SpoolManagerAPI import SpoolManagerAPI
 from octoprint_SpoolManager.common import StringUtils
 from octoprint_SpoolManager.common.EventBusKeys import EventBusKeys
+from octoprint_SpoolManager.common.FilamentDatabaseService import (
+    FilamentDatabaseService,
+)
 from octoprint_SpoolManager.common.SettingsKeys import SettingsKeys
 from octoprint_SpoolManager.DatabaseManager import DatabaseManager
 from octoprint_SpoolManager.MqttManager import MqttManager
@@ -77,6 +80,9 @@ class SpoolmanagerPlugin(
 
         # MQTT (read-only publishing, helper is acquired later in on_after_startup)
         self._mqttManager = MqttManager(self, self._logger)
+        self._filamentDatabaseService = FilamentDatabaseService(
+            self.get_plugin_data_folder(), self._logger, self._plugin_version
+        )
 
         self._logger.info("Done initializing")
         pass
@@ -1259,6 +1265,10 @@ class SpoolmanagerPlugin(
         ## OctoScale
         settings[SettingsKeys.SETTINGS_KEY_OCTOSCALE_ENABLED] = False
         settings[SettingsKeys.SETTINGS_KEY_OCTOSCALE_URL] = ""
+
+        ## SpoolmanDB-Community
+        settings[SettingsKeys.SETTINGS_KEY_SPOOLMANDB_ENABLED] = False
+        settings[SettingsKeys.SETTINGS_KEY_SPOOLMANDB_CACHE_TTL_DAYS] = 1
 
         ## Debugging
         settings[SettingsKeys.SETTINGS_KEY_SQL_LOGGING_ENABLED] = False

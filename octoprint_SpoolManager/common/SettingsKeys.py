@@ -60,6 +60,10 @@ class SettingsKeys:
     SETTINGS_KEY_OCTOSCALE_ENABLED = "octoScaleEnabled"
     SETTINGS_KEY_OCTOSCALE_URL = "octoScaleUrl"
 
+    ## SpoolmanDB-Community (optional remote temperature suggestions)
+    SETTINGS_KEY_SPOOLMANDB_ENABLED = "spoolmanDbEnabled"
+    SETTINGS_KEY_SPOOLMANDB_CACHE_TTL_DAYS = "spoolmanDbCacheTtlDays"
+
     ## Debugging
     SETTINGS_KEY_SQL_LOGGING_ENABLED = "sqlLoggingEnabled"
     SETTINGS_KEY_EXTRUSION_DEBUGGING_ENABLED = "extrusionDebuggingEnabled"

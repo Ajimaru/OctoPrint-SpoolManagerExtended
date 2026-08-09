@@ -380,6 +380,34 @@ $(function () {
             );
         };
 
+        self.spoolmanDbRefreshBusy = ko.observable(false);
+        self.spoolmanDbRefreshResult = ko.observable(null);
+        self.refreshSpoolmanDbStatus = function () {
+            if (
+                !self.pluginSettings ||
+                !self.pluginSettings.spoolmanDbEnabled ||
+                self.pluginSettings.spoolmanDbEnabled() !== true
+            ) {
+                self.spoolmanDbRefreshResult(null);
+                return;
+            }
+            self.apiClient.getSpoolmanDbVendors(function (response) {
+                self.spoolmanDbRefreshResult(
+                    response && response.cache ? response.cache : response
+                );
+            });
+        };
+        self.refreshSpoolmanDb = function () {
+            self.spoolmanDbRefreshBusy(true);
+            self.spoolmanDbRefreshResult(null);
+            self.apiClient.refreshSpoolmanDb(function (response) {
+                self.spoolmanDbRefreshBusy(false);
+                self.spoolmanDbRefreshResult(
+                    response && response.cache ? response.cache : response
+                );
+            });
+        };
+
         self.deleteDatabaseAction = function (databaseType) {
             SPOOLMANAGER_DIALOGS.confirmDanger({
                 title: "Delete all spool data",
@@ -2309,6 +2337,7 @@ $(function () {
                     self.isMqttPluginAvailable(responseData.isMqttPluginAvailable);
                 });
             }
+            self.refreshSpoolmanDbStatus();
         };
 
         // receive data from server
