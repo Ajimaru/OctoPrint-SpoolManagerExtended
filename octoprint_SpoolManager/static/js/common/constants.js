@@ -95,6 +95,9 @@ SPOOLMANAGER_CONSTANTS = {
     FINISH_OPTIONS: [
         {text: "Silk", value: "silk"},
         {text: "Matt", value: "matt"},
+        {text: "Glossy", value: "glossy"},
+        {text: "Satin", value: "satin"},
+        {text: "Sparkle", value: "sparkle"},
         {text: "Marble", value: "marble"},
         {text: "Metal", value: "metal"},
         {text: "Glow", value: "glow"},

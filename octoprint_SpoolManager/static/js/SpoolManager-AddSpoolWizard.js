@@ -39,6 +39,11 @@ function SpoolManagerAddSpoolWizard() {
     self.allMaterials = ko.observableArray([]);
     self.allVendors = ko.observableArray([]);
     self.allColors = ko.observableArray([]);
+    self._localMaterials = [];
+    self._localVendors = [];
+    self._spoolmanVendors = {};
+    self.userVendors = ko.observableArray([]);
+    self.spoolmanDbVendors = ko.observableArray([]);
     self.templateSpools = ko.observableArray([]);
 
     self.useFullFieldSet = ko.observable(false);
@@ -77,6 +82,232 @@ function SpoolManagerAddSpoolWizard() {
     // (wired to the spool item in initBinding, once it exists)
     self.selectedVendor = ko.observable(null);
     self.selectedMaterial = ko.observable(null);
+    self.spoolmanProducts = ko.observableArray([]);
+    self.selectedSpoolmanProduct = ko.observable(null);
+    self.spoolmanLoading = ko.observable(false);
+    self.spoolmanStatus = ko.observable(null);
+    self._spoolmanRequestToken = 0;
+    self._spoolmanApplyingTemperatures = false;
+    self._spoolmanTemperatureEdited = {tool: false, bed: false};
+    self._spoolmanApplyingColor = false;
+    self._spoolmanColorEdited = false;
+    self._spoolmanApplyingFinish = false;
+    self._spoolmanFinishEdited = false;
+    self._spoolmanApplyingNotes = false;
+    self._spoolmanNotesEdited = false;
+
+    self._spoolmanEnabled = function () {
+        return self.pluginSettings && self.pluginSettings.spoolmanDbEnabled();
+    };
+
+    self._mergeCatalogValues = function (existing, additional) {
+        var known = {};
+        (existing || []).forEach(function (value) {
+            known[String(value).toLocaleLowerCase()] = value;
+        });
+        (additional || []).forEach(function (value) {
+            var key = String(value).toLocaleLowerCase();
+            if (!known[key]) {
+                known[key] = value;
+            }
+        });
+        return Object.keys(known)
+            .map(function (key) {
+                return known[key];
+            })
+            .sort(function (left, right) {
+                return left.localeCompare(right);
+            });
+    };
+
+    self._updateVendorGroups = function (spoolmanVendors) {
+        var localVendors = self._localVendors.filter(function (vendor) {
+            return vendor;
+        });
+        var localVendorKeys = {};
+        localVendors.forEach(function (vendor) {
+            localVendorKeys[String(vendor).toLocaleLowerCase()] = true;
+        });
+        self.userVendors(localVendors);
+        self.spoolmanDbVendors(
+            (spoolmanVendors || []).filter(function (vendor) {
+                return !localVendorKeys[String(vendor).toLocaleLowerCase()];
+            })
+        );
+        self.allVendors(self._mergeCatalogValues(localVendors, spoolmanVendors));
+    };
+
+    self.selectVendor = function (vendor) {
+        self.spoolItemForCreation.vendor(vendor);
+        return false;
+    };
+
+    self._loadSpoolmanVendors = function () {
+        if (!self._spoolmanEnabled()) {
+            return;
+        }
+        self.apiClient.getSpoolmanDbVendors(function (response) {
+            self.spoolmanStatus(response.cache || response);
+            if (response.enabled) {
+                self._spoolmanVendors = {};
+                (response.vendors || []).forEach(function (vendor) {
+                    self._spoolmanVendors[String(vendor).toLocaleLowerCase()] = vendor;
+                });
+                self._updateVendorGroups(response.vendors);
+            }
+        });
+    };
+
+    self._loadSpoolmanProducts = function () {
+        var vendor = self.spoolItemForCreation.vendor();
+        var material = self.spoolItemForCreation.material();
+        var requestToken = ++self._spoolmanRequestToken;
+        self.selectedSpoolmanProduct(null);
+        self.spoolmanProducts([]);
+        if (!self._spoolmanEnabled() || !vendor || !material) {
+            return;
+        }
+        self.spoolmanLoading(true);
+        self.apiClient.getSpoolmanDbProducts(vendor, material, function (response) {
+            if (requestToken !== self._spoolmanRequestToken) {
+                return;
+            }
+            self.spoolmanLoading(false);
+            self.spoolmanStatus(response.cache || response);
+            self.spoolmanProducts(response.products || []);
+        });
+    };
+
+    self._loadSpoolmanMaterials = function (vendor) {
+        var isSpoolmanVendor =
+            vendor && self._spoolmanVendors[String(vendor).toLocaleLowerCase()];
+        if (!self._spoolmanEnabled() || !isSpoolmanVendor) {
+            self.allMaterials(self._localMaterials);
+            return;
+        }
+        var spoolmanVendor = self._spoolmanVendors[String(vendor).toLocaleLowerCase()];
+        self.apiClient.getSpoolmanDbMaterials(spoolmanVendor, function (response) {
+            self.spoolmanStatus(response.cache || response);
+            if (response.enabled && self.spoolItemForCreation.vendor() === vendor) {
+                self.allMaterials(response.materials || []);
+            }
+        });
+    };
+
+    self._applySpoolmanTemperatures = function (product) {
+        if (!product || product.ambiguous) {
+            return;
+        }
+        self._spoolmanApplyingTemperatures = true;
+        if (!self._spoolmanTemperatureEdited.tool && product.extruder_temp != null) {
+            self.spoolItemForCreation.temperature(product.extruder_temp);
+        }
+        if (!self._spoolmanTemperatureEdited.bed && product.bed_temp != null) {
+            self.spoolItemForCreation.bedTemperature(product.bed_temp);
+        }
+        self._spoolmanApplyingTemperatures = false;
+    };
+
+    self._applySpoolmanColor = function (product) {
+        if (!product || self._spoolmanColorEdited) {
+            return;
+        }
+        var isTransparentProduct = product.is_transparent === true;
+        var isUntintedTransparentProduct = product.is_untinted_transparent === true;
+        var colors =
+            product.color_hexes || (product.color_hex ? [product.color_hex] : []);
+        if (colors.length === 0 && !isTransparentProduct) {
+            return;
+        }
+        self._spoolmanApplyingColor = true;
+        self.isRainbow(false);
+        self.isTransparent(isTransparentProduct);
+        self.isColorless(isUntintedTransparentProduct);
+        self.colorCount(colors.length || 1);
+        if (colors.length > 0) {
+            self.colorHex(colors[0]);
+            if (colors.length > 1) {
+                self.colorHex2(colors[1]);
+            }
+            if (colors.length > 2) {
+                self.colorHex3(colors[2]);
+            }
+        }
+        if (product.color_name) {
+            self.spoolItemForCreation.colorName(product.color_name);
+        } else if (colors.length > 1) {
+            self.spoolItemForCreation.colorName("Multi-color");
+        } else {
+            self._applySuggestedColorName(self.spoolItemForCreation.color());
+        }
+        self._spoolmanApplyingColor = false;
+        if (product.color_name) {
+            setTimeout(function () {
+                if (self.selectedSpoolmanProduct() === product) {
+                    self.spoolItemForCreation.colorName(product.color_name);
+                }
+            }, 0);
+        }
+    };
+
+    self._applySpoolmanFinish = function (product) {
+        if (!product || !product.finish || self._spoolmanFinishEdited) {
+            return;
+        }
+        self._spoolmanApplyingFinish = true;
+        self.spoolItemForCreation.finish(product.finish);
+        self._spoolmanApplyingFinish = false;
+    };
+
+    self._validSpoolmanDocumentUrl = function (value) {
+        try {
+            var url = new URL(value);
+            return url.protocol === "https:" || url.protocol === "http:"
+                ? url.href
+                : null;
+        } catch (error) {
+            return null;
+        }
+    };
+
+    self._applySpoolmanDocuments = function (product) {
+        if (!product || self._spoolmanNotesEdited) {
+            return;
+        }
+        var documents = [
+            {label: "TDS", url: self._validSpoolmanDocumentUrl(product.tds_url)},
+            {label: "SDS", url: self._validSpoolmanDocumentUrl(product.sds_url)}
+        ].filter(function (document) {
+            return document.url !== null;
+        });
+        if (documents.length === 0) {
+            return;
+        }
+
+        var noteText = "";
+        var noteHtml = "";
+        var noteOps = [];
+        documents.forEach(function (document) {
+            noteText += document.label + ": " + document.url + "\n";
+            noteHtml +=
+                "<p>" +
+                document.label +
+                ': <a href="' +
+                document.url +
+                '" target="_blank" rel="noopener noreferrer">' +
+                document.label +
+                "</a></p>";
+            noteOps.push({insert: document.label + ": "});
+            noteOps.push({insert: document.label, attributes: {link: document.url}});
+            noteOps.push({insert: "\n"});
+        });
+
+        self._spoolmanApplyingNotes = true;
+        self.spoolItemForCreation.noteText(noteText);
+        self.spoolItemForCreation.noteDeltaFormat({ops: noteOps});
+        self.spoolItemForCreation.noteHtml(noteHtml);
+        self._spoolmanApplyingNotes = false;
+    };
 
     // Density autosuggest. SpoolItem has the same logic, but it only fires while the *edit*
     // dialog is visible (it guards on DOM_SELECTORS.SPOOL_DIALOG), so the wizard needs its own.
@@ -753,6 +984,9 @@ function SpoolManagerAddSpoolWizard() {
         // Every color input (pickers, rainbow, transparent, colorless, the color count) ends up in
         // _composeColor(), so subscribing to the composed value renames on all of them at once.
         self.spoolItemForCreation.color.subscribe(function (newColor) {
+            if (self._spoolmanApplyingColor) {
+                return;
+            }
             self._applySuggestedColorName(newColor);
         });
 
@@ -760,21 +994,45 @@ function SpoolManagerAddSpoolWizard() {
             self.spoolItemForCreation.isActive(!newValue);
         });
 
-        // dropdown selection -> spool item
-        self.selectedVendor.subscribe(function (newValue) {
-            if (newValue) {
-                self.spoolItemForCreation.vendor(newValue);
-            }
-        });
-        self.selectedMaterial.subscribe(function (newValue) {
-            if (newValue) {
-                self.spoolItemForCreation.material(newValue);
-            }
-        });
         // material (from the dropdown or typed) -> density suggestion
         self.spoolItemForCreation.material.subscribe(function (newValue) {
             self._suggestDensityForMaterial(newValue);
+            self._loadSpoolmanProducts();
         });
+        self.spoolItemForCreation.vendor.subscribe(function () {
+            self._loadSpoolmanMaterials(self.spoolItemForCreation.vendor());
+            self._loadSpoolmanProducts();
+        });
+        self.selectedSpoolmanProduct.subscribe(self._applySpoolmanTemperatures);
+        self.selectedSpoolmanProduct.subscribe(self._applySpoolmanColor);
+        self.selectedSpoolmanProduct.subscribe(self._applySpoolmanFinish);
+        self.selectedSpoolmanProduct.subscribe(self._applySpoolmanDocuments);
+        self.spoolItemForCreation.color.subscribe(function () {
+            if (!self._spoolmanApplyingColor) {
+                self._spoolmanColorEdited = true;
+            }
+        });
+        self.spoolItemForCreation.noteText.subscribe(function () {
+            if (!self._spoolmanApplyingNotes) {
+                self._spoolmanNotesEdited = true;
+            }
+        });
+        self.spoolItemForCreation.finish.subscribe(function () {
+            if (!self._spoolmanApplyingFinish) {
+                self._spoolmanFinishEdited = true;
+            }
+        });
+        self.spoolItemForCreation.temperature.subscribe(function () {
+            if (!self._spoolmanApplyingTemperatures) {
+                self._spoolmanTemperatureEdited.tool = true;
+            }
+        });
+        self.spoolItemForCreation.bedTemperature.subscribe(function () {
+            if (!self._spoolmanApplyingTemperatures) {
+                self._spoolmanTemperatureEdited.bed = true;
+            }
+        });
+        self._loadSpoolmanVendors();
 
         self.octoScaleWeighing = new SpoolManagerOctoScaleWeighing(
             apiClient,
@@ -794,12 +1052,20 @@ function SpoolManagerAddSpoolWizard() {
     self.updateCatalogs = function (allCatalogs) {
         self.catalogs = allCatalogs;
         if (self.catalogs != null) {
-            self.allMaterials(self.catalogs["materials"]);
-            self.allVendors(self.catalogs["vendors"]);
+            self._localMaterials = self.catalogs["materials"] || [];
+            self._localVendors = self.catalogs["vendors"] || [];
+            self.allMaterials(self._localMaterials);
+            self._updateVendorGroups(
+                Object.keys(self._spoolmanVendors).map(function (key) {
+                    return self._spoolmanVendors[key];
+                })
+            );
             self.allColors(self.catalogs["colors"]);
         } else {
+            self._localMaterials = [];
+            self._localVendors = [];
             self.allMaterials([]);
-            self.allVendors([]);
+            self._updateVendorGroups([]);
             self.allColors([]);
         }
     };
@@ -810,6 +1076,11 @@ function SpoolManagerAddSpoolWizard() {
 
     self.showDialog = function (closeDialogHandler) {
         self.closeDialogHandler = closeDialogHandler;
+
+        // The integration can be enabled from the settings dialog after the page's initial
+        // bindings ran. Reload vendor suggestions here so the first wizard opened afterward
+        // immediately reflects that setting without requiring a browser reload.
+        self._loadSpoolmanVendors();
 
         // reset everything from a previous run
         self.spoolItemForCreation.update({}, {catalogs: self.catalogs});
@@ -832,10 +1103,12 @@ function SpoolManagerAddSpoolWizard() {
         // color in place), and then the subscription above never fired - name it explicitly.
         self._applySuggestedColorName(self.spoolItemForCreation.color());
 
-        // clear the dropdowns too, otherwise the previous run's selection is still shown (and its
-        // density already applied) before the user picks anything
-        self.selectedVendor(null);
-        self.selectedMaterial(null);
+        self.selectedSpoolmanProduct(null);
+        self.spoolmanProducts([]);
+        self._spoolmanTemperatureEdited = {tool: false, bed: false};
+        self._spoolmanColorEdited = false;
+        self._spoolmanFinishEdited = false;
+        self._spoolmanNotesEdited = false;
         self._lastSuggestedDensity = null;
 
         self.createdDatabaseId(null);

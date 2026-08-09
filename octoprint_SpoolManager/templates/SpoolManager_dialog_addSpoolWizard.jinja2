@@ -59,30 +59,61 @@
                         </span>
                     </div>
                 </div>
-                {# Dropdown with the known values plus a free-text field, so an unlisted vendor or
-                   material can still be entered. The edit dialog solves the same problem with an
-                   <input list=...> + <datalist>; here the two fields feed separate observables. #}
                 <div class="control-group">
                     <label class="control-label">{{ _('Vendor') }}</label>
                     <div class="controls">
-                        <select class="input-large" data-bind="options: allVendors,
-                                                              optionsCaption: '{{ _('Choose...') }}',
-                                                              value: selectedVendor"></select>
-                        <input type="text" class="input-large" style="margin-top: 4px;"
-                               placeholder="{{ _('or type a new vendor') }}"
-                               data-bind="textInput: spoolItemForCreation.vendor">
+                        <div class="input-append dropdown">
+                            <input id="wizard-spool-vendor" type="text" class="input-large"
+                                list="wizard-spool-vendor-list"
+                                   autocomplete="off" placeholder="{{ _('Choose or type...') }}"
+                                   data-bind="textInput: spoolItemForCreation.vendor">
+                            <datalist id="wizard-spool-vendor-list" data-bind="foreach: allVendors">
+                                <option data-bind="attr: { value: $data }"></option>
+                            </datalist>
+                            <button class="btn dropdown-toggle" type="button" data-toggle="dropdown"
+                                    title="{{ _('Choose vendor') }}" aria-label="{{ _('Choose vendor') }}">
+                                <span class="caret"></span>
+                            </button>
+                            <ul class="dropdown-menu spm-vendor-menu">
+                                <!-- ko if: userVendors().length -->
+                                <li class="nav-header">{{ _('Your vendors') }}</li>
+                                <!-- ko foreach: userVendors -->
+                                <li><a href="#" data-bind="text: $data, click: $root.addSpoolWizard.selectVendor"></a></li>
+                                <!-- /ko -->
+                                <!-- /ko -->
+                                <!-- ko if: spoolmanDbVendors().length -->
+                                <li class="divider"></li>
+                                <li class="nav-header">{{ _('SpoolmanDB vendors') }}</li>
+                                <!-- ko foreach: spoolmanDbVendors -->
+                                <li><a href="#" data-bind="text: $data, click: $root.addSpoolWizard.selectVendor"></a></li>
+                                <!-- /ko -->
+                                <!-- /ko -->
+                            </ul>
+                        </div>
                     </div>
                 </div>
                 <div class="control-group">
                     <label class="control-label">{{ _('Material') }}</label>
                     <div class="controls">
-                        <select class="input-large" data-bind="options: allMaterials,
-                                                              optionsCaption: '{{ _('Choose...') }}',
-                                                              value: selectedMaterial"></select>
-                        <input type="text" class="input-large" style="margin-top: 4px;"
-                               placeholder="{{ _('or type a new material') }}"
+                        <input id="wizard-spool-material" type="text" class="input-large" list="wizard-spool-material-list"
+                               autocomplete="off" placeholder="{{ _('Choose or type...') }}"
                                data-bind="textInput: spoolItemForCreation.material">
+                        <datalist id="wizard-spool-material-list" data-bind="foreach: allMaterials">
+                            <option data-bind="attr: { value: $data }"></option>
+                        </datalist>
                         <span class="help-block"><small>{{ _('Choosing a known material fills in a matching density.') }}</small></span>
+                    </div>
+                </div>
+                <div class="control-group" data-bind="visible: spoolmanProducts().length || spoolmanLoading()">
+                    <label class="control-label">{{ _('SpoolmanDB product') }}</label>
+                    <div class="controls">
+                        <select class="input-large" data-bind="options: spoolmanProducts,
+                                                              optionsText: 'name',
+                                                              value: selectedSpoolmanProduct,
+                                                              optionsCaption: spoolmanLoading() ? '{{ _('Loading...') }}' : '{{ _('Choose...') }}',
+                                                              enable: !spoolmanLoading()"></select>
+                        <span class="help-block" data-bind="visible: selectedSpoolmanProduct() && selectedSpoolmanProduct().ambiguous"><small>{{ _('Multiple temperature variants exist; no temperature is prefilled.') }}</small></span>
+                        <span class="help-block" data-bind="visible: selectedSpoolmanProduct() && (selectedSpoolmanProduct().extruder_temp_range || selectedSpoolmanProduct().bed_temp_range)"><small>{{ _('A range is shown as its midpoint suggestion.') }}</small></span>
                     </div>
                 </div>
             </div>

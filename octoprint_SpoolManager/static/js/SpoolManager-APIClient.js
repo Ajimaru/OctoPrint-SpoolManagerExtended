@@ -94,6 +94,33 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
             });
     };
 
+    var _spoolmanDbRequestCache = {};
+    var _callSpoolmanDb = function (path, callback) {
+        if (_spoolmanDbRequestCache[path]) {
+            _spoolmanDbRequestCache[path].push(callback);
+            return;
+        }
+        _spoolmanDbRequestCache[path] = [callback];
+        _callApi(
+            _buildPluginUrl(path),
+            {method: "GET"},
+            function (data) {
+                var callbacks = _spoolmanDbRequestCache[path] || [];
+                delete _spoolmanDbRequestCache[path];
+                callbacks.forEach(function (handler) {
+                    handler(data || {enabled: false, status: "error"});
+                });
+            },
+            function (body) {
+                var callbacks = _spoolmanDbRequestCache[path] || [];
+                delete _spoolmanDbRequestCache[path];
+                callbacks.forEach(function (handler) {
+                    handler(body || {enabled: false, status: "error"});
+                });
+            }
+        );
+    };
+
     this.getExportUrl = function (exportType, databaseInUse) {
         return _addApiKeyIfNecessary(
             "./plugin/" +
@@ -572,5 +599,38 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
     ////////////////////////////////////////////////////////////////////////////////////////////////// DOWNLOAD Database
     this.getDownloadDatabaseUrl = function (exportType) {
         return _addApiKeyIfNecessary("./plugin/" + this.pluginId + "/downloadDatabase");
+    };
+
+    this.getSpoolmanDbVendors = function (responseHandler) {
+        _callSpoolmanDb("spoolmanDbVendors", responseHandler);
+    };
+
+    this.getSpoolmanDbMaterials = function (vendor, responseHandler) {
+        _callSpoolmanDb(
+            "spoolmanDbMaterials?" + _buildRequestQuery({vendor: vendor}),
+            responseHandler
+        );
+    };
+
+    this.getSpoolmanDbProducts = function (vendor, material, responseHandler) {
+        _callSpoolmanDb(
+            "spoolmanDbProducts?" +
+                _buildRequestQuery({vendor: vendor, material: material}),
+            responseHandler
+        );
+    };
+
+    this.refreshSpoolmanDb = function (responseHandler) {
+        _callApi(
+            _buildPluginUrl("spoolmanDbRefresh"),
+            {method: "POST"},
+            function (data) {
+                _spoolmanDbRequestCache = {};
+                responseHandler(data || {enabled: false, status: "error"});
+            },
+            function (body) {
+                responseHandler(body || {enabled: false, status: "error"});
+            }
+        );
     };
 }
