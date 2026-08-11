@@ -78,6 +78,12 @@ Please note that since September 2024, this repository has a new maintainer, Wil
 
 ## Versions
 
+## Optional SpoolmanDB-Community Temperature Suggestions
+
+SpoolmanDB-Community suggestions are disabled by default. When enabled in the plugin settings, SpoolManager retrieves `https://icezaza2543.github.io/SpoolmanDB-Community/filaments.json`, creates a compact local index, and checks for updates on a locally staggered cache schedule. The installed plugin does not include this remote data. A manual refresh is available in settings; when offline, the last valid cache remains usable.
+
+The selected product can suggest extruder and bed temperatures in the Add Spool Wizard and edit dialog. These values are only suggestions: confirm them against the manufacturer documentation and your own printer/material testing before printing.
+
 see [Release overview](https://github.com/WildRikku/OctoPrint-SpoolManager/releases/)
 and [Release overview by previous maintainer](https://github.com/dojohnso/OctoPrint-SpoolManager/releases/)
 

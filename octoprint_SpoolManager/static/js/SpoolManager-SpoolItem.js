@@ -63,6 +63,21 @@ let SpoolItem;
         this.offsetTemperature = ko.observable();
         this.offsetBedTemperature = ko.observable();
         this.offsetEnclosureTemperature = ko.observable();
+        this.absoluteTemperature = ko.pureComputed(function () {
+            var temperature = parseFloat(this.temperature());
+            var offset = parseFloat(this.offsetTemperature());
+            return isNaN(temperature) ? null : temperature + (isNaN(offset) ? 0 : offset);
+        }, this);
+        this.absoluteBedTemperature = ko.pureComputed(function () {
+            var temperature = parseFloat(this.bedTemperature());
+            var offset = parseFloat(this.offsetBedTemperature());
+            return isNaN(temperature) ? null : temperature + (isNaN(offset) ? 0 : offset);
+        }, this);
+        this.absoluteEnclosureTemperature = ko.pureComputed(function () {
+            var temperature = parseFloat(this.enclosureTemperature());
+            var offset = parseFloat(this.offsetEnclosureTemperature());
+            return isNaN(temperature) ? null : temperature + (isNaN(offset) ? 0 : offset);
+        }, this);
         this.colorName = ko.observable();
         this.color = ko.observable();
         // "finish" is the persisted value; the dropdown works on finishSelection,
@@ -77,7 +92,16 @@ let SpoolItem;
                 return this.finishSelection();
             },
             write: function (value) {
-                var predefinedFinishes = ["silk", "matt", "marble", "metal", "glow"];
+                var predefinedFinishes = [
+                    "silk",
+                    "matt",
+                    "glossy",
+                    "satin",
+                    "sparkle",
+                    "marble",
+                    "metal",
+                    "glow"
+                ];
                 if (!value) {
                     this.finishSelection(undefined);
                     this.finishCustomText(undefined);
