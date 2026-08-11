@@ -276,8 +276,9 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                                                         optionsText: 'name',
                                                                         value: spoolDialog.selectedSpoolmanProduct,
                                                                         optionsCaption: spoolDialog.spoolmanLoading() ? 'Loading...' : 'Choose...',
-                                                                        enable: !spoolDialog.spoolmanLoading()"></select>
-                                <span class="help-block" data-bind="visible: spoolDialog.selectedSpoolmanProduct() && spoolDialog.selectedSpoolmanProduct().ambiguous"><small>Multiple temperature variants exist; no temperature is prefilled.</small></span>
+                                                                        enable: !spoolDialog.spoolmanLoading() && !spoolDialog.isU1RfidFlow()"></select>
+                                <span class="help-block" data-bind="visible: spoolDialog.isU1RfidFlow"><small>Disabled - this spool is prefilled from its RFID tag, which knows the exact values for this physical spool. Picking a catalog product here would overwrite them with generic ones.</small></span>
+                                <span class="help-block" data-bind="visible: !spoolDialog.isU1RfidFlow() && spoolDialog.selectedSpoolmanProduct() && spoolDialog.selectedSpoolmanProduct().ambiguous"><small>Multiple temperature variants exist; no temperature is prefilled.</small></span>
                             </div>
                         </div>
                         <div class="control-group no-bottom-gap">
@@ -439,6 +440,20 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                             <label class="control-label">Serial number</label>
                             <div class="controls">
                                 <input data-bind="textInput: spoolDialog.spoolItemForEditing.code"  type="text" class="input-large"  />
+                                {# The U1 resolves a spool by its tag UID stored here. Offering the
+                                   last unknown UIDs avoids retyping them and keeps them reachable
+                                   even after the notification was dismissed. #}
+                                <div style="margin-top: 6px;" data-bind="visible: spoolDialog.hasU1RfidUnknownTags">
+                                    <span class="help-block" style="margin-bottom: 4px;">
+                                        <small>{{ _('Unassigned RFID tags detected by the Snapmaker U1:') }}</small>
+                                    </span>
+                                    <!-- ko foreach: spoolDialog.u1RfidUnknownTags -->
+                                    <button type="button" class="btn btn-small" style="margin-right: 4px;"
+                                            data-bind="click: function (entry) { $parent.spoolDialog.applyU1RfidUid(entry); }">
+                                        <i class="fas fa-id-card"></i> <span data-bind="text: label"></span>
+                                    </button>
+                                    <!-- /ko -->
+                                </div>
                             </div>
                         </div>
                         <div class="control-group" data-bind="visible: !spoolDialog.simpleMode()">
