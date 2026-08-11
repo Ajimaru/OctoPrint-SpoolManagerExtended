@@ -16,6 +16,7 @@ import octoprint.plugin
 import qrcode
 from flask import Response, abort, jsonify, make_response, request, send_file
 from markupsafe import escape
+from octoprint.access.permissions import Permissions
 from octoprint.server.util.flask import no_firstrun_access
 
 from octoprint_SpoolManager import DatabaseManager
@@ -96,6 +97,75 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
     def _fieldLabel(self, key):
         return self._FIELD_LABELS.get(key, key)
+
+    def _spoolman_db_is_enabled(self):
+        return self._settings.get_boolean(
+            [SettingsKeys.SETTINGS_KEY_SPOOLMANDB_ENABLED]
+        )
+
+    def _spoolman_db_ttl_days(self):
+        value = self._settings.get_int(
+            [SettingsKeys.SETTINGS_KEY_SPOOLMANDB_CACHE_TTL_DAYS]
+        )
+        return min(max(value, 1), 30)
+
+    def _spoolman_db_disabled_response(self):
+        return flask.jsonify(
+            {
+                "enabled": False,
+                "status": "disabled",
+                "error": "SpoolmanDB integration is disabled in the plugin settings.",
+            }
+        )
+
+    @octoprint.plugin.BlueprintPlugin.route("/spoolmanDbVendors", methods=["GET"])
+    @no_firstrun_access
+    def spoolmanDbVendors(self):
+        if not self._spoolman_db_is_enabled():
+            return self._spoolman_db_disabled_response()
+        vendors, status = self._filamentDatabaseService.vendors(
+            self._spoolman_db_ttl_days()
+        )
+        return flask.jsonify({"enabled": True, "vendors": vendors, "cache": status})
+
+    @octoprint.plugin.BlueprintPlugin.route("/spoolmanDbMaterials", methods=["GET"])
+    @no_firstrun_access
+    def spoolmanDbMaterials(self):
+        if not self._spoolman_db_is_enabled():
+            return self._spoolman_db_disabled_response()
+        vendor = request.args.get("vendor", "").strip()
+        if not vendor:
+            return flask.jsonify({"enabled": True, "materials": [], "cache": {"status": "fresh"}})
+        materials, status = self._filamentDatabaseService.materials(
+            vendor, self._spoolman_db_ttl_days()
+        )
+        return flask.jsonify({"enabled": True, "materials": materials, "cache": status})
+
+    @octoprint.plugin.BlueprintPlugin.route("/spoolmanDbProducts", methods=["GET"])
+    @no_firstrun_access
+    def spoolmanDbProducts(self):
+        if not self._spoolman_db_is_enabled():
+            return self._spoolman_db_disabled_response()
+        vendor = request.args.get("vendor", "").strip()
+        material = request.args.get("material", "").strip()
+        if not vendor or not material:
+            return flask.jsonify({"enabled": True, "products": [], "cache": {"status": "fresh"}})
+        products, status = self._filamentDatabaseService.products(
+            vendor, material, self._spoolman_db_ttl_days()
+        )
+        return flask.jsonify({"enabled": True, "products": products, "cache": status})
+
+    @octoprint.plugin.BlueprintPlugin.route("/spoolmanDbRefresh", methods=["POST"])
+    @no_firstrun_access
+    def spoolmanDbRefresh(self):
+        if not Permissions.SETTINGS.can():
+            return "Insufficient rights", 403
+        if not self._spoolman_db_is_enabled():
+            return self._spoolman_db_disabled_response()
+        cache, status = self._filamentDatabaseService.ensure_index(
+            self._spoolman_db_ttl_days(), force=True
+        )
+        return flask.jsonify({"enabled": True, "cache": status, "available": cache is not None})
 
     def _updateSpoolModelFromJSONData(self, spoolModel, jsonData):
         # collects human readable validation errors; a non-empty list aborts the save with HTTP 400

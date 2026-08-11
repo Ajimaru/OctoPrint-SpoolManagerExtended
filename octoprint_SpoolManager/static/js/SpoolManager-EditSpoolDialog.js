@@ -265,6 +265,157 @@ function SpoolManagerEditSpoolDialog() {
     self.allMaterials = ko.observableArray([]);
     self.allVendors = ko.observableArray([]);
     self.allColors = ko.observableArray([]);
+    self._localMaterials = [];
+    self._localVendors = [];
+    self._spoolmanVendors = {};
+    self.userVendors = ko.observableArray([]);
+    self.spoolmanDbVendors = ko.observableArray([]);
+    self.spoolmanProducts = ko.observableArray([]);
+    self.selectedSpoolmanProduct = ko.observable(null);
+    self.spoolmanLoading = ko.observable(false);
+    self._spoolmanRequestToken = 0;
+    self._spoolmanApplyingTemperatures = false;
+    self._spoolmanTemperatureEdited = {tool: false, bed: false};
+    self._spoolmanApplyingColor = false;
+    self._spoolmanColorEdited = false;
+    self._spoolmanApplyingFinish = false;
+    self._spoolmanFinishEdited = false;
+
+    self._spoolmanEnabled = function () {
+        return self.pluginSettings && self.pluginSettings.spoolmanDbEnabled();
+    };
+    self._updateVendorGroups = function (spoolmanVendors) {
+        var localVendors = self._localVendors.filter(function (vendor) {
+            return vendor;
+        });
+        var localVendorKeys = {};
+        localVendors.forEach(function (vendor) {
+            localVendorKeys[String(vendor).toLocaleLowerCase()] = true;
+        });
+        self.userVendors(localVendors);
+        self.spoolmanDbVendors(
+            (spoolmanVendors || []).filter(function (vendor) {
+                return !localVendorKeys[String(vendor).toLocaleLowerCase()];
+            })
+        );
+        self.allVendors(
+            localVendors.concat(self.spoolmanDbVendors()).sort(function (left, right) {
+                return left.localeCompare(right);
+            })
+        );
+    };
+    self.selectVendor = function (vendor) {
+        self.spoolItemForEditing.vendor(vendor);
+        return false;
+    };
+    self._loadSpoolmanVendors = function () {
+        if (!self._spoolmanEnabled()) {
+            return;
+        }
+        self.apiClient.getSpoolmanDbVendors(function (response) {
+            if (!response.enabled) {
+                return;
+            }
+            self._spoolmanVendors = {};
+            (response.vendors || []).forEach(function (vendor) {
+                self._spoolmanVendors[String(vendor).toLocaleLowerCase()] = vendor;
+            });
+            self._updateVendorGroups(response.vendors);
+            self._loadSpoolmanMaterials();
+        });
+    };
+    self._loadSpoolmanProducts = function () {
+        var vendor = self.spoolItemForEditing.vendor();
+        var material = self.spoolItemForEditing.material();
+        var requestToken = ++self._spoolmanRequestToken;
+        self.selectedSpoolmanProduct(null);
+        self.spoolmanProducts([]);
+        if (!self._spoolmanEnabled() || !vendor || !material) {
+            return;
+        }
+        self.spoolmanLoading(true);
+        self.apiClient.getSpoolmanDbProducts(vendor, material, function (response) {
+            if (requestToken !== self._spoolmanRequestToken) {
+                return;
+            }
+            self.spoolmanLoading(false);
+            self.spoolmanProducts(response.products || []);
+        });
+    };
+    self._loadSpoolmanMaterials = function () {
+        var vendor = self.spoolItemForEditing.vendor();
+        var isSpoolmanVendor =
+            vendor && self._spoolmanVendors[String(vendor).toLocaleLowerCase()];
+        if (!self._spoolmanEnabled() || !isSpoolmanVendor) {
+            self.allMaterials(self._localMaterials);
+            return;
+        }
+        var spoolmanVendor = self._spoolmanVendors[String(vendor).toLocaleLowerCase()];
+        self.apiClient.getSpoolmanDbMaterials(spoolmanVendor, function (response) {
+            if (!response.enabled || self.spoolItemForEditing.vendor() !== vendor) {
+                return;
+            }
+            self.allMaterials(response.materials || []);
+        });
+    };
+    self._applySpoolmanTemperatures = function (product) {
+        if (!product || product.ambiguous) {
+            return;
+        }
+        self._spoolmanApplyingTemperatures = true;
+        if (!self._spoolmanTemperatureEdited.tool && product.extruder_temp != null) {
+            self.spoolItemForEditing.temperature(product.extruder_temp);
+        }
+        if (!self._spoolmanTemperatureEdited.bed && product.bed_temp != null) {
+            self.spoolItemForEditing.bedTemperature(product.bed_temp);
+        }
+        self._spoolmanApplyingTemperatures = false;
+    };
+    self._applySpoolmanColor = function (product) {
+        if (!product || self._spoolmanColorEdited) {
+            return;
+        }
+        var isTransparentProduct = product.is_transparent === true;
+        var isUntintedTransparentProduct = product.is_untinted_transparent === true;
+        var colors =
+            product.color_hexes || (product.color_hex ? [product.color_hex] : []);
+        if (colors.length === 0 && !isTransparentProduct) {
+            return;
+        }
+        self._spoolmanApplyingColor = true;
+        var colorValue = isUntintedTransparentProduct ? "" : colors.join(";");
+        if (isTransparentProduct && colorValue) {
+            colorValue = "transparent:" + colorValue;
+        }
+        self.spoolItemForEditing.applyColorToEditor(colorValue || "transparent");
+        self.spoolItemForEditing.color(colorValue || "transparent");
+        var suggestedName =
+            product.color_name ||
+            (colors.length > 1
+                ? "Multi-color"
+                : SPOOLMANAGER_UTILS.colorNameForSpoolColor(
+                      self.spoolItemForEditing.color()
+                  ));
+        if (suggestedName != null) {
+            self.spoolItemForEditing.colorName(suggestedName);
+        }
+        self._spoolmanApplyingColor = false;
+        if (product.color_name) {
+            setTimeout(function () {
+                if (self.selectedSpoolmanProduct() === product) {
+                    self.spoolItemForEditing.colorName(product.color_name);
+                }
+            }, 0);
+        }
+    };
+    self._applySpoolmanFinish = function (product) {
+        if (!product || !product.finish || self._spoolmanFinishEdited) {
+            return;
+        }
+        self._spoolmanApplyingFinish = true;
+        self.spoolItemForEditing.finish(product.finish);
+        self._spoolmanApplyingFinish = false;
+    };
 
     self.allToolIndices = ko.observableArray([]);
 
@@ -806,6 +957,35 @@ function SpoolManagerEditSpoolDialog() {
         // initial coloring
         self._createSpoolItemForEditing();
 
+        self.spoolItemForEditing.vendor.subscribe(function () {
+            self._loadSpoolmanMaterials();
+            self._loadSpoolmanProducts();
+        });
+        self.spoolItemForEditing.material.subscribe(self._loadSpoolmanProducts);
+        self.selectedSpoolmanProduct.subscribe(self._applySpoolmanTemperatures);
+        self.selectedSpoolmanProduct.subscribe(self._applySpoolmanColor);
+        self.selectedSpoolmanProduct.subscribe(self._applySpoolmanFinish);
+        self.spoolItemForEditing.temperature.subscribe(function () {
+            if (!self._spoolmanApplyingTemperatures) {
+                self._spoolmanTemperatureEdited.tool = true;
+            }
+        });
+        self.spoolItemForEditing.bedTemperature.subscribe(function () {
+            if (!self._spoolmanApplyingTemperatures) {
+                self._spoolmanTemperatureEdited.bed = true;
+            }
+        });
+        self.spoolItemForEditing.color.subscribe(function () {
+            if (!self._spoolmanApplyingColor) {
+                self._spoolmanColorEdited = true;
+            }
+        });
+        self.spoolItemForEditing.finish.subscribe(function () {
+            if (!self._spoolmanApplyingFinish) {
+                self._spoolmanFinishEdited = true;
+            }
+        });
+
         // typing into the displayname field filters the template-combobox (issue #48)
         self.spoolItemForEditing.displayName.subscribe(function (newValue) {
             if (self._suppressTemplateCombo == true) {
@@ -842,6 +1022,9 @@ function SpoolManagerEditSpoolDialog() {
         self._reColorFilamentIcon(self.spoolItemForEditing.color());
         self.spoolItemForEditing.color.subscribe(function (newColor) {
             self._reColorFilamentIcon(newColor);
+            if (self._spoolmanApplyingColor) {
+                return;
+            }
             var suggestedName = SPOOLMANAGER_UTILS.colorNameForSpoolColor(newColor);
             if (suggestedName != null) {
                 self.spoolItemForEditing.colorName(suggestedName);
@@ -1322,12 +1505,20 @@ function SpoolManagerEditSpoolDialog() {
     this.updateCatalogs = function (allCatalogs) {
         self.catalogs = allCatalogs;
         if (self.catalogs != null) {
-            self.allMaterials(self.catalogs["materials"]);
-            self.allVendors(self.catalogs["vendors"]);
+            self._localMaterials = self.catalogs["materials"] || [];
+            self._localVendors = self.catalogs["vendors"] || [];
+            self.allMaterials(self._localMaterials);
+            self._updateVendorGroups(
+                Object.keys(self._spoolmanVendors).map(function (key) {
+                    return self._spoolmanVendors[key];
+                })
+            );
             self.allColors(self.catalogs["colors"]);
         } else {
+            self._localMaterials = [];
+            self._localVendors = [];
             self.allMaterials([]);
-            self.allVendors([]);
+            self._updateVendorGroups([]);
             self.allColors([]);
         }
     };
@@ -1383,6 +1574,12 @@ function SpoolManagerEditSpoolDialog() {
         }
         self.spoolItemForEditing.drivenScope(COMBINED); // default calculation mode
         self.spoolItemForEditing.isSpoolVisible(true);
+        self._spoolmanTemperatureEdited = {tool: false, bed: false};
+        self._spoolmanColorEdited = false;
+        self._spoolmanFinishEdited = false;
+        self._loadSpoolmanVendors();
+        self._loadSpoolmanMaterials();
+        self._loadSpoolmanProducts();
 
         // freeze the simple-view weight-field visibility for as long as this dialog is open
         self._snapshotSpoolInUse();

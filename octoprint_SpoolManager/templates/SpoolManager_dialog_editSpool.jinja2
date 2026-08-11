@@ -226,14 +226,36 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                         <div class="control-group">
                             <label class="control-label">Vendor</label>
                             <div class="controls">
-                                {# Native input + datalist: the catalog entries are suggestions, but any
-                                   free text is accepted so a new vendor can be typed straight in. #}
-                                <input id="spool-vendor-select" type="text" class="input-large" list="spool-vendor-list"
-                                       autocomplete="off" placeholder="Choose or type..."
-                                       data-bind="textInput: spoolDialog.spoolItemForEditing.vendor">
-                                <datalist id="spool-vendor-list" data-bind="foreach: spoolDialog.allVendors">
-                                    <option data-bind="attr: { value: $data }"></option>
-                                </datalist>
+                                {# Free text stays available; the grouped dropdown distinguishes local and
+                                   SpoolmanDB suggestions without making group labels selectable. #}
+                                <div class="input-append dropdown">
+                                     <input id="spool-vendor-select" type="text" class="input-large"
+                                         list="spool-vendor-list"
+                                           autocomplete="off" placeholder="Choose or type..."
+                                           data-bind="textInput: spoolDialog.spoolItemForEditing.vendor">
+                                     <datalist id="spool-vendor-list" data-bind="foreach: spoolDialog.allVendors">
+                                         <option data-bind="attr: { value: $data }"></option>
+                                     </datalist>
+                                    <button class="btn dropdown-toggle" type="button" data-toggle="dropdown"
+                                            title="Choose vendor" aria-label="Choose vendor">
+                                        <span class="caret"></span>
+                                    </button>
+                                    <ul class="dropdown-menu spm-vendor-menu">
+                                        <!-- ko if: spoolDialog.userVendors().length -->
+                                        <li class="nav-header">Your vendors</li>
+                                        <!-- ko foreach: spoolDialog.userVendors -->
+                                        <li><a href="#" data-bind="text: $data, click: $root.spoolDialog.selectVendor"></a></li>
+                                        <!-- /ko -->
+                                        <!-- /ko -->
+                                        <!-- ko if: spoolDialog.spoolmanDbVendors().length -->
+                                        <li class="divider"></li>
+                                        <li class="nav-header">SpoolmanDB vendors</li>
+                                        <!-- ko foreach: spoolDialog.spoolmanDbVendors -->
+                                        <li><a href="#" data-bind="text: $data, click: $root.spoolDialog.selectVendor"></a></li>
+                                        <!-- /ko -->
+                                        <!-- /ko -->
+                                    </ul>
+                                </div>
                             </div>
                         </div>
                         <div class="control-group no-bottom-gap">
@@ -245,6 +267,17 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                 <datalist id="spool-material-list" data-bind="foreach: spoolDialog.allMaterials">
                                     <option data-bind="attr: { value: $data }"></option>
                                 </datalist>
+                            </div>
+                        </div>
+                        <div class="control-group no-bottom-gap" data-bind="visible: spoolDialog.spoolmanProducts().length || spoolDialog.spoolmanLoading()">
+                            <label class="control-label">SpoolmanDB product</label>
+                            <div class="controls">
+                                <select class="input-large" data-bind="options: spoolDialog.spoolmanProducts,
+                                                                        optionsText: 'name',
+                                                                        value: spoolDialog.selectedSpoolmanProduct,
+                                                                        optionsCaption: spoolDialog.spoolmanLoading() ? 'Loading...' : 'Choose...',
+                                                                        enable: !spoolDialog.spoolmanLoading()"></select>
+                                <span class="help-block" data-bind="visible: spoolDialog.selectedSpoolmanProduct() && spoolDialog.selectedSpoolmanProduct().ambiguous"><small>Multiple temperature variants exist; no temperature is prefilled.</small></span>
                             </div>
                         </div>
                         <div class="control-group no-bottom-gap">
@@ -327,6 +360,7 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                     <span class="add-on">°C</span>
                                 </div>
                                 <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('temperature') !== -1 || spoolDialog.invalidNumberFields().indexOf('bedTemperature') !== -1">Please enter a valid number</span>
+                                <span class="help-inline">Effective: <span data-bind="text: spoolDialog.spoolItemForEditing.absoluteTemperature"></span> / <span data-bind="text: spoolDialog.spoolItemForEditing.absoluteBedTemperature"></span> °C</span>
                             </div>
                         </div>
                         <div class="control-group " data-bind="visible: !spoolDialog.simpleMode()">
