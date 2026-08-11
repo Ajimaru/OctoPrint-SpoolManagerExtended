@@ -1268,7 +1268,7 @@ class SpoolmanagerPlugin(
 
         ## SpoolmanDB-Community
         settings[SettingsKeys.SETTINGS_KEY_SPOOLMANDB_ENABLED] = False
-        settings[SettingsKeys.SETTINGS_KEY_SPOOLMANDB_CACHE_TTL_DAYS] = 1
+        settings[SettingsKeys.SETTINGS_KEY_SPOOLMANDB_CACHE_TTL_DAYS] = 7
 
         ## Debugging
         settings[SettingsKeys.SETTINGS_KEY_SQL_LOGGING_ENABLED] = False
