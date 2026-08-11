@@ -315,7 +315,7 @@
                     <!-- /ko --></td>
                 <td data-bind="visible: $root.tableAttributeVisibility.lastFirstUse"><span data-bind="text: getDateFromAttribute($data, 'lastUse')"></span><br><span data-bind="text: getDateFromAttribute($data, 'firstUse')"></span></td>
                 <td data-bind="visible: $root.tableAttributeVisibility.weight" style="text-align: right;">
-                    <span data-bind="text: $root.formatWeightForDisplay(totalWeight()), attr: {title: $root.buildTooltipForSpoolItem($data, 'Total weight: ', 'totalWeight')}"></span><br/>
+                    <span data-bind="text: $root.formatWeightForDisplay(totalWeight()), attr: {title: $root.buildTooltipForSpoolItem($data, 'Total weight: ', 'totalWeight')}"></span>{# weight came from an RFID tag's nominal value, not a scale - see LABEL_WEIGHT_ESTIMATED #}<i class="fas fa-exclamation-triangle" style="margin-left: 4px; opacity: 0.7;" title="Weight estimated from the RFID tag, not measured on a scale" data-bind="visible: $root.isWeightEstimated($data)"></i><br/>
                     <span data-bind="text: $root.formatWeightForDisplay(remainingWeight()), attr: {title: $root.buildTooltipForSpoolItem($data, 'Remaining weight: ', 'remainingWeight')}"></span><br>
                     <span data-bind="text: $root.formatLengthForDisplay(remainingLength()), attr: {title: $root.buildTooltipForSpoolItem($data, 'Remaining length: ', 'remainingLength')}"></span><br>
                 </td>

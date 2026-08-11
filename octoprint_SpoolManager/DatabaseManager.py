@@ -1979,6 +1979,28 @@ class DatabaseManager(object):
             databaseCallMethode, withReusedConnection, "loadSpool"
         )
 
+    def loadSpoolByCode(self, code, withReusedConnection=False):
+        # Resolves a spool by its `code` field, used to map an RFID tag UID onto a spool
+        # (see U1RfidManager). Templates are excluded: a template describes a product,
+        # not the physical spool carrying the tag. Newest match wins if a UID was
+        # assigned twice by accident.
+        def databaseCallMethode():
+            if code is None or len(str(code).strip()) == 0:
+                return None
+            return (
+                SpoolModel.select()
+                .where(
+                    (SpoolModel.code == str(code).strip())
+                    & (SpoolModel.isTemplate != True)
+                )
+                .order_by(SpoolModel.databaseId.desc())
+                .first()
+            )
+
+        return self._handleReusableConnection(
+            databaseCallMethode, withReusedConnection, "loadSpoolByCode"
+        )
+
     def loadSpoolTemplates(self, withReusedConnection=False):
         def databaseCallMethode():
             return SpoolModel.select().where(SpoolModel.isTemplate == True)

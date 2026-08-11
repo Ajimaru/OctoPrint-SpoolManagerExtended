@@ -1519,6 +1519,102 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             }
         )
 
+    #####################################################################################################   U1 RFID
+
+    # Status of the U1 RFID reader: the detection chain stage by stage (so the settings
+    # UI can show exactly which one failed), the derived host and the last seen tags.
+    @octoprint.plugin.BlueprintPlugin.route("/u1Rfid/status", methods=["GET"])
+    @no_firstrun_access
+    def getU1RfidStatus(self):
+        manager = getattr(self, "_u1RfidManager", None)
+        if manager is None:
+            return flask.jsonify({"supported": False, "chainMessage": "not initialized"})
+        manager.evaluateDetectionChain()
+        return flask.jsonify(manager.getStatus())
+
+    # "Test connection" button: re-runs the chain and lists all channels with their tags,
+    # so it is immediately visible whether tags are read at all.
+    @octoprint.plugin.BlueprintPlugin.route("/u1Rfid/test", methods=["POST"])
+    @no_firstrun_access
+    def testU1RfidConnection(self):
+        manager = getattr(self, "_u1RfidManager", None)
+        if manager is None:
+            return flask.jsonify({"ok": False, "message": "U1 RFID support not initialized"})
+        return flask.jsonify(manager.testConnection())
+
+    # Last unknown tag UIDs per channel - feeds the "take over last U1 UID" button in the
+    # edit dialog, so a dismissed popup does not lose the UID.
+    @octoprint.plugin.BlueprintPlugin.route("/u1Rfid/unknownTags", methods=["GET"])
+    @no_firstrun_access
+    def getU1RfidUnknownTags(self):
+        manager = getattr(self, "_u1RfidManager", None)
+        if manager is None:
+            return flask.jsonify({})
+        return flask.jsonify(manager.getUnknownTags())
+
+    #####################################################################################################   SELECT SPOOL (SHARED CORE)
+
+    # Shared selection core for every "something scanned a spool" trigger: the QR route
+    # and the U1 RFID reader both funnel through here, so both inherit the mid-print
+    # guard, the tool clamping and the live UI push. Deliberately transport-agnostic -
+    # it returns a status instead of a redirect, and the QR route turns that into one.
+    #
+    # Returns {"status": ..., "spoolModel": ..., "toolIndex": ...} with status being one
+    # of "selected", "printing", "notfound" or "invalid".
+    def selectSpoolForTool(self, toolIndex, databaseId, source="request"):
+        try:
+            databaseId = int(databaseId)
+        except (TypeError, ValueError):
+            return {"status": "invalid", "spoolModel": None, "toolIndex": toolIndex}
+
+        if self._printer.is_printing():
+            # not doing this mid-print since we can't ask the user what to do.
+            # The selection is still refused, but the caller gets a status it can explain
+            # to the user. See
+            # https://github.com/mdziekon/OctoPrint-SpoolManager/issues/41 (@mdziekon)
+            self._logger.info(
+                "%s requested spool %d while printing - selection refused."
+                % (source, databaseId)
+            )
+            return {"status": "printing", "spoolModel": None, "toolIndex": toolIndex}
+
+        # Check existence up front and bail out *before* touching the selection: for an
+        # unknown id _selectSpool() treats the situation as "the spool stored for this tool
+        # vanished" and clears the tool's slot, which would deselect whatever is currently
+        # loaded just because someone scanned a stale QR code.
+        if self._databaseManager.loadSpool(databaseId) is None:
+            self._logger.warning(
+                "%s referenced spool id %d, which is not in the database."
+                % (source, databaseId)
+            )
+            return {"status": "notfound", "spoolModel": None, "toolIndex": toolIndex}
+
+        # Clamp to the printer profile's tool count instead of aborting: a typo in the
+        # URL prefix (or a QR printed for a printer with more tools) must not raise a 500
+        # or write into a slot that doesn't exist - it just falls back to tool 0.
+        printer_profile = self._printer_profile_manager.get_current_or_default()
+        printerProfileToolCount = printer_profile["extruder"]["count"]
+        if toolIndex < 0 or toolIndex >= printerProfileToolCount:
+            self._logger.warning(
+                "%s requested tool %d, but the printer profile only has %d tool(s) - falling back to tool 0."
+                % (source, toolIndex, printerProfileToolCount)
+            )
+            toolIndex = 0
+
+        spoolModel = self._selectSpool(toolIndex, databaseId)
+
+        if spoolModel is None:
+            # spool existed a moment ago but is gone now (deleted between check and here)
+            return {"status": "notfound", "spoolModel": None, "toolIndex": toolIndex}
+
+        # Push a live update to all connected OctoPrint clients so an already-open
+        # SpoolManager UI reflects the selection without a manual refresh. The internal
+        # /selectSpool (PUT) path updates its own client-side state after the response;
+        # these triggers have no such client, so without this message other open UIs
+        # (e.g. a desktop browser) stay stale until reloaded.
+        self._sendDataToClient(dict(action="reloadTable and sidebarSpools"))
+        return {"status": "selected", "spoolModel": spoolModel, "toolIndex": toolIndex}
+
     #####################################################################################################   SELECT SPOOL BY QR
 
     # Redirect back to the plugin tab, carrying the outcome of the QR selection so the
@@ -1543,7 +1639,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         "/selectSpoolByQRCode/<string:databaseId>", methods=["GET"]
     )
     @no_firstrun_access
-    def selectSpoolByQRCode(self, databaseId):
+    def selectSpoolByQRCode(self, databaseId):  # noqa: C901
         self._logger.info("API select spool by QR code" + str(databaseId))
 
         if "qrPreviewId" == databaseId:
@@ -1567,24 +1663,6 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             # no usable spool id -> no meaningful tab to redirect to
             abort(400)
 
-        if self._printer.is_printing():
-            # not doing this mid-print since we can't ask the user what to do.
-            # The selection is still refused, but instead of a raw 409 error page we send
-            # the user to the plugin tab and let the UI explain why. See
-            # https://github.com/mdziekon/OctoPrint-SpoolManager/issues/41 (@mdziekon)
-            return self._buildQRCodeRedirect(databaseId, "printing")
-
-        # Check existence up front and bail out *before* touching the selection: for an
-        # unknown id _selectSpool() treats the situation as "the spool stored for this tool
-        # vanished" and clears the tool's slot, which would deselect whatever is currently
-        # loaded just because someone scanned a stale QR code.
-        if self._databaseManager.loadSpool(databaseId) is None:
-            self._logger.warning(
-                "Scanned QR code for spool id %d, which is not in the database."
-                % databaseId
-            )
-            return self._buildQRCodeRedirect(databaseId, "notfound")
-
         # Optional "?tool=<N>" query param decides which tool/extruder the spool is loaded
         # into. Without it we keep the historical behaviour (tool 0), so existing QR codes
         # that only carry the spool id still work unchanged. The target tool is baked into
@@ -1598,32 +1676,8 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             except (TypeError, ValueError):
                 toolIndex = 0
 
-        # Clamp to the printer profile's tool count instead of aborting: a typo in the
-        # URL prefix (or a QR printed for a printer with more tools) must not raise a 500
-        # or write into a slot that doesn't exist - it just falls back to tool 0.
-        printer_profile = self._printer_profile_manager.get_current_or_default()
-        printerProfileToolCount = printer_profile["extruder"]["count"]
-        if toolIndex < 0 or toolIndex >= printerProfileToolCount:
-            self._logger.warning(
-                "QR code requested tool %d, but the printer profile only has %d tool(s) - falling back to tool 0."
-                % (toolIndex, printerProfileToolCount)
-            )
-            toolIndex = 0
-
-        spoolModel = self._selectSpool(toolIndex, databaseId)
-
-        if spoolModel is not None:
-            # Push a live update to all connected OctoPrint clients so an already-open
-            # SpoolManager UI reflects the QR-triggered selection without a manual refresh.
-            # The internal /selectSpool (PUT) path updates its own client-side state after
-            # the response; the QR route only returns a browser redirect, so without this
-            # message other open UIs (e.g. a desktop browser) stay stale until reloaded.
-            self._sendDataToClient(dict(action="reloadTable and sidebarSpools"))
-            # Take us back to the SpoolManager plugin tab
-            return self._buildQRCodeRedirect(databaseId, "selected")
-        else:
-            # spool existed a moment ago but is gone now (deleted between the check and here)
-            return self._buildQRCodeRedirect(databaseId, "notfound")
+        result = self.selectSpoolForTool(toolIndex, databaseId, source="QR code")
+        return self._buildQRCodeRedirect(databaseId, result["status"])
 
     #####################################################################################################   GENERATE QR FOR SPOOL
     @octoprint.plugin.BlueprintPlugin.route(

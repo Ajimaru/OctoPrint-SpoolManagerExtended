@@ -147,5 +147,54 @@ SPOOLMANAGER_DIALOGS = {
                 addclass: popupId
             });
         }
+    },
+
+    // Sticky notification carrying action buttons. Used where the user has to choose
+    // what happens next (e.g. an unknown RFID tag: create a spool, edit one, or ignore)
+    // and nothing may open on its own - the triggering event is pushed to *every*
+    // connected browser, so auto-opening a dialog would pop it up on all of them.
+    //
+    // buttons: [{text, addClass, onClick}]. Returns the PNotify instance, or null when a
+    // notification with the same identity is already on screen (prevents stacking when
+    // several channels report in quick succession).
+    notifyWithActions: function (options) {
+        var type = options.type != null ? options.type : "info";
+        var title = options.title != null ? options.title : "";
+        var message = options.message != null ? options.message : "";
+        var identity = options.identity != null ? options.identity : title + message;
+        var popupId = ("spm-action-" + identity).replace(/([^a-z0-9]+)/gi, "-");
+
+        if ($("." + popupId).length > 0) {
+            return null;
+        }
+
+        var buttonDefinitions = options.buttons || [];
+        var notice = new PNotify({
+            title: "SPM: " + title,
+            text: message,
+            type: type,
+            hide: false,
+            addclass: popupId,
+            confirm: {
+                confirm: true,
+                buttons: buttonDefinitions.map(function (button) {
+                    return {
+                        text: button.text,
+                        addClass: button.addClass || "btn-small",
+                        click: function (notice) {
+                            notice.remove();
+                            if (typeof button.onClick === "function") {
+                                button.onClick();
+                            }
+                        }
+                    };
+                })
+            },
+            buttons: {
+                closer: true,
+                sticker: false
+            }
+        });
+        return notice;
     }
 };

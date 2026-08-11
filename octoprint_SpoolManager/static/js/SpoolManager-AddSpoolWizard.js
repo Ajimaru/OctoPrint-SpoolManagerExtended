@@ -194,8 +194,12 @@ function SpoolManagerAddSpoolWizard() {
         });
     };
 
+    // Belt-and-braces guard: the dropdown itself is disabled while isU1RfidFlow() is
+    // true (see the wizard template), but selectedSpoolmanProduct could in principle
+    // still change programmatically - the tag's per-spool values must never lose to
+    // generic catalog data in that case either.
     self._applySpoolmanTemperatures = function (product) {
-        if (!product || product.ambiguous) {
+        if (!product || product.ambiguous || self.isU1RfidFlow()) {
             return;
         }
         self._spoolmanApplyingTemperatures = true;
@@ -209,7 +213,7 @@ function SpoolManagerAddSpoolWizard() {
     };
 
     self._applySpoolmanColor = function (product) {
-        if (!product || self._spoolmanColorEdited) {
+        if (!product || self._spoolmanColorEdited || self.isU1RfidFlow()) {
             return;
         }
         var isTransparentProduct = product.is_transparent === true;
@@ -251,7 +255,7 @@ function SpoolManagerAddSpoolWizard() {
     };
 
     self._applySpoolmanFinish = function (product) {
-        if (!product || !product.finish || self._spoolmanFinishEdited) {
+        if (!product || !product.finish || self._spoolmanFinishEdited || self.isU1RfidFlow()) {
             return;
         }
         self._spoolmanApplyingFinish = true;
@@ -420,7 +424,13 @@ function SpoolManagerAddSpoolWizard() {
             id: "nfc",
             title: "Write NFC tag",
             isVisible: function () {
-                return self.isOctoScaleEnabled() && self.createdDatabaseId() != null;
+                // U1 RFID spools already carry a physical tag (resolved via `code`) -
+                // writing a new OctoScale NTAG makes no sense for them, see saveSpool().
+                return (
+                    self.isOctoScaleEnabled() &&
+                    self.createdDatabaseId() != null &&
+                    !self.isU1RfidFlow()
+                );
             }
         }
     ];
@@ -497,11 +507,42 @@ function SpoolManagerAddSpoolWizard() {
         return SPOOLMANAGER_UTILS.isTotalCombinedWeightPresent(self.spoolItemForCreation);
     });
 
+    // Set when the wizard was opened from a detected U1 RFID tag: {uid, channel,
+    // metadata}. Drives the tag prefill and relaxes the weight requirement.
+    self.u1RfidContext = ko.observable(null);
+    self.weighingSkipped = ko.observable(false);
+
+    self.isU1RfidFlow = ko.pureComputed(function () {
+        return self.u1RfidContext() != null;
+    });
+
+    // "Weigh later" only exists in the RFID flow: the U1 reads a tag once the filament
+    // is *loaded*, so weighing would mean retracting, unmounting, weighing and
+    // re-threading the spool. The regular wizard keeps weight mandatory - there the
+    // spool is in the user's hands anyway.
+    self.canSkipWeighing = ko.pureComputed(function () {
+        return self.isU1RfidFlow() && !self.weighingSkipped();
+    });
+
+    self.skipWeighing = function () {
+        self.weighingSkipped(true);
+    };
+
+    // The weight requirement counts as satisfied once it was explicitly skipped in the
+    // RFID flow. Deliberately not weakening isTotalCombinedWeightPresent() itself, so
+    // the regular wizard is unaffected.
+    self.isWeightRequirementMet = ko.pureComputed(function () {
+        if (self.isTotalCombinedWeightPresent()) {
+            return true;
+        }
+        return self.isU1RfidFlow() && self.weighingSkipped();
+    });
+
     self.areMandatoryFieldsValid = ko.pureComputed(function () {
         return (
             self.isDisplayNamePresent() &&
             self.isColorNamePresent() &&
-            self.isTotalCombinedWeightPresent()
+            self.isWeightRequirementMet()
         );
     });
 
@@ -514,7 +555,7 @@ function SpoolManagerAddSpoolWizard() {
         if (stepId === "color" && !self.isColorNamePresent()) {
             return "Please enter a color name.";
         }
-        if (stepId === "weight" && !self.isTotalCombinedWeightPresent()) {
+        if (stepId === "weight" && !self.isWeightRequirementMet()) {
             return "Please enter the total weight (spool including filament).";
         }
         return "";
@@ -654,6 +695,75 @@ function SpoolManagerAddSpoolWizard() {
 
     self.clearTemplateSelection = function () {
         self.selectedTemplateSpool(null);
+    };
+
+    ///////////////////////////////////////////////////////////////////////////////// U1 RFID PREFILL
+
+    // Finds a template spool matching the tag's vendor+material. Its main job is
+    // spoolWeight (the empty core weight): the RFID tag has no such field, and without it
+    // totalWeight = totalCombinedWeight - spoolWeight silently treats the core as 0 g,
+    // which corrupts every later remaining-weight calculation.
+    self._findMatchingTemplateSpool = function (vendor, material) {
+        if (vendor == null && material == null) {
+            return null;
+        }
+        var templates = self.templateSpools();
+        for (var index = 0; index < templates.length; index++) {
+            var templateData = ko.mapping.toJS(templates[index]);
+            var templateVendor = (templateData.vendor || "").toLowerCase();
+            var templateMaterial = (templateData.material || "").toLowerCase();
+            if (
+                templateVendor === String(vendor || "").toLowerCase() &&
+                templateMaterial === String(material || "").toLowerCase()
+            ) {
+                return templates[index];
+            }
+        }
+        return null;
+    };
+
+    self._applyU1RfidPrefill = function () {
+        var context = self.u1RfidContext();
+        if (context == null) {
+            return;
+        }
+        var metadata = context.metadata || {};
+        var vendor = SPOOLMANAGER_U1RFID.buildVendor(metadata);
+        var material = SPOOLMANAGER_U1RFID.buildMaterial(metadata);
+
+        // showDialog()'s reset already named the color from its red placeholder default
+        // (COLORS.DEFAULT = "#ff0000" -> colorName "red") before this ever runs. Clear it
+        // so applyToSpoolItem()'s "only fill in colorName when it's still empty" check
+        // isn't fooled by that leftover into skipping the tag's actual color name.
+        if (typeof self.spoolItemForCreation.colorName === "function") {
+            self.spoolItemForCreation.colorName("");
+        }
+
+        // Order matters: applyTemplateSpool() also writes vendor/material/colorName/
+        // temperatures, so the template goes FIRST and the tag values overwrite it. The
+        // tag describes the spool physically present, so it has to win; what remains
+        // from the template is above all spoolWeight.
+        var templateSpool = self._findMatchingTemplateSpool(vendor, material);
+        if (templateSpool != null) {
+            self.applyTemplateSpool(templateSpool);
+            // the template's display name must not leak onto a different spool
+            self.spoolItemForCreation.displayName("");
+        }
+
+        SPOOLMANAGER_U1RFID.applyToSpoolItem(
+            self.spoolItemForCreation,
+            metadata,
+            context.uid,
+            {
+                applyColor: function (colorValue) {
+                    self._applyColorValue(colorValue);
+                    self._composeColor();
+                    self._applySuggestedColorName(self.spoolItemForCreation.color());
+                }
+            }
+        );
+
+        self._syncFilamentWeight();
     };
 
     /////////////////////////////////////////////////////////////////////////////////////// COLOR
@@ -914,6 +1024,22 @@ function SpoolManagerAddSpoolWizard() {
         self.spoolItemForCreation.isActive(true);
         self.spoolItemForCreation.isInActive(false);
 
+        // Weighing was skipped, so the stored weight is the tag's nominal value, not a
+        // measurement. Mark it via the existing labels field (no schema change needed) so
+        // the spool list can show it and the edit dialog can clear it on the first real
+        // weigh-in.
+        if (self.weighingSkipped() && !self.isTotalCombinedWeightPresent()) {
+            var currentLabels = self.spoolItemForCreation.labels();
+            if (!Array.isArray(currentLabels)) {
+                currentLabels = [];
+            }
+            if (currentLabels.indexOf(SPOOLMANAGER_CONSTANTS.LABEL_WEIGHT_ESTIMATED) < 0) {
+                self.spoolItemForCreation.labels(
+                    currentLabels.concat([SPOOLMANAGER_CONSTANTS.LABEL_WEIGHT_ESTIMATED])
+                );
+            }
+        }
+
         self.apiClient.callCreateSpool(
             self.spoolItemForCreation,
             function (success, responseData, validationErrors) {
@@ -932,6 +1058,18 @@ function SpoolManagerAddSpoolWizard() {
 
                 // the table/sidebar refresh is pushed by the backend (POST /spool sends
                 // "reloadTable and sidebarSpools"), so nothing to do here for other open UIs
+                //
+                // A spool created from a U1 RFID tag already carries a physical tag - it's
+                // a purchased spool with a Snapmaker/Mifare Classic tag baked in, resolved
+                // via `code` (the tag UID), never an OctoScale-written NTAG. Writing a
+                // NEW tag makes no sense here (and there is no OctoScale device attached
+                // to the U1 anyway, so the step would just fail with a 404). Skip straight
+                // to closing instead of offering the NFC step.
+                if (self.isU1RfidFlow()) {
+                    self.closeDialog(true);
+                    return;
+                }
+
                 if (self.isOctoScaleEnabled() && databaseId != null) {
                     // move on to the NFC step; visibleSteps() has just grown by one entry
                     self.currentStepIndex(self.visibleSteps().length - 1);
@@ -1074,8 +1212,10 @@ function SpoolManagerAddSpoolWizard() {
         self.templateSpools(templateSpoolItems || []);
     };
 
-    self.showDialog = function (closeDialogHandler) {
+    self.showDialog = function (closeDialogHandler, u1RfidContext) {
         self.closeDialogHandler = closeDialogHandler;
+        self.u1RfidContext(u1RfidContext || null);
+        self.weighingSkipped(false);
 
         // The integration can be enabled from the settings dialog after the page's initial
         // bindings ran. Reload vendor suggestions here so the first wizard opened afterward
@@ -1123,6 +1263,8 @@ function SpoolManagerAddSpoolWizard() {
                 self.nextSpoolId(responseData.nextSpoolId);
             }
         });
+
+        self._applyU1RfidPrefill();
 
         self.wizardDialog.modal({
             keyboard: false,

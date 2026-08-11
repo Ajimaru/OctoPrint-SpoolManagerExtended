@@ -974,6 +974,76 @@ $(function () {
         self.isFilamentManagerPluginAvailable = ko.observable(false);
         self.isMqttPluginAvailable = ko.observable(false);
 
+        // - U1 RFID (settings tab): detection chain status + "test connection" result
+        self.u1RfidStatus = ko.observable({
+            supported: false,
+            connected: false,
+            chain: {},
+            chainMessage: "",
+            printerInfo: {},
+            host: null,
+            port: null
+        });
+        self.u1RfidTesting = ko.observable(false);
+        self.u1RfidTestMessage = ko.observable("");
+        self.u1RfidTestOk = ko.observable(false);
+        self.u1RfidChannels = ko.observableArray([]);
+
+        // True when a spool's weight came from an RFID tag instead of a scale reading.
+        // Drives the hint in the spool table; the marker lives in `labels` so no schema
+        // change was needed.
+        self.isWeightEstimated = function (spoolItem) {
+            if (spoolItem == null || typeof spoolItem.labels !== "function") {
+                return false;
+            }
+            var labels = spoolItem.labels();
+            if (!Array.isArray(labels)) {
+                return false;
+            }
+            return labels.indexOf(SPOOLMANAGER_CONSTANTS.LABEL_WEIGHT_ESTIMATED) >= 0;
+        };
+
+        self.loadU1RfidStatus = function () {
+            if (self.apiClient == null || self.apiClient.getU1RfidStatus == null) {
+                return;
+            }
+            self.apiClient.getU1RfidStatus(function (response) {
+                if (response != null) {
+                    self.u1RfidStatus(response);
+                }
+            });
+        };
+
+        self.testU1RfidConnection = function () {
+            if (self.apiClient == null || self.apiClient.testU1RfidConnection == null) {
+                return;
+            }
+            self.u1RfidTesting(true);
+            self.u1RfidTestMessage("");
+            self.apiClient.testU1RfidConnection(function (response) {
+                self.u1RfidTesting(false);
+                if (response == null) {
+                    self.u1RfidTestOk(false);
+                    self.u1RfidTestMessage("No response from the server.");
+                    return;
+                }
+                self.u1RfidTestOk(response.ok === true);
+                self.u1RfidTestMessage(response.message || "");
+                if (response.status != null) {
+                    self.u1RfidStatus(response.status);
+                }
+                var channels = (response.channels || []).map(function (channel) {
+                    return {
+                        channel: ko.observable(channel.channel),
+                        uid: ko.observable(channel.uid),
+                        cardType: ko.observable(channel.cardType),
+                        spoolName: ko.observable(channel.spoolName)
+                    };
+                });
+                self.u1RfidChannels(channels);
+            });
+        };
+
         // - Import CSV
         self.csvFileUploadName = ko.observable();
         self.csvImportInProgress = ko.observable(false);
@@ -1765,6 +1835,126 @@ $(function () {
             self.addSpoolWizard.showDialog(closeDialogHandler);
         };
 
+        ///////////////////////////////////////////////////////////////////////////// U1 RFID
+
+        // An unknown tag was detected in one of the U1's channels. NOTHING opens on its
+        // own here: the backend pushes this to every connected client, so an
+        // auto-opening dialog would appear in all of them - including where someone is
+        // in the middle of editing a spool. Same reasoning as the QR notfound popup.
+        self._showU1RfidUnknownTagPopUp = function (data) {
+            if (data == null || !data.uid) {
+                return;
+            }
+            var tagDescription = SPOOLMANAGER_U1RFID.describeTag(data.metadata);
+            var message =
+                "Channel " +
+                data.channel +
+                " reported tag <strong>" +
+                data.uid +
+                "</strong>" +
+                (tagDescription ? " (" + tagDescription + ")" : "") +
+                ", which is not assigned to any spool yet.";
+
+            var rfidContext = {
+                uid: data.uid,
+                channel: data.channel,
+                metadata: data.metadata || {}
+            };
+
+            SPOOLMANAGER_DIALOGS.notifyWithActions({
+                type: "notice",
+                title: "Unknown RFID tag",
+                message: message,
+                // one popup per UID: several channels reporting in quick succession must
+                // not stack notifications
+                identity: "u1rfid-unknown-" + data.uid,
+                buttons: [
+                    {
+                        text: "Open Spool Wizard",
+                        addClass: "btn-small btn-primary",
+                        onClick: function () {
+                            if (self.schemeUpgradeNeeded() == true) {
+                                self._notifySchemeUpgradeNeeded();
+                                return;
+                            }
+                            self.addSpoolWizard.showDialog(
+                                closeDialogHandler,
+                                rfidContext
+                            );
+                        }
+                    },
+                    {
+                        text: "Open Spool Edit",
+                        addClass: "btn-small",
+                        onClick: function () {
+                            if (self.schemeUpgradeNeeded() == true) {
+                                self._notifySchemeUpgradeNeeded();
+                                return;
+                            }
+                            self.spoolDialog.showDialog(
+                                null,
+                                closeDialogHandler,
+                                false,
+                                rfidContext
+                            );
+                        }
+                    },
+                    {
+                        text: "Cancel",
+                        addClass: "btn-small",
+                        onClick: function () {
+                            // nothing to do - the UID stays available in the settings
+                            // status and in the edit dialog's "adopt UID" button
+                        }
+                    }
+                ]
+            });
+        };
+
+        // A known tag resolved to a spool - report the outcome of the selection.
+        self._showU1RfidSelectionPopUp = function (data) {
+            if (data == null) {
+                return;
+            }
+            var spoolName = data.spoolName || "Spool";
+            if (data.status === "selected") {
+                self.showPopUp(
+                    "success",
+                    "Spool selected",
+                    "'" +
+                        spoolName +
+                        "' was loaded into tool " +
+                        data.toolIndex +
+                        " (U1 channel " +
+                        data.channel +
+                        ").",
+                    true
+                );
+                return;
+            }
+            if (data.status === "printing") {
+                self.showPopUp(
+                    "warning",
+                    "Spool not selected",
+                    "A print is currently running, so '" +
+                        spoolName +
+                        "' was not selected. The running job's usage tracking stays untouched.",
+                    false
+                );
+                return;
+            }
+            if (data.status === "notfound") {
+                self.showPopUp(
+                    "error",
+                    "Spool not found",
+                    "The spool assigned to tag " +
+                        data.uid +
+                        " no longer exists in the database.",
+                    false
+                );
+            }
+        };
+
         // Downloads an inventory report (pdf/csv/xlsx) honoring the current tab filter/sort state.
         self.generateInventoryReport = function (reportFormat) {
             var tableQuery = self.spoolItemTableHelper.buildTableQuery();
@@ -2338,6 +2528,9 @@ $(function () {
                 });
             }
             self.refreshSpoolmanDbStatus();
+            // re-evaluates the detection chain server-side, so the tab always shows the
+            // current state (e.g. after the printer connection changed)
+            self.loadU1RfidStatus();
         };
 
         // receive data from server
@@ -2362,6 +2555,14 @@ $(function () {
             }
             if ("showPopUp" == data.action) {
                 self.showPopUp(data.type, data.title, data.message, data.autoclose);
+                return;
+            }
+            if ("u1RfidUnknownTag" == data.action) {
+                self._showU1RfidUnknownTagPopUp(data);
+                return;
+            }
+            if ("u1RfidSpoolSelected" == data.action) {
+                self._showU1RfidSelectionPopUp(data);
                 return;
             }
             if ("printerFileAnalysisStarted" == data.action) {

@@ -358,8 +358,13 @@ function SpoolManagerEditSpoolDialog() {
             self.allMaterials(response.materials || []);
         });
     };
+    // Belt-and-braces guard: the dropdown itself is disabled while isU1RfidFlow() is
+    // true (see the edit dialog template), but selectedSpoolmanProduct could in
+    // principle still change programmatically - the tag's per-spool values must never
+    // lose to generic catalog data in that case either. Same reasoning as the wizard's
+    // equivalent guards.
     self._applySpoolmanTemperatures = function (product) {
-        if (!product || product.ambiguous) {
+        if (!product || product.ambiguous || self.isU1RfidFlow()) {
             return;
         }
         self._spoolmanApplyingTemperatures = true;
@@ -372,7 +377,7 @@ function SpoolManagerEditSpoolDialog() {
         self._spoolmanApplyingTemperatures = false;
     };
     self._applySpoolmanColor = function (product) {
-        if (!product || self._spoolmanColorEdited) {
+        if (!product || self._spoolmanColorEdited || self.isU1RfidFlow()) {
             return;
         }
         var isTransparentProduct = product.is_transparent === true;
@@ -409,7 +414,7 @@ function SpoolManagerEditSpoolDialog() {
         }
     };
     self._applySpoolmanFinish = function (product) {
-        if (!product || !product.finish || self._spoolmanFinishEdited) {
+        if (!product || !product.finish || self._spoolmanFinishEdited || self.isU1RfidFlow()) {
             return;
         }
         self._spoolmanApplyingFinish = true;
@@ -668,12 +673,32 @@ function SpoolManagerEditSpoolDialog() {
         );
     });
 
+    // A real scale reading supersedes a weight that came from an RFID tag's nominal
+    // value, so the "estimated" marker goes away. Applies to both apply-modes below -
+    // both are actual measurements.
+    self._clearWeightEstimatedLabel = function () {
+        if (typeof self.spoolItemForEditing.labels !== "function") {
+            return;
+        }
+        var currentLabels = self.spoolItemForEditing.labels();
+        if (!Array.isArray(currentLabels)) {
+            return;
+        }
+        var remaining = currentLabels.filter(function (label) {
+            return label !== SPOOLMANAGER_CONSTANTS.LABEL_WEIGHT_ESTIMATED;
+        });
+        if (remaining.length !== currentLabels.length) {
+            self.spoolItemForEditing.labels(remaining);
+        }
+    };
+
     this.applyMeasuredAsTotalWeight = function () {
         var grams = self._measuredGrams();
         if (grams == null) {
             return;
         }
         self.spoolItemForEditing.totalCombinedWeight(roundWithPrecision(grams, 1));
+        self._clearWeightEstimatedLabel();
     };
 
     // Mirrors _applyMeasuredGrossWeight() in api/SpoolManagerAPI.py - keep the two in step.
@@ -730,6 +755,62 @@ function SpoolManagerEditSpoolDialog() {
                 )
             );
         }
+
+        self._clearWeightEstimatedLabel();
+    };
+
+    ///////////////////////////////////////////////////////////////////////////////// U1 RFID
+
+    // Set for the lifetime of the current dialog session when it was opened from a
+    // detected U1 RFID tag (via showDialog's u1RfidContext parameter) - used to disable
+    // the SpoolmanDB dropdown, same reasoning as the wizard's isU1RfidFlow: the tag
+    // already describes the exact physical spool, a catalog product would only overwrite
+    // that with generic values.
+    self.isU1RfidFlow = ko.observable(false);
+
+    // Last unknown tag UIDs reported by the U1, so an existing spool can adopt one
+    // without retyping it (and without depending on the popup still being open).
+    self.u1RfidUnknownTags = ko.observableArray([]);
+
+    self.hasU1RfidUnknownTags = ko.pureComputed(function () {
+        return self.u1RfidUnknownTags().length > 0;
+    });
+
+    self.refreshU1RfidUnknownTags = function () {
+        if (self.apiClient == null || self.apiClient.getU1RfidUnknownTags == null) {
+            return;
+        }
+        self.apiClient.getU1RfidUnknownTags(function (response) {
+            var entries = [];
+            if (response != null) {
+                for (var channelKey in response) {
+                    if (!Object.prototype.hasOwnProperty.call(response, channelKey)) {
+                        continue;
+                    }
+                    var entry = response[channelKey];
+                    if (entry != null && entry.uid) {
+                        entries.push({
+                            channel: entry.channel,
+                            uid: entry.uid,
+                            label: "Channel " + entry.channel + ": " + entry.uid
+                        });
+                    }
+                }
+            }
+            entries.sort(function (left, right) {
+                return left.channel - right.channel;
+            });
+            self.u1RfidUnknownTags(entries);
+        });
+    };
+
+    // Writes the UID into `code` - that is what makes the tag resolve to this spool on
+    // the next scan.
+    self.applyU1RfidUid = function (entry) {
+        if (entry == null || !entry.uid) {
+            return;
+        }
+        self.spoolItemForEditing.code(entry.uid);
     };
 
     this.startTagWriting = function () {
@@ -1534,7 +1615,12 @@ function SpoolManagerEditSpoolDialog() {
         self.templateSpools(spoolItemsArray);
     };
 
-    this.showDialog = function (spoolItem, closeDialogHandler, isLoadedInTool) {
+    this.showDialog = function (
+        spoolItem,
+        closeDialogHandler,
+        isLoadedInTool,
+        u1RfidContext
+    ) {
         self.autoUpdateEnabled = false;
         self.closeDialogHandler = closeDialogHandler;
         // is this spool currently loaded into a tool slot? -> block deletion (see delete button binding)
@@ -1580,6 +1666,37 @@ function SpoolManagerEditSpoolDialog() {
         self._loadSpoolmanVendors();
         self._loadSpoolmanMaterials();
         self._loadSpoolmanProducts();
+
+        // Opened from a detected U1 RFID tag: prefill the same fields the wizard does,
+        // via the shared module so both dialogs stay in step.
+        self.isU1RfidFlow(u1RfidContext != null);
+        if (u1RfidContext != null) {
+            // _updateActiveSpoolItem({}) above already named the color from its red
+            // placeholder default (SpoolItem.update(): DEFAULT_COLOR = "#ff0000" ->
+            // colorNameForSpoolColor() -> "red") before this ever runs. Clear it so
+            // applyToSpoolItem()'s "only fill in colorName when it's still empty" check
+            // isn't fooled by that leftover into skipping the tag's actual color name -
+            // same fix as the wizard's _applyU1RfidPrefill() needed.
+            if (typeof self.spoolItemForEditing.colorName === "function") {
+                self.spoolItemForEditing.colorName("");
+            }
+            SPOOLMANAGER_U1RFID.applyToSpoolItem(
+                self.spoolItemForEditing,
+                u1RfidContext.metadata || {},
+                u1RfidContext.uid,
+                {
+                    applyColor: function (colorValue) {
+                        // same path the SpoolmanDB prefill uses (_applySpoolmanColor):
+                        // the editor's pickers and the stored value both need updating
+                        self.spoolItemForEditing.applyColorToEditor(colorValue);
+                        self.spoolItemForEditing.color(colorValue);
+                        self._reColorFilamentIcon(colorValue);
+                    }
+                }
+            );
+        }
+
+        self.refreshU1RfidUnknownTags();
 
         // freeze the simple-view weight-field visibility for as long as this dialog is open
         self._snapshotSpoolInUse();

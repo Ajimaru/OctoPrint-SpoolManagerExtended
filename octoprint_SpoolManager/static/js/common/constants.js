@@ -4,6 +4,12 @@
  * Defined without specifier to be globally accessible
  */
 SPOOLMANAGER_CONSTANTS = {
+    // Marks a spool whose weight came from an RFID tag's nominal value instead of a
+    // scale reading (U1 RFID flow, where the spool is already loaded and cannot easily
+    // be weighed). Stored in the existing `labels` field, so no schema migration is
+    // needed; cleared on the first real weigh-in in the edit dialog.
+    LABEL_WEIGHT_ESTIMATED: "weight-estimated",
+
     // Density values (g/cm3) derived from SpoolmanDB-Community
     // https://github.com/Icezaza2543/SpoolmanDB-Community (maintained fork of
     // https://github.com/Donkie/SpoolmanDB) - Copyright (c) 2024 Donkie, MIT License
