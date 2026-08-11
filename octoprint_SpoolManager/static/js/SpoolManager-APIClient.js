@@ -605,6 +605,50 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
         _callSpoolmanDb("spoolmanDbVendors", responseHandler);
     };
 
+    ////////////////////////////////////////////////////////////////////////////////// U1 RFID
+
+    // Detection-chain status of the Snapmaker U1 RFID reader (settings display).
+    this.getU1RfidStatus = function (responseHandler) {
+        _callApi(
+            _buildPluginUrl("u1Rfid/status"),
+            {method: "GET"},
+            function (data) {
+                responseHandler(data || {supported: false});
+            },
+            function (body) {
+                responseHandler(body || {supported: false});
+            }
+        );
+    };
+
+    // "Test connection" button - re-runs the chain and lists all channels.
+    this.testU1RfidConnection = function (responseHandler) {
+        _callApi(
+            _buildPluginUrl("u1Rfid/test"),
+            {method: "POST"},
+            function (data) {
+                responseHandler(data || {ok: false, message: "No response"});
+            },
+            function (body) {
+                responseHandler(body || {ok: false, message: "Request failed"});
+            }
+        );
+    };
+
+    // Last unknown tag UIDs per channel, for the "adopt UID" button in the edit dialog.
+    this.getU1RfidUnknownTags = function (responseHandler) {
+        _callApi(
+            _buildPluginUrl("u1Rfid/unknownTags"),
+            {method: "GET"},
+            function (data) {
+                responseHandler(data || {});
+            },
+            function () {
+                responseHandler({});
+            }
+        );
+    };
+
     this.getSpoolmanDbMaterials = function (vendor, responseHandler) {
         _callSpoolmanDb(
             "spoolmanDbMaterials?" + _buildRequestQuery({vendor: vendor}),
