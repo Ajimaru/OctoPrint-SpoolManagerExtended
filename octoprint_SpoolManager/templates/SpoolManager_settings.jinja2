@@ -11,6 +11,7 @@
             <li><a href="#tab-spool-Storage" data-toggle="tab">Storage</a></li>
             <li><a href="#tab-spool-MQTT" data-toggle="tab">MQTT</a></li>
             <li><a href="#tab-spool-OctoScale" data-toggle="tab">OctoScale</a></li>
+            <li><a href="#tab-spool-U1RFID" data-toggle="tab">U1 RFID</a></li>
             <li><a href="#tab-spool-SpoolmanDB" data-toggle="tab">SpoolmanDB</a></li>
             <li><a href="#tab-spool-Debugging" data-toggle="tab">Debugging</a></li>
         </ul>
@@ -754,6 +755,132 @@ FPE;	2.16
                                 <font color="green"><b><span data-bind="text: schemeUpgradeResultText"></span></b></font>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- U1 RFID - TAB -->
+            <div class="tab-pane" id="tab-spool-U1RFID">
+                <p>
+                    <small>
+                        A <strong>Snapmaker U1</strong> running the paxx12 Extended Firmware reads RFID tags in
+                        each of its four channels and can report them to SpoolManager. Channel N loads the spool
+                        into tool N of <em>this</em> instance - it is not a hand scanner for other printers.
+                        Read-only: nothing is ever written back to the printer.
+                    </small>
+                </p>
+
+                <!-- detection chain, stage by stage, so a greyed-out toggle is self-explanatory -->
+                <div class="control-group">
+                    <label class="control-label">Detection</label>
+                    <div class="controls">
+                        <table class="table table-condensed" style="margin-bottom: 6px;">
+                            <tbody>
+                                <tr>
+                                    <td style="width: 24px;">
+                                        <i data-bind="css: u1RfidStatus().chain && u1RfidStatus().chain.connector ? 'icon-ok text-success' : 'icon-remove text-error'"></i>
+                                    </td>
+                                    <td>MoonrakerConnector plugin available</td>
+                                </tr>
+                                <tr>
+                                    <td>
+                                        <i data-bind="css: u1RfidStatus().chain && u1RfidStatus().chain.moonraker ? 'icon-ok text-success' : 'icon-remove text-error'"></i>
+                                    </td>
+                                    <td>
+                                        Active printer is a Moonraker printer
+                                        <span data-bind="visible: u1RfidStatus().host">
+                                            &mdash; <code data-bind="text: u1RfidStatus().host + ':' + u1RfidStatus().port"></code>
+                                        </span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>
+                                        <i data-bind="css: u1RfidStatus().chain && u1RfidStatus().chain.printer ? 'icon-ok text-success' : 'icon-minus muted'"></i>
+                                    </td>
+                                    <td>
+                                        Printer identified
+                                        <span data-bind="visible: u1RfidStatus().printerInfo && u1RfidStatus().printerInfo.machineType">
+                                            &mdash; <span data-bind="text: u1RfidStatus().printerInfo.machineType"></span>
+                                            (<span data-bind="text: u1RfidStatus().printerInfo.deviceName"></span>,
+                                            firmware <span data-bind="text: u1RfidStatus().printerInfo.firmwareVersion"></span>)
+                                        </span>
+                                        <br><small class="muted">Informational only - the model does not gate the feature.</small>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>
+                                        <i data-bind="css: u1RfidStatus().chain && u1RfidStatus().chain.filamentDetect ? 'icon-ok text-success' : 'icon-remove text-error'"></i>
+                                    </td>
+                                    <td>
+                                        RFID support (<code>filament_detect</code>) present
+                                        <br><small class="muted">This is what unlocks the feature. Requires the Extended Firmware.</small>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div class="alert" data-bind="visible: u1RfidStatus().chainMessage, text: u1RfidStatus().chainMessage"></div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.u1RfidEnabled, enable: u1RfidStatus().supported"> Read RFID tags from the Snapmaker U1
+                        </label>
+                        <span class="help-block">
+                            <small data-bind="visible: !u1RfidStatus().supported">
+                                Disabled because the detection above did not complete. The printer host is derived
+                                automatically from the Moonraker connection - there is nothing to enter by hand.
+                            </small>
+                            <small data-bind="visible: u1RfidStatus().supported">
+                                Inserting a spool makes the U1 read its tag; a tag known to SpoolManager (matched by
+                                its UID in the spool's <em>Code</em> field) is loaded into the matching tool.
+                            </small>
+                        </span>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="controls">
+                        <button class="btn" data-bind="click: testU1RfidConnection, enable: !u1RfidTesting()">
+                            <i class="icon-refresh" data-bind="css: {'icon-spin': u1RfidTesting}"></i> Test connection
+                        </button>
+                        <span style="margin-left: 8px;" data-bind="visible: u1RfidStatus().connected">
+                            <span class="label label-success">connected</span>
+                        </span>
+                        <span class="help-block">
+                            <small>Re-runs the detection and lists all four channels with the tags currently
+                            detected - the quickest way to see whether tags are read at all.</small>
+                        </span>
+                    </div>
+                </div>
+
+                <div class="control-group" data-bind="visible: u1RfidTestMessage">
+                    <div class="controls">
+                        <div class="alert" data-bind="text: u1RfidTestMessage, css: {'alert-success': u1RfidTestOk(), 'alert-error': !u1RfidTestOk()}"></div>
+                    </div>
+                </div>
+
+                <div class="control-group" data-bind="visible: u1RfidChannels().length > 0">
+                    <label class="control-label">Channels</label>
+                    <div class="controls">
+                        <table class="table table-condensed">
+                            <thead>
+                                <tr><th>Channel</th><th>Tag UID</th><th>Type</th><th>Spool</th></tr>
+                            </thead>
+                            <tbody data-bind="foreach: u1RfidChannels">
+                                <tr>
+                                    <td data-bind="text: channel"></td>
+                                    <td><code data-bind="text: uid ? uid : '-'"></code></td>
+                                    <td data-bind="text: cardType ? cardType : '-'"></td>
+                                    <td>
+                                        <span data-bind="visible: spoolName, text: spoolName"></span>
+                                        <span class="muted" data-bind="visible: !spoolName() && uid()">not assigned yet</span>
+                                        <span class="muted" data-bind="visible: !uid()">-</span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>

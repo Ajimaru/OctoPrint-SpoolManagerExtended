@@ -322,5 +322,273 @@ SPOOLMANAGER_UTILS = {
     }
 };
 
+// Shared prefill logic for RFID tags reported by a Snapmaker U1 (filament_detect).
+// Lives here because BOTH the add-spool wizard and the edit dialog prefill from a tag -
+// two copies of these field rules would drift apart.
+//
+// The backend already dropped the firmware's "unset" values (0 / "NONE"), so anything
+// present here is meaningful. Colors arrive as integer RGB values (RGB_1..RGB_5).
+SPOOLMANAGER_U1RFID = {
+    // 16737792 -> "#FF6600"
+    intToHexColor: function (value) {
+        var numeric = parseInt(value, 10);
+        if (isNaN(numeric) || numeric < 0) {
+            return null;
+        }
+        var hex = (numeric & 0xffffff).toString(16).toUpperCase();
+        while (hex.length < 6) {
+            hex = "0" + hex;
+        }
+        return "#" + hex;
+    },
+
+    // Builds the SpoolManager color code ("#RRGGBB" or ";"-separated for multi-color)
+    // out of the tag's RGB_1..RGB_5 fields. COLOR_NUMS says how many are meaningful.
+    buildColorValue: function (metadata) {
+        if (metadata == null) {
+            return null;
+        }
+        var colorCount = parseInt(metadata["COLOR_NUMS"], 10);
+        if (isNaN(colorCount) || colorCount < 1) {
+            colorCount = 1;
+        }
+        // the edit dialog / wizard only handle up to 3 color slots
+        colorCount = Math.min(colorCount, 3);
+        var colors = [];
+        for (var index = 1; index <= colorCount; index++) {
+            var hexColor = SPOOLMANAGER_U1RFID.intToHexColor(metadata["RGB_" + index]);
+            if (hexColor != null) {
+                colors.push(hexColor);
+            }
+        }
+        if (colors.length === 0) {
+            return null;
+        }
+        return colors.join(";");
+    },
+
+    // Material label from MAIN_TYPE (+ SUB_TYPE when it adds information).
+    buildMaterial: function (metadata) {
+        if (metadata == null) {
+            return null;
+        }
+        var mainType = metadata["MAIN_TYPE"];
+        if (mainType == null || String(mainType).trim() === "") {
+            return null;
+        }
+        return String(mainType).trim();
+    },
+
+    buildVendor: function (metadata) {
+        if (metadata == null) {
+            return null;
+        }
+        var vendor = metadata["VENDOR"] || metadata["MANUFACTURER"];
+        if (vendor == null || String(vendor).trim() === "") {
+            return null;
+        }
+        return String(vendor).trim();
+    },
+
+    // Applies tag metadata onto a spool item (wizard's spoolItemForCreation or the edit
+    // dialog's spoolItemForEditing). Only writes fields the tag actually carries and
+    // never clears an existing value - this is a suggestion, not a takeover.
+    //
+    // `options.applyColor` receives the composed color code, because the two dialogs
+    // drive their color pickers differently.
+    applyToSpoolItem: function (spoolItem, metadata, uid, options) {
+        if (spoolItem == null || metadata == null) {
+            return;
+        }
+        options = options || {};
+
+        var setIfPresent = function (fieldName, value) {
+            if (value == null || value === "") {
+                return;
+            }
+            var observable = spoolItem[fieldName];
+            if (typeof observable === "function") {
+                observable(value);
+            }
+        };
+
+        setIfPresent("vendor", SPOOLMANAGER_U1RFID.buildVendor(metadata));
+        var materialName = SPOOLMANAGER_U1RFID.buildMaterial(metadata);
+        setIfPresent("material", materialName);
+
+        // The tag has no density field, only a material name - look it up the same way
+        // the wizard's own material picker does (_suggestDensityForMaterial), so a
+        // material prefilled from the tag doesn't silently leave density empty. Both
+        // dialogs get this via applyToSpoolItem() rather than each reimplementing it -
+        // the edit dialog had no material->density suggestion of its own at all.
+        if (materialName != null && typeof spoolItem.density === "function") {
+            var currentDensity = parseFloat(spoolItem.density());
+            if (isNaN(currentDensity) || currentDensity <= 0) {
+                var suggestedDensity =
+                    SPOOLMANAGER_CONSTANTS.MATERIALS_DENSITY_MAPPING[
+                        SPOOLMANAGER_UTILS.normalizeMaterialKey(materialName)
+                    ];
+                if (suggestedDensity) {
+                    spoolItem.density(suggestedDensity);
+                }
+            }
+        }
+
+        // Temperatures: prefer the tag's max hotend temp, fall back to the min.
+        var hotendTemp = metadata["HOTEND_MAX_TEMP"] || metadata["HOTEND_MIN_TEMP"];
+        setIfPresent("temperature", hotendTemp);
+        setIfPresent("bedTemperature", metadata["BED_TEMP"]);
+
+        // WEIGHT is the tag's *nominal* filament amount (e.g. 1000 g on a fresh spool),
+        // not what is left - good enough as a starting point, and the mandatory weight
+        // step (or a later scale reading) can always refine it.
+        //
+        // Writing totalWeight directly does NOT satisfy the wizard's weight requirement:
+        // isTotalCombinedWeightPresent() (and thus canGoNext() on the weight step) checks
+        // totalCombinedWeight, a separate observable that only derives from totalWeight
+        // during the initial update() from a server payload - not on live edits like this
+        // one. So the nominal weight must go into totalCombinedWeight instead; the wizard's
+        // own _syncFilamentWeight() (called right after this) then derives totalWeight
+        // back out of it, same as if the user had typed the combined weight by hand.
+        var nominalWeight = parseFloat(metadata["WEIGHT"]);
+        if (!isNaN(nominalWeight) && nominalWeight > 0 && typeof spoolItem.totalCombinedWeight === "function") {
+            var existingSpoolWeight = parseFloat(spoolItem.spoolWeight());
+            if (isNaN(existingSpoolWeight)) {
+                existingSpoolWeight = 0;
+            }
+            spoolItem.totalCombinedWeight(nominalWeight + existingSpoolWeight);
+        }
+
+        // The UID is what makes the tag resolvable next time.
+        setIfPresent("code", uid);
+
+        var colorValue = SPOOLMANAGER_U1RFID.buildColorValue(metadata);
+        if (colorValue != null && typeof options.applyColor === "function") {
+            // Both dialogs already suggest a name as part of applying the color (the
+            // wizard's _applySuggestedColorName / the edit dialog's equivalent), using
+            // the SAME casing convention as every other source (SpoolmanDB, manual
+            // picker): tinycolor().toName() as-is, e.g. "red", never "Red". Do not
+            // duplicate that write here - two writers for one field is how the previous
+            // version ended up fighting itself and leaving stale casing.
+            options.applyColor(colorValue);
+        }
+        // colorName is mandatory and must never be left at whatever a previous run put
+        // there. The suggestion above only covers CSS-known colors though - a spool like
+        // #080A0D (near-black) has no tinycolor name, so the mandatory field would stay
+        // empty (or stale). Only step in for that gap, and only after the dialog's own
+        // suggestion had its chance to run.
+        if (colorValue != null && typeof spoolItem.colorName === "function") {
+            var nameAfterSuggestion = (spoolItem.colorName() || "").trim();
+            if (nameAfterSuggestion === "") {
+                spoolItem.colorName(SPOOLMANAGER_U1RFID.buildColorName(colorValue));
+            }
+        }
+    },
+
+    // Best-effort color name for a composed color code. Prefers the exact CSS name,
+    // otherwise falls back to the nearest basic hue so the mandatory field is never left
+    // empty (and never keeps a stale name from a previous wizard run).
+    buildColorName: function (colorValue) {
+        if (colorValue == null || colorValue === "") {
+            return "";
+        }
+        if (colorValue.indexOf(";") >= 0) {
+            return "Multi-color";
+        }
+
+        // colorNameForSpoolColor() already follows the codebase's convention (lowercase
+        // CSS names like "red"; "Rainbow"/"Transparent"/"Multi-color" as the only
+        // capitalized special cases) - reuse its result as-is, do not re-capitalize it.
+        var exactName = null;
+        if (typeof SPOOLMANAGER_UTILS.colorNameForSpoolColor === "function") {
+            exactName = SPOOLMANAGER_UTILS.colorNameForSpoolColor(colorValue);
+        }
+        if (exactName != null && String(exactName).trim() !== "") {
+            return exactName;
+        }
+
+        return SPOOLMANAGER_U1RFID.approximateColorName(colorValue);
+    },
+
+    // Rough hue/lightness classification for hex values CSS has no name for.
+    approximateColorName: function (hexColor) {
+        var match = /^#?([0-9a-f]{6})$/i.exec(String(hexColor).trim());
+        if (match == null) {
+            return "";
+        }
+        var numeric = parseInt(match[1], 16);
+        var red = (numeric >> 16) & 0xff;
+        var green = (numeric >> 8) & 0xff;
+        var blue = numeric & 0xff;
+
+        var max = Math.max(red, green, blue);
+        var min = Math.min(red, green, blue);
+        var delta = max - min;
+
+        // near-greyscale first: hue is meaningless there. Lowercase throughout, matching
+        // colorNameForSpoolColor()'s convention (tinycolor's CSS names are lowercase too).
+        if (delta <= 20) {
+            if (max <= 40) return "black";
+            if (max >= 225) return "white";
+            return max <= 128 ? "dark grey" : "grey";
+        }
+        if (max <= 45) {
+            // dark enough that the hue is barely visible
+            return "black";
+        }
+
+        var hue;
+        if (max === red) {
+            hue = ((green - blue) / delta) % 6;
+        } else if (max === green) {
+            hue = (blue - red) / delta + 2;
+        } else {
+            hue = (red - green) / delta + 4;
+        }
+        hue = Math.round(hue * 60);
+        if (hue < 0) {
+            hue += 360;
+        }
+
+        var hueName;
+        if (hue < 15 || hue >= 345) hueName = "red";
+        else if (hue < 45) hueName = "orange";
+        else if (hue < 70) hueName = "yellow";
+        else if (hue < 170) hueName = "green";
+        else if (hue < 200) hueName = "cyan";
+        else if (hue < 260) hueName = "blue";
+        else if (hue < 290) hueName = "purple";
+        else if (hue < 345) hueName = "magenta";
+
+        if (max <= 90) {
+            return "dark " + hueName;
+        }
+        if (min >= 170) {
+            return "light " + hueName;
+        }
+        return hueName;
+    },
+
+    // Short human readable summary of a detected tag, for the popup text.
+    describeTag: function (metadata) {
+        if (metadata == null) {
+            return "";
+        }
+        var parts = [];
+        var vendor = SPOOLMANAGER_U1RFID.buildVendor(metadata);
+        var material = SPOOLMANAGER_U1RFID.buildMaterial(metadata);
+        if (vendor != null) {
+            parts.push(vendor);
+        }
+        if (material != null) {
+            parts.push(material);
+        }
+        if (metadata["SUB_TYPE"]) {
+            parts.push(String(metadata["SUB_TYPE"]));
+        }
+        return parts.join(" ");
+    }
+};
+
 // Expose to jinja templates (used by the "Last/First use" column binding in SpoolManager_tab.jinja2)
 window.getDateFromAttribute = SPOOLMANAGER_UTILS.getDateFromAttribute;

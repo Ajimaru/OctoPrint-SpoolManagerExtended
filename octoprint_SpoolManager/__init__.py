@@ -24,6 +24,7 @@ from octoprint_SpoolManager.common.FilamentDatabaseService import (
 from octoprint_SpoolManager.common.SettingsKeys import SettingsKeys
 from octoprint_SpoolManager.DatabaseManager import DatabaseManager
 from octoprint_SpoolManager.MqttManager import MqttManager
+from octoprint_SpoolManager.U1RfidManager import U1RfidManager
 from octoprint_SpoolManager.newodometer import NewFilamentOdometer
 
 
@@ -80,6 +81,9 @@ class SpoolmanagerPlugin(
 
         # MQTT (read-only publishing, helper is acquired later in on_after_startup)
         self._mqttManager = MqttManager(self, self._logger)
+        # Snapmaker U1 RFID self-reporter (read-only spool selection). The detection
+        # chain runs later in on_after_startup, when the printer connection is up.
+        self._u1RfidManager = U1RfidManager(self, self._logger)
         self._filamentDatabaseService = FilamentDatabaseService(
             self.get_plugin_data_folder(), self._logger, self._plugin_version
         )
@@ -1046,7 +1050,16 @@ class SpoolmanagerPlugin(
         if self._mqttManager.isOperational():
             self._mqttManager.publishDiscovery()
             self._mqttManager.publishAllStates()
+
+        # U1 RFID: evaluate the detection chain and start the reader if everything lines
+        # up. Never blocks startup - an unreachable U1 just leaves the reader idle.
+        self._u1RfidManager.initialize()
         pass
+
+    def on_shutdown(self):
+        u1RfidManager = getattr(self, "_u1RfidManager", None)
+        if u1RfidManager is not None:
+            u1RfidManager.shutdown()
 
     # Listen to all  g-code which where already sent to the printer (thread: comm.sending_thread)
     def on_sentGCodeHook(
@@ -1076,6 +1089,14 @@ class SpoolmanagerPlugin(
         if Events.CLIENT_CLOSED == event:
             self._on_clientClosed(payload)
             return
+
+        # The U1 reader derives its host from the active printer connection, so a
+        # connect/disconnect has to re-run the detection chain - otherwise it would keep
+        # talking to the previously connected printer.
+        if event in (Events.CONNECTED, Events.DISCONNECTED):
+            u1RfidManager = getattr(self, "_u1RfidManager", None)
+            if u1RfidManager is not None:
+                u1RfidManager.refresh()
 
         elif Events.PRINT_STARTED == event:
             self.alreadyCanceled = False
@@ -1184,6 +1205,11 @@ class SpoolmanagerPlugin(
             self._mqttManager.publishDiscovery()
             self._mqttManager.publishAllStates()
 
+        # U1 RFID: enabling/disabling has to start or stop the reader right away
+        u1RfidManager = getattr(self, "_u1RfidManager", None)
+        if u1RfidManager is not None:
+            u1RfidManager.refresh()
+
         # In case we are switching between internal and external storage
         databaseSettings = self._buildDatabaseSettingsFromPluginSettings()
         self._databaseManager.assignNewDatabaseSettings(databaseSettings)
@@ -1275,6 +1301,9 @@ class SpoolmanagerPlugin(
         settings[SettingsKeys.SETTINGS_KEY_EXTRUSION_DEBUGGING_ENABLED] = False
 
         ## MQTT (read-only publishing via the OctoPrint-MQTT plugin)
+        # U1 RFID: off by default - without an explicit opt-in no websocket is opened
+        settings[SettingsKeys.SETTINGS_KEY_U1RFID_ENABLED] = False
+
         settings[SettingsKeys.SETTINGS_KEY_MQTT_ENABLED] = False
         settings[SettingsKeys.SETTINGS_KEY_MQTT_DISCOVERY_ENABLED] = True
         settings[SettingsKeys.SETTINGS_KEY_MQTT_DISCOVERY_PREFIX] = "homeassistant"

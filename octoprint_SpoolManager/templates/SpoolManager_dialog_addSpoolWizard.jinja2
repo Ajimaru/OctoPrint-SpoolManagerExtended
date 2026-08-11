@@ -111,9 +111,10 @@
                                                               optionsText: 'name',
                                                               value: selectedSpoolmanProduct,
                                                               optionsCaption: spoolmanLoading() ? '{{ _('Loading...') }}' : '{{ _('Choose...') }}',
-                                                              enable: !spoolmanLoading()"></select>
-                        <span class="help-block" data-bind="visible: selectedSpoolmanProduct() && selectedSpoolmanProduct().ambiguous"><small>{{ _('Multiple temperature variants exist; no temperature is prefilled.') }}</small></span>
-                        <span class="help-block" data-bind="visible: selectedSpoolmanProduct() && (selectedSpoolmanProduct().extruder_temp_range || selectedSpoolmanProduct().bed_temp_range)"><small>{{ _('A range is shown as its midpoint suggestion.') }}</small></span>
+                                                              enable: !spoolmanLoading() && !isU1RfidFlow()"></select>
+                        <span class="help-block" data-bind="visible: isU1RfidFlow"><small>{{ _('Disabled - this spool is prefilled from its RFID tag, which knows the exact values for this physical spool. Picking a catalog product here would overwrite them with generic ones.') }}</small></span>
+                        <span class="help-block" data-bind="visible: !isU1RfidFlow() && selectedSpoolmanProduct() && selectedSpoolmanProduct().ambiguous"><small>{{ _('Multiple temperature variants exist; no temperature is prefilled.') }}</small></span>
+                        <span class="help-block" data-bind="visible: !isU1RfidFlow() && selectedSpoolmanProduct() && (selectedSpoolmanProduct().extruder_temp_range || selectedSpoolmanProduct().bed_temp_range)"><small>{{ _('A range is shown as its midpoint suggestion.') }}</small></span>
                     </div>
                 </div>
             </div>
@@ -259,6 +260,33 @@
                     <div class="text-error" style="margin-top: 6px;" data-bind="visible: octoScaleWeighing.errorMessage">
                         <i class="fas fa-exclamation-triangle"></i> <span data-bind="text: octoScaleWeighing.errorMessage"></span>
                     </div>
+                </div>
+
+                {# RFID flow only: the U1 reads the tag once the filament is LOADED, so the
+                   spool is already mounted and threaded. Weighing it would mean retracting,
+                   unmounting, weighing and re-threading - hence the opt-out. #}
+                <div style="margin-top: 10px; border-top: 1px solid rgba(128,128,128,0.35); padding-top: 10px;"
+                     data-bind="visible: isU1RfidFlow">
+                    <div data-bind="visible: !weighingSkipped()">
+                        <button type="button" class="btn btn-small" data-bind="click: skipWeighing">
+                            {{ _('Weigh later') }}
+                        </button>
+                        <span class="help-block">
+                            <small>{{ _('The spool is already loaded in the printer. The weight from the RFID tag (nominal amount) is used for now - you can weigh it any time later.') }}</small>
+                        </span>
+                    </div>
+                    <div class="alert alert-info" style="margin-bottom: 0;" data-bind="visible: weighingSkipped">
+                        <i class="fas fa-info-circle"></i>
+                        {{ _('Weighing skipped - the spool is saved with the tag\'s nominal weight and marked as estimated.') }}
+                    </div>
+                </div>
+
+                {# Without the empty spool weight, totalWeight = combined - spoolWeight treats
+                   the core as 0 g and every later remaining-weight calculation is off. #}
+                <div class="alert alert-warning" style="margin-top: 10px;"
+                     data-bind="visible: isU1RfidFlow() && !spoolItemForCreation.spoolWeight()">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    {{ _('No empty spool weight set. The RFID tag does not carry one and no matching template spool was found - without it the remaining weight cannot be calculated correctly.') }}
                 </div>
             </div>
 

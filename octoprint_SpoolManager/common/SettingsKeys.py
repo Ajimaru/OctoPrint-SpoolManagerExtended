@@ -68,6 +68,11 @@ class SettingsKeys:
     SETTINGS_KEY_SQL_LOGGING_ENABLED = "sqlLoggingEnabled"
     SETTINGS_KEY_EXTRUSION_DEBUGGING_ENABLED = "extrusionDebuggingEnabled"
 
+    ## Snapmaker U1 RFID (self-reporting reader, read-only spool selection)
+    # No host setting on purpose: the host is derived from the MoonrakerConnector's
+    # active printer connection, see U1RfidManager.
+    SETTINGS_KEY_U1RFID_ENABLED = "u1RfidEnabled"
+
     ## MQTT (read-only publishing via the OctoPrint-MQTT plugin)
     SETTINGS_KEY_MQTT_ENABLED = "mqttEnabled"
     SETTINGS_KEY_MQTT_DISCOVERY_ENABLED = "mqttDiscoveryEnabled"
