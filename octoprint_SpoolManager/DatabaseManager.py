@@ -1984,6 +1984,12 @@ class DatabaseManager(object):
         # (see U1RfidManager). Templates are excluded: a template describes a product,
         # not the physical spool carrying the tag. Newest match wins if a UID was
         # assigned twice by accident.
+        #
+        # isTemplate is a nullable BooleanField; regular spools store NULL, not False
+        # (see e.g. loadAllSpools()'s own template filter further below). `!= True`
+        # evaluates to NULL - not TRUE - for a NULL column in SQL, which silently
+        # excluded every regular spool and made every code lookup fail. Match the
+        # (isTemplate == False) | (isTemplate == None) pattern used elsewhere instead.
         def databaseCallMethode():
             if code is None or len(str(code).strip()) == 0:
                 return None
@@ -1991,7 +1997,7 @@ class DatabaseManager(object):
                 SpoolModel.select()
                 .where(
                     (SpoolModel.code == str(code).strip())
-                    & (SpoolModel.isTemplate != True)
+                    & ((SpoolModel.isTemplate == False) | (SpoolModel.isTemplate == None))
                 )
                 .order_by(SpoolModel.databaseId.desc())
                 .first()
