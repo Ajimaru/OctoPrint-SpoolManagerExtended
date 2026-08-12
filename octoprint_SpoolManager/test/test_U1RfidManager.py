@@ -49,6 +49,7 @@ U1RfidManager = _loadModule("octoprint_SpoolManager.U1RfidManager", "U1RfidManag
 
 normalizeCardUid = U1RfidManager.normalizeCardUid
 extractTagMetadata = U1RfidManager.extractTagMetadata
+deriveRfidTagKey = U1RfidManager.deriveRfidTagKey
 
 
 ################################################################################################ fakes
@@ -91,13 +92,15 @@ class FakeSpoolModel(object):
 
 
 class FakeDatabaseManager(object):
-    def __init__(self, spoolsByCode=None):
-        self._spoolsByCode = spoolsByCode or {}
-        self.lookedUpCodes = []
+    # Keyed by rfidTagKey (last 4 hex chars of the UID), matching production's
+    # loadSpoolByRfidTagKey() - see U1RfidManager.deriveRfidTagKey().
+    def __init__(self, spoolsByRfidTagKey=None):
+        self._spoolsByRfidTagKey = spoolsByRfidTagKey or {}
+        self.lookedUpRfidTagKeys = []
 
-    def loadSpoolByCode(self, code):
-        self.lookedUpCodes.append(code)
-        return self._spoolsByCode.get(code)
+    def loadSpoolByRfidTagKey(self, rfidTagKey):
+        self.lookedUpRfidTagKeys.append(rfidTagKey)
+        return self._spoolsByRfidTagKey.get(rfidTagKey)
 
 
 class FakePlugin(object):
@@ -107,12 +110,12 @@ class FakePlugin(object):
         connectorEnabled=True,
         connectorInstalled=True,
         connectionState=None,
-        spoolsByCode=None,
+        spoolsByRfidTagKey=None,
     ):
         self._settings = FakeSettings(settingsEnabled)
         self._plugin_manager = FakePluginManager(connectorEnabled, connectorInstalled)
         self._printer = FakePrinter(connectionState)
-        self._databaseManager = FakeDatabaseManager(spoolsByCode)
+        self._databaseManager = FakeDatabaseManager(spoolsByRfidTagKey)
         self._plugin_version = "test"
         self.sentMessages = []
         self.selectSpoolForToolCalls = []
@@ -177,6 +180,37 @@ class TestNormalizeCardUid(unittest.TestCase):
         second = normalizeCardUid([32, 48, 227, 2])
         self.assertEqual(first, second)
         self.assertEqual(first, "2030E302")
+
+
+################################################################################################ deriveRfidTagKey
+
+
+class TestDeriveRfidTagKey(unittest.TestCase):
+    # PRELIMINARY design: Snapmaker spools carry two physical RFID tags (one per side).
+    # Live testing on 4 real spools showed the full CARD_UID differs between a spool's
+    # two tags, but the last 4 hex chars matched on both sides every time - that is the
+    # empirical basis for this function. Collisions ARE possible (16 bits of key space)
+    # if many spools of the same material/color/batch are taught in; accepted tradeoff
+    # for typical collection sizes, see SpoolModel.rfidTagKey's docstring.
+    def test_takesLastFourHexChars(self):
+        self.assertEqual(deriveRfidTagKey("A1B2C3D4"), "C3D4")
+
+    def test_bothSidesOfARealSpoolAgree(self):
+        # live-verified pair: spool 105 "Snapspeed Green", side A vs. side B
+        self.assertEqual(deriveRfidTagKey("5DD71040"), deriveRfidTagKey("4DD71040"))
+        self.assertEqual(deriveRfidTagKey("5DD71040"), "1040")
+
+    def test_exactlyFourCharsIsReturnedAsIs(self):
+        self.assertEqual(deriveRfidTagKey("ABCD"), "ABCD")
+
+    def test_shorterThanFourCharsReturnsNone(self):
+        self.assertIsNone(deriveRfidTagKey("ABC"))
+
+    def test_emptyStringReturnsNone(self):
+        self.assertIsNone(deriveRfidTagKey(""))
+
+    def test_noneReturnsNone(self):
+        self.assertIsNone(deriveRfidTagKey(None))
 
 
 ################################################################################################ extractTagMetadata
@@ -405,13 +439,14 @@ class TestDetectionChain(unittest.TestCase):
 
 class TestChannelHandling(unittest.TestCase):
     def test_knownUidSelectsSpoolForMatchingChannel(self):
+        # A1B2C3D4 -> rfidTagKey C3D4 (last 4 hex chars, see deriveRfidTagKey())
         manager, plugin = _makeManager(
-            spoolsByCode={"A1B2C3D4": FakeSpoolModel(42, "PLA Red")}
+            spoolsByRfidTagKey={"C3D4": FakeSpoolModel(42, "PLA Red")}
         )
         manager._handleChannel(2, {"CARD_UID": [161, 178, 195, 212]})
 
         self.assertEqual(plugin.selectSpoolForToolCalls, [(2, 42)])
-        self.assertEqual(plugin._databaseManager.lookedUpCodes, ["A1B2C3D4"])
+        self.assertEqual(plugin._databaseManager.lookedUpRfidTagKeys, ["C3D4"])
         pushed = [m for m in plugin.sentMessages if m["action"] == "u1RfidSpoolSelected"]
         self.assertEqual(len(pushed), 1)
         self.assertEqual(pushed[0]["channel"], 2)
@@ -421,7 +456,7 @@ class TestChannelHandling(unittest.TestCase):
         # the edge-detection core: a tag sitting in a channel must not re-trigger the
         # load on every websocket push, only on the 0 -> UID transition
         manager, plugin = _makeManager(
-            spoolsByCode={"A1B2C3D4": FakeSpoolModel(42, "PLA Red")}
+            spoolsByRfidTagKey={"C3D4": FakeSpoolModel(42, "PLA Red")}
         )
         channelInfo = {"CARD_UID": [161, 178, 195, 212]}
         manager._handleChannel(2, channelInfo)
@@ -431,24 +466,26 @@ class TestChannelHandling(unittest.TestCase):
         self.assertEqual(len(plugin.selectSpoolForToolCalls), 1)
 
     def test_unknownUidReportsWithoutSelecting(self):
-        manager, plugin = _makeManager(spoolsByCode={})
+        manager, plugin = _makeManager(spoolsByRfidTagKey={})
         manager._handleChannel(0, {"CARD_UID": [1, 2, 3, 4], "VENDOR": "Snapmaker"})
 
         self.assertEqual(plugin.selectSpoolForToolCalls, [])
         pushed = [m for m in plugin.sentMessages if m["action"] == "u1RfidUnknownTag"]
         self.assertEqual(len(pushed), 1)
         self.assertEqual(pushed[0]["uid"], "01020304")
+        self.assertEqual(pushed[0]["rfidTagKey"], "0304")
         self.assertEqual(pushed[0]["channel"], 0)
 
         unknown = manager.getUnknownTags()
         self.assertIn("0", unknown)
         self.assertEqual(unknown["0"]["uid"], "01020304")
+        self.assertEqual(unknown["0"]["rfidTagKey"], "0304")
 
     def test_tagRemovalForgetsStateWithoutDeselecting(self):
         # no auto-deselect: the U1 briefly reports "no tag" during a filament change,
         # which must not clear a perfectly valid selection
         manager, plugin = _makeManager(
-            spoolsByCode={"A1B2C3D4": FakeSpoolModel(42, "PLA Red")}
+            spoolsByRfidTagKey={"C3D4": FakeSpoolModel(42, "PLA Red")}
         )
         manager._handleChannel(2, {"CARD_UID": [161, 178, 195, 212]})
         callsBeforeRemoval = len(plugin.selectSpoolForToolCalls)
@@ -460,7 +497,7 @@ class TestChannelHandling(unittest.TestCase):
 
     def test_reinsertingTheSameTagFiresAgainAfterRemoval(self):
         manager, plugin = _makeManager(
-            spoolsByCode={"A1B2C3D4": FakeSpoolModel(42, "PLA Red")}
+            spoolsByRfidTagKey={"C3D4": FakeSpoolModel(42, "PLA Red")}
         )
         manager._handleChannel(2, {"CARD_UID": [161, 178, 195, 212]})
         manager._handleChannel(2, {"CARD_UID": 0})
@@ -470,9 +507,9 @@ class TestChannelHandling(unittest.TestCase):
 
     def test_channelsAreIndependent(self):
         manager, plugin = _makeManager(
-            spoolsByCode={
-                "A1B2C3D4": FakeSpoolModel(42, "PLA Red"),
-                "01020304": FakeSpoolModel(43, "PETG Blue"),
+            spoolsByRfidTagKey={
+                "C3D4": FakeSpoolModel(42, "PLA Red"),
+                "0304": FakeSpoolModel(43, "PETG Blue"),
             }
         )
         manager._handleChannel(0, {"CARD_UID": [161, 178, 195, 212]})
@@ -483,19 +520,32 @@ class TestChannelHandling(unittest.TestCase):
         )
 
     def test_knownUidClearsAnyPriorUnknownEntryForThatChannel(self):
-        # teaching a UID (assigning it to a spool's `code`) must make the "unknown tag"
-        # popup go away on the next scan, not linger in the settings status forever
-        manager, plugin = _makeManager(spoolsByCode={})
+        # teaching a UID (assigning its rfidTagKey to a spool) must make the "unknown
+        # tag" popup go away on the next scan, not linger in the settings status forever
+        manager, plugin = _makeManager(spoolsByRfidTagKey={})
         manager._handleChannel(2, {"CARD_UID": [161, 178, 195, 212]})
         self.assertIn(2, manager._unknownTagByChannel)
 
         manager._lastUidByChannel.pop(2)  # simulate the tag having been re-scanned
-        manager._plugin._databaseManager._spoolsByCode["A1B2C3D4"] = FakeSpoolModel(
+        manager._plugin._databaseManager._spoolsByRfidTagKey["C3D4"] = FakeSpoolModel(
             42, "PLA Red"
         )
         manager._handleChannel(2, {"CARD_UID": [161, 178, 195, 212]})
 
         self.assertNotIn(2, manager._unknownTagByChannel)
+
+    def test_bothPhysicalTagsOfASpoolResolveToTheSameEntry(self):
+        # the actual bug this feature fixes: a Snapmaker spool's two tags share their
+        # last 4 hex chars (live-verified on 4/4 spools) but differ in the leading byte
+        manager, plugin = _makeManager(
+            spoolsByRfidTagKey={"1040": FakeSpoolModel(105, "Snapspeed Green")}
+        )
+        # side A: 5DD71040, side B: 4DD71040 - both end in 1040
+        manager._handleChannel(2, {"CARD_UID": [0x5D, 0xD7, 0x10, 0x40]})
+        manager._handleChannel(2, {"CARD_UID": 0})
+        manager._handleChannel(2, {"CARD_UID": [0x4D, 0xD7, 0x10, 0x40]})
+
+        self.assertEqual(plugin.selectSpoolForToolCalls, [(2, 105), (2, 105)])
 
 
 ################################################################################################ websocket message parsing
@@ -504,7 +554,7 @@ class TestChannelHandling(unittest.TestCase):
 class TestHandleMessage(unittest.TestCase):
     def test_notifyStatusUpdatePushIsParsed(self):
         manager, plugin = _makeManager(
-            spoolsByCode={"A1B2C3D4": FakeSpoolModel(42, "PLA Red")}
+            spoolsByRfidTagKey={"C3D4": FakeSpoolModel(42, "PLA Red")}
         )
         message = {
             "method": "notify_status_update",
@@ -528,7 +578,7 @@ class TestHandleMessage(unittest.TestCase):
         # the initial printer.objects.query response has "result" instead of a
         # notify_status_update push, but the same status/filament_detect shape inside it
         manager, plugin = _makeManager(
-            spoolsByCode={"A1B2C3D4": FakeSpoolModel(42, "PLA Red")}
+            spoolsByRfidTagKey={"C3D4": FakeSpoolModel(42, "PLA Red")}
         )
         message = {
             "result": {

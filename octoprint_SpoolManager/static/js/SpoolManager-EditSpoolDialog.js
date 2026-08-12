@@ -792,6 +792,7 @@ function SpoolManagerEditSpoolDialog() {
                         entries.push({
                             channel: entry.channel,
                             uid: entry.uid,
+                            rfidTagKey: entry.rfidTagKey,
                             label: "Channel " + entry.channel + ": " + entry.uid
                         });
                     }
@@ -804,13 +805,15 @@ function SpoolManagerEditSpoolDialog() {
         });
     };
 
-    // Writes the UID into `code` - that is what makes the tag resolve to this spool on
-    // the next scan.
+    // Writes the derived rfidTagKey - what U1RfidManager actually matches on, since the
+    // full UID differs between a Snapmaker spool's two physical tags (see
+    // deriveRfidTagKey()'s PRELIMINARY collision note). `code` is left untouched: it's a
+    // free-text field a spool may already carry its own, unrelated serial number in.
     self.applyU1RfidUid = function (entry) {
-        if (entry == null || !entry.uid) {
+        if (entry == null || !entry.rfidTagKey) {
             return;
         }
-        self.spoolItemForEditing.code(entry.uid);
+        self.spoolItemForEditing.rfidTagKey(entry.rfidTagKey);
     };
 
     this.startTagWriting = function () {
@@ -1684,6 +1687,7 @@ function SpoolManagerEditSpoolDialog() {
                 self.spoolItemForEditing,
                 u1RfidContext.metadata || {},
                 u1RfidContext.uid,
+                u1RfidContext.rfidTagKey,
                 {
                     applyColor: function (colorValue) {
                         // same path the SpoolmanDB prefill uses (_applySpoolmanColor):

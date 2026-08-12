@@ -440,20 +440,25 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                             <label class="control-label">Serial number</label>
                             <div class="controls">
                                 <input data-bind="textInput: spoolDialog.spoolItemForEditing.code"  type="text" class="input-large"  />
-                                {# The U1 resolves a spool by its tag UID stored here. Offering the
-                                   last unknown UIDs avoids retyping them and keeps them reachable
-                                   even after the notification was dismissed. #}
-                                <div style="margin-top: 6px;" data-bind="visible: spoolDialog.hasU1RfidUnknownTags">
-                                    <span class="help-block" style="margin-bottom: 4px;">
-                                        <small>{{ _('Unassigned RFID tags detected by the Snapmaker U1:') }}</small>
-                                    </span>
-                                    <!-- ko foreach: spoolDialog.u1RfidUnknownTags -->
-                                    <button type="button" class="btn btn-small" style="margin-right: 4px;"
-                                            data-bind="click: function (entry) { $parent.spoolDialog.applyU1RfidUid(entry); }">
-                                        <i class="fas fa-id-card"></i> <span data-bind="text: label"></span>
-                                    </button>
-                                    <!-- /ko -->
-                                </div>
+                            </div>
+                        </div>
+                        <div class="control-group" data-bind="visible: !spoolDialog.simpleMode() && spoolDialog.hasU1RfidUnknownTags()">
+                            <label class="control-label">{{ _('Snapmaker U1') }}</label>
+                            <div class="controls">
+                                {# rfidTagKey (the stable per-spool match key, NOT the Serial number field
+                                   above - see U1RfidManager.deriveRfidTagKey()'s PRELIMINARY collision
+                                   note) is what the U1 actually resolves a spool by. Offering the last
+                                   unknown UIDs avoids retyping them and keeps them reachable even after
+                                   the notification was dismissed. #}
+                                <span class="help-block" style="margin-bottom: 4px;">
+                                    <small>{{ _('Unassigned RFID tags detected by the Snapmaker U1:') }}</small>
+                                </span>
+                                <!-- ko foreach: spoolDialog.u1RfidUnknownTags -->
+                                <button type="button" class="btn btn-small" style="margin-right: 4px;"
+                                        data-bind="click: function (entry) { $parent.spoolDialog.applyU1RfidUid(entry); }">
+                                    <i class="fas fa-id-card"></i> <span data-bind="text: label"></span>
+                                </button>
+                                <!-- /ko -->
                             </div>
                         </div>
                         <div class="control-group" data-bind="visible: !spoolDialog.simpleMode()">
