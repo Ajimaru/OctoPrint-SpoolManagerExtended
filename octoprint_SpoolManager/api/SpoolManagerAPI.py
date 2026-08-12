@@ -474,18 +474,12 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                         % toolIndex
                     )
             spoolModelList.append(spoolModel)
-            if spoolModel is not None:
-                eventPayload = {
-                    "toolId": toolIndex,
-                    "databaseId": spoolModel.databaseId,
-                    "spoolName": spoolModel.displayName,
-                    "material": spoolModel.material,
-                    "colorName": spoolModel.colorName,
-                    "remainingWeight": spoolModel.remainingWeight,
-                }
-                self._sendPayload2EventBus(
-                    EventBusKeys.EVENT_BUS_SPOOL_SELECTED, eventPayload
-                )
+            # No event fired here on purpose: this is a pure read, called on every
+            # sidebar poll, client (re)connect and file upload check. Firing
+            # spool_selected here caused it to spam every ~5s while idle and to fire
+            # on file uploads with no actual selection change (mdziekon #45,
+            # WildRikku #4). Real selection changes are announced from _selectSpool()
+            # via _announceSpoolSelectionChange().
 
         return spoolModelList
 
@@ -589,23 +583,14 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                                     + str(toolIndex),
                                     autoclose=True,
                                 )
+                                self._announceSpoolSelectionChange(idx, None)
                             pass
                         else:
                             databaseIds[idx] = selectedSpoolDBId
                         idx = idx + 1
                     # assign new spool selection to the tool
                     databaseIds[toolIndex] = databaseId
-                    eventPayload = {
-                        "toolId": toolIndex,
-                        "databaseId": spoolModel.databaseId,
-                        "spoolName": spoolModel.displayName,
-                        "material": spoolModel.material,
-                        "colorName": spoolModel.colorName,
-                        "remainingWeight": spoolModel.remainingWeight,
-                    }
-                    self._sendPayload2EventBus(
-                        EventBusKeys.EVENT_BUS_SPOOL_SELECTED, eventPayload
-                    )
+                    self._announceSpoolSelectionChange(toolIndex, spoolModel)
 
                 else:
                     # spool present, but no toolId -> remove spool from current toolIndex
@@ -613,17 +598,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                     while i < len(databaseIds):
                         if databaseIds[i] == databaseId:
                             databaseIds[i] = None
-                            eventPayload = {
-                                "toolId": i,
-                                "databaseId": spoolModel.databaseId,
-                                "spoolName": spoolModel.displayName,
-                                "material": spoolModel.material,
-                                "colorName": spoolModel.colorName,
-                                "remainingWeight": spoolModel.remainingWeight,
-                            }
-                            self._sendPayload2EventBus(
-                                EventBusKeys.EVENT_BUS_SPOOL_DESELECTED, eventPayload
-                            )
+                            self._announceSpoolSelectionChange(i, None)
                             break
                         i += 1
                     pass
@@ -639,6 +614,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 while i < len(databaseIds):
                     if databaseIds[i] == databaseId:
                         databaseIds[i] = None
+                        self._announceSpoolSelectionChange(i, None)
                         break
                     i += 1
         else:
@@ -651,10 +627,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             # remove current spool from toolIndex
             if toolIndex < len(databaseIds):
                 databaseIds[toolIndex] = None
-                eventPayload = {"toolId": toolIndex, "databaseId": None}
-                self._sendPayload2EventBus(
-                    EventBusKeys.EVENT_BUS_SPOOL_DESELECTED, eventPayload
-                )
+                self._announceSpoolSelectionChange(toolIndex, None)
 
         self._settings.set(
             [SettingsKeys.SETTINGS_KEY_SELECTED_SPOOLS_DATABASE_IDS], databaseIds
