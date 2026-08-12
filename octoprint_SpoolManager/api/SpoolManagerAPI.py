@@ -20,6 +20,7 @@ from octoprint.access.permissions import Permissions
 from octoprint.server.util.flask import no_firstrun_access
 
 from octoprint_SpoolManager import DatabaseManager
+from octoprint_SpoolManager.U1RfidManager import deriveRfidTagKey
 from octoprint_SpoolManager.api import Transformer
 from octoprint_SpoolManager.common import (
     CSVExportImporter,
@@ -250,6 +251,9 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         )
         spoolModel.code = self._toStringFromJSONOrNone(
             "code", jsonData, validationErrors
+        )
+        spoolModel.rfidTagKey = self._toStringFromJSONOrNone(
+            "rfidTagKey", jsonData, validationErrors
         )
         spoolModel.batchNumber = self._toStringFromJSONOrNone(
             "batchNumber", jsonData, validationErrors
@@ -912,6 +916,35 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     @no_firstrun_access
     def getSpoolById(self, databaseId):
         spoolModel = self._databaseManager.loadSpool(databaseId)
+
+        if spoolModel is None:
+            abort(404)
+
+        return flask.jsonify(
+            {"spool": Transformer.transformSpoolModelToDict(spoolModel)}
+        )
+
+    @octoprint.plugin.BlueprintPlugin.route("/spool/byCode/<string:code>", methods=["GET"])
+    @no_firstrun_access
+    def getSpoolByCode(self, code):
+        # Resolves a spool by its `code` field (an RFID tag UID, e.g. a foreign/manufacturer
+        # tag such as a Snapmaker U1 tag) instead of databaseId. Mirrors getSpoolById's
+        # response shape so callers (e.g. OctoScale) can treat both lookups the same way.
+        # Matching itself lives in DatabaseManager.loadSpoolByCode() (also used to be U1's
+        # lookup) - this is just the HTTP-facing twin of getSpoolById above.
+        spoolModel = self._databaseManager.loadSpoolByCode(code)
+
+        if spoolModel is None:
+            # Fallback: `code` is deliberately no longer set from an RFID UID (see
+            # U1RfidManager.deriveRfidTagKey()'s PRELIMINARY collision note - a Snapmaker
+            # spool's two physical tags report different full UIDs, so U1RfidManager now
+            # matches on the last-4-hex-chars rfidTagKey instead). A caller here (e.g.
+            # OctoScale) may still pass a full tag UID it just scanned; try the same
+            # derivation before giving up, so spools taught in via the U1 flow remain
+            # resolvable through this endpoint too.
+            rfidTagKey = deriveRfidTagKey(code)
+            if rfidTagKey:
+                spoolModel = self._databaseManager.loadSpoolByRfidTagKey(rfidTagKey)
 
         if spoolModel is None:
             abort(404)

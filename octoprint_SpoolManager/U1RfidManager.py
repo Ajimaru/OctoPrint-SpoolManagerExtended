@@ -100,6 +100,36 @@ def normalizeCardUid(cardUid):
     return None
 
 
+RFID_TAG_KEY_LENGTH = 4
+
+
+def deriveRfidTagKey(normalizedUid):
+    """
+    Derives the stable per-spool matching key from an already-normalized hex UID
+    (see normalizeCardUid()) - the last RFID_TAG_KEY_LENGTH hex characters.
+
+    PRELIMINARY: Snapmaker spools carry two physical RFID tags, one per side, and the
+    U1 reader only sees whichever side faces it. Live testing (4/4 spools, both sides
+    read and compared) showed the full 8-character CARD_UID differs between the two
+    tags of the same physical spool, but the last 4 hex characters were identical on
+    both - that suffix is what this function extracts, and what loadSpoolByRfidTagKey()
+    matches on instead of the full UID.
+
+    This key is intentionally NOT stored in SpoolModel.code - code is a free-text
+    bar/QR-code field a spool may already use for its own, unrelated serial number.
+
+    Only 16 bits of key space (65536 possible values): a COLLISION IS POSSIBLE if many
+    spools of the same material/color/batch get taught in - two different physical
+    spools could end up sharing the same last-4-hex suffix by chance. This is a known,
+    accepted limitation for typical collection sizes, not a bug; the teach-in flow
+    should surface a warning if the derived key already resolves to a different spool,
+    rather than silently overwriting.
+    """
+    if not normalizedUid or len(normalizedUid) < RFID_TAG_KEY_LENGTH:
+        return None
+    return normalizedUid[-RFID_TAG_KEY_LENGTH:]
+
+
 def extractTagMetadata(channelInfo):
     """
     Picks the filament metadata out of one filament_detect.info entry, dropping values
@@ -444,6 +474,7 @@ class U1RfidManager(object):
                 {
                     "channel": index,
                     "uid": uid,
+                    "rfidTagKey": deriveRfidTagKey(uid) if uid else None,
                     "cardType": metadata.get("CARD_TYPE"),
                     "vendor": metadata.get("VENDOR") or metadata.get("MANUFACTURER"),
                     "material": metadata.get("MAIN_TYPE"),
@@ -598,10 +629,15 @@ class U1RfidManager(object):
     ################################################################################################ spool resolution
 
     def _findSpoolByUid(self, uid):
+        # Matches on the rfidTagKey (last 4 hex chars of the UID), not the full UID -
+        # see deriveRfidTagKey() for why (two physical tags per Snapmaker spool).
         if not uid:
             return None
+        rfidTagKey = deriveRfidTagKey(uid)
+        if not rfidTagKey:
+            return None
         try:
-            return self._plugin._databaseManager.loadSpoolByCode(uid)
+            return self._plugin._databaseManager.loadSpoolByRfidTagKey(rfidTagKey)
         except Exception as exception:
             self._logger.exception("U1 RFID: spool lookup failed: %s" % exception)
             return None
@@ -611,9 +647,11 @@ class U1RfidManager(object):
 
         if spoolModel is None:
             metadata = extractTagMetadata(channelInfo)
+            rfidTagKey = deriveRfidTagKey(uid)
             with self._lock:
                 self._unknownTagByChannel[channel] = {
                     "uid": uid,
+                    "rfidTagKey": rfidTagKey,
                     "channel": channel,
                     "metadata": metadata,
                     "timestamp": time.time(),
@@ -626,6 +664,7 @@ class U1RfidManager(object):
                     "action": "u1RfidUnknownTag",
                     "channel": channel,
                     "uid": uid,
+                    "rfidTagKey": rfidTagKey,
                     "metadata": metadata,
                 }
             )
