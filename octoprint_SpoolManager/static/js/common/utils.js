@@ -38,6 +38,54 @@ SPOOLMANAGER_UTILS = {
         return allSelected == true ? "all" : selectionArray.length;
     },
 
+    // Replaces a filter's selection array with every entry of its catalog, mapped through
+    // idMapper when the selection stores something other than the raw catalog entry (colors
+    // are selected by colorId, materials/vendors by their plain value - pass idMapper only
+    // for colors). Written as a single selectedKo(...) call so KO fires one change
+    // notification, unlike the old push()+valueHasMutated() color branch that fired twice.
+    // Adopted from mdziekon PR #15 (handleSelectAll*), generalized into one function.
+    selectAllIntoFilter: function (allKo, selectedKo, idMapper) {
+        var allEntries = allKo();
+        var newSelection =
+            typeof idMapper === "function" ? allEntries.map(idMapper) : allEntries.slice();
+        selectedKo(newSelection);
+    },
+
+    // Builds the two-way "select/deselect all" computed for a catalog filter. read() reuses
+    // buildFilterSelectionsCounter() so the checkbox can never disagree with the counter label
+    // next to it (upstream's read() instead compares selectedKo().length === allKo().length,
+    // which false-positives when e.g. a renamed color keeps the count equal but the actual
+    // entries differ). write() replaces the whole selection via selectAllIntoFilter() when
+    // checked, or clears it.
+    //
+    // The throttle:1 is required: the checked: binding re-reads the computed immediately after
+    // its own write(), and without throttling KO can re-evaluate mid-write and snap the
+    // checkbox back to its previous state.
+    // Adopted from mdziekon PR #15 (showAll*ForFilter computed).
+    buildShowAllForFilterKo: function (allKo, selectedKo, idMapper) {
+        return ko
+            .computed({
+                read: function () {
+                    var allEntries =
+                        typeof idMapper === "function" ? allKo().map(idMapper) : allKo();
+                    return (
+                        SPOOLMANAGER_UTILS.buildFilterSelectionsCounter(
+                            allEntries,
+                            selectedKo()
+                        ) === "all"
+                    );
+                },
+                write: function (isChecked) {
+                    if (isChecked) {
+                        SPOOLMANAGER_UTILS.selectAllIntoFilter(allKo, selectedKo, idMapper);
+                    } else {
+                        selectedKo.removeAll();
+                    }
+                },
+            })
+            .extend({throttle: 1});
+    },
+
     // Splits a stored color value into its parts. The persisted format is one of
     // "rainbow", "transparent", "transparent:#hex[;#hex...]" or "#hex[;#hex...]".
     // Shared by the edit dialog's color pickers and the wizard's single picker so both
