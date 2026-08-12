@@ -27,6 +27,10 @@ from octoprint_SpoolManager.MqttManager import MqttManager
 from octoprint_SpoolManager.U1RfidManager import U1RfidManager
 from octoprint_SpoolManager.newodometer import NewFilamentOdometer
 
+# sentinel distinguishing "never announced" from "known to be empty (None)" in
+# _lastAnnouncedSpoolIds, so the very first deselect of a tool is not swallowed
+_SPOOL_SELECTION_NOT_YET_ANNOUNCED = object()
+
 
 class SpoolmanagerPlugin(
     SpoolManagerAPI,
@@ -74,6 +78,10 @@ class SpoolmanagerPlugin(
         self._filamentManagerPluginImplementationState = None
 
         self._lastPrintState = None
+
+        # last databaseId (or None) announced via spool_selected/spool_deselected per
+        # toolIndex, so _announceSpoolSelectionChange() only fires on real transitions
+        self._lastAnnouncedSpoolIds = {}
 
         self.metaDataFilamentLengths = []
 
@@ -222,6 +230,37 @@ class SpoolmanagerPlugin(
         mqttManager = getattr(self, "_mqttManager", None)
         if mqttManager is not None:
             mqttManager.handleEvent(eventKey, eventPayload)
+
+    def _announceSpoolSelectionChange(self, toolIndex, spoolModel):
+        """
+        Fire spool_selected/spool_deselected for toolIndex only if the spool assigned
+        to it actually changed since the last announcement. Prevents event spam from
+        callers that re-select the same spool (e.g. repeated RFID reads).
+        """
+        newDatabaseId = spoolModel.databaseId if spoolModel is not None else None
+        lastDatabaseId = self._lastAnnouncedSpoolIds.get(
+            toolIndex, _SPOOL_SELECTION_NOT_YET_ANNOUNCED
+        )
+        if lastDatabaseId == newDatabaseId:
+            return
+
+        self._lastAnnouncedSpoolIds[toolIndex] = newDatabaseId
+
+        if spoolModel is not None:
+            eventPayload = {
+                "toolId": toolIndex,
+                "databaseId": spoolModel.databaseId,
+                "spoolName": spoolModel.displayName,
+                "material": spoolModel.material,
+                "colorName": spoolModel.colorName,
+                "remainingWeight": spoolModel.remainingWeight,
+            }
+            self._sendPayload2EventBus(EventBusKeys.EVENT_BUS_SPOOL_SELECTED, eventPayload)
+        else:
+            eventPayload = {"toolId": toolIndex, "databaseId": None}
+            self._sendPayload2EventBus(
+                EventBusKeys.EVENT_BUS_SPOOL_DESELECTED, eventPayload
+            )
 
     def _checkForMissingPluginInfos(self, sendToClient=False):
 
@@ -1044,6 +1083,12 @@ class SpoolmanagerPlugin(
     def on_after_startup(self):
         # check if needed plugins were available
         self._checkForMissingPluginInfos()
+
+        # Announce the spools restored from settings exactly once, so external
+        # consumers of spool_selected/spool_deselected learn the current state
+        # after a restart without loadSelectedSpools() itself firing on every read.
+        for toolIndex, spoolModel in enumerate(self.loadSelectedSpools()):
+            self._announceSpoolSelectionChange(toolIndex, spoolModel)
 
         # MQTT: acquire the OctoPrint-MQTT helper and publish the initial state
         self._mqttManager.initialize()
