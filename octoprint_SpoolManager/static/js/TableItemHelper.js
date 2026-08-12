@@ -50,16 +50,28 @@ function TableItemHelper(
 
     // Filtering - Material
     self.allMaterials = ko.observableArray([]);
-    self.showAllMaterialsForFilter = ko.observable(true);
     self.selectedMaterialsForFilter = ko.observableArray();
+    self.showAllMaterialsForFilter = SPOOLMANAGER_UTILS.buildShowAllForFilterKo(
+        self.allMaterials,
+        self.selectedMaterialsForFilter
+    );
     // Filtering - Vendor
     self.allVendors = ko.observableArray([]);
-    self.showAllVendorsForFilter = ko.observable(true);
     self.selectedVendorsForFilter = ko.observableArray();
+    self.showAllVendorsForFilter = SPOOLMANAGER_UTILS.buildShowAllForFilterKo(
+        self.allVendors,
+        self.selectedVendorsForFilter
+    );
     // Filtering - Color
     self.allColors = ko.observableArray([]);
-    self.showAllColorsForFilter = ko.observable(true);
     self.selectedColorsForFilter = ko.observableArray();
+    self.showAllColorsForFilter = SPOOLMANAGER_UTILS.buildShowAllForFilterKo(
+        self.allColors,
+        self.selectedColorsForFilter,
+        function (colorItem) {
+            return colorItem.colorId;
+        }
+    );
     // Text search filter (server-side for spool tab)
     self.filterTextQuery = ko.observable("");
 
@@ -70,6 +82,12 @@ function TableItemHelper(
     // Set to false before binding, re-enabled via enableLoadingAndReload() on tab show.
     self.isLoadingEnabled = true;
     self.isLoading = ko.observable(false);
+    // Suppresses the selected*ForFilter subscriptions' reloadItems() while updateCatalogs()
+    // re-selects "all" into a grown catalog, mirroring isLoadingEnabled's role for the lazy
+    // table load. Without this, a catalog refresh with "all" selected would fire one
+    // reloadItems() per catalog (material/vendor/color) on top of the load that just finished.
+    // Adopted from mdziekon PR #15 (isUpdatingCatalogs).
+    self.isUpdatingCatalogs = false;
     // ############################################################################################### private functions
 
     self._evalFilter = function (allItems, selectedItems) {
@@ -157,35 +175,28 @@ function TableItemHelper(
         self._loadItems();
     });
 
+    // showAll*ForFilter is now a computed derived from selected*ForFilter (see its
+    // declaration above), so these subscriptions no longer need to toggle it themselves.
+    // The isUpdatingCatalogs guard skips the reload triggered by updateCatalogs() re-selecting
+    // "all" into a grown catalog - that data is already fresh, a reload would be redundant.
+    // Adopted from mdziekon PR #15.
     self.selectedMaterialsForFilter.subscribe(function (newValues) {
-        if (self.selectedMaterialsForFilter().length > 0) {
-            self.showAllMaterialsForFilter(true);
-        } else {
-            self.showAllMaterialsForFilter(false);
+        if (self.isUpdatingCatalogs) {
+            return;
         }
-        // TODO Optimize enable after the values where initialy changed
         self.reloadItems();
     });
     self.selectedVendorsForFilter.subscribe(function (newValues) {
-        if (self.selectedVendorsForFilter().length > 0) {
-            self.showAllVendorsForFilter(true);
-        } else {
-            self.showAllVendorsForFilter(false);
+        if (self.isUpdatingCatalogs) {
+            return;
         }
-        // TODO Optimize enable after the values where initialy changed
         self.reloadItems();
     });
     self.selectedColorsForFilter.subscribe(function (newValues) {
-        if (self.selectedColorsForFilter().length > 0) {
-            self.showAllColorsForFilter(true);
-        } else {
-            self.showAllColorsForFilter(false);
+        if (self.isUpdatingCatalogs) {
+            return;
         }
-
-        if (self.selectedColorsForFilter().length != 0) {
-            // TODO Optimize enable after the values where initialy changed
-            self.reloadItems();
-        }
+        self.reloadItems();
     });
 
     // ################################################################################################ public functions
@@ -214,9 +225,41 @@ function TableItemHelper(
         var vendorsCatalog = self.allCatalogs["vendors"] || [];
         var colorsCatalog = self.allCatalogs["colors"] || [];
 
-        self.allMaterials(materialsCatalog);
-        self.allVendors(vendorsCatalog);
-        self.allColors(colorsCatalog);
+        // Re-select "all" into each catalog that grew (e.g. a newly added filament color)
+        // while "select/deselect all" is active, so the new entry isn't silently filtered
+        // out. isUpdatingCatalogs suppresses the selected*ForFilter subscriptions' reload
+        // while doing so, since this data is already fresh.
+        // Adopted from mdziekon PR #15 (fixes: new colors hidden under "Colors: all").
+        self.isUpdatingCatalogs = true;
+        try {
+            self.allMaterials(materialsCatalog);
+            self.allVendors(vendorsCatalog);
+            self.allColors(colorsCatalog);
+
+            if (self.showAllMaterialsForFilter()) {
+                SPOOLMANAGER_UTILS.selectAllIntoFilter(
+                    self.allMaterials,
+                    self.selectedMaterialsForFilter
+                );
+            }
+            if (self.showAllVendorsForFilter()) {
+                SPOOLMANAGER_UTILS.selectAllIntoFilter(
+                    self.allVendors,
+                    self.selectedVendorsForFilter
+                );
+            }
+            if (self.showAllColorsForFilter()) {
+                SPOOLMANAGER_UTILS.selectAllIntoFilter(
+                    self.allColors,
+                    self.selectedColorsForFilter,
+                    function (colorItem) {
+                        return colorItem.colorId;
+                    }
+                );
+            }
+        } finally {
+            self.isUpdatingCatalogs = false;
+        }
     };
 
     self.paginatedItems = ko.dependentObservable(function () {
@@ -300,70 +343,18 @@ function TableItemHelper(
         }, 180);
     });
 
-    self.doFilterSelectAll = function (data, catalogName) {
-        let checked;
-        switch (catalogName) {
-            case "material":
-                checked = self.showAllMaterialsForFilter();
-                if (checked == true) {
-                    self.selectedMaterialsForFilter().length = 0;
-                    ko.utils.arrayPushAll(
-                        self.selectedMaterialsForFilter,
-                        self.allMaterials()
-                    );
-                } else {
-                    self.selectedMaterialsForFilter.removeAll();
-                }
-                break;
-            case "vendor":
-                checked = self.showAllVendorsForFilter();
-                if (checked == true) {
-                    self.selectedVendorsForFilter().length = 0;
-                    ko.utils.arrayPushAll(
-                        self.selectedVendorsForFilter,
-                        self.allVendors()
-                    );
-                } else {
-                    self.selectedVendorsForFilter.removeAll();
-                }
-                break;
-            case "color":
-                checked = self.showAllColorsForFilter();
-                if (checked == true) {
-                    self.selectedColorsForFilter().length = 0;
-                    // we are using an colorId as a checked attribute, we can just move the color-objects to the selectedArrary
-                    // ko.utils.arrayPushAll(self.spoolItemTableHelper.selectedColorsForFilter, self.spoolItemTableHelper.allColors());
-                    for (let i = 0; i < self.allColors().length; i++) {
-                        let colorObject = self.allColors()[i];
-                        self.selectedColorsForFilter().push(colorObject.colorId);
-                    }
-                    self.selectedColorsForFilter.valueHasMutated();
-                } else {
-                    self.selectedColorsForFilter.removeAll();
-                }
-                break;
-        }
-    };
+    // doFilterSelectAll removed: showAll*ForFilter is a two-way computed now, so the
+    // "select/deselect all" checkbox drives the selection directly via its write().
+    // Adopted from mdziekon PR #15.
 
     self.buildFilterLabel = function (filterLabelName) {
-        // spoolItemTableHelper.selectedColorsForFilter().length == spoolItemTableHelper.allColors().length ? 'all' : spoolItemTableHelper.selectedColorsForFilter().length
-        // to detecting all, we can't use the length, because if just the color is changed then length is still true
-        // so we need to compare each value
         if ("color" == filterLabelName) {
-            var selectionArray = self.selectedColorsForFilter(); // array of colorIds [#ffa500;orange, #ffffff;white]
-            var allColorArray = self.allColors(); // array of object with 'colorId=#ffa500;orange','color=#ffa500','colorName="orange"'
-            // check if all colors selected
-            var selectionCount = 0;
-            for (let colorItem of allColorArray) {
-                var colorId = colorItem.colorId;
-                if (selectionArray.indexOf(colorId) != -1) {
-                    selectionCount++;
-                }
-            }
-            var allColorsSelected = selectionCount == allColorArray.length;
-            return allColorsSelected == true
-                ? "all"
-                : self.selectedColorsForFilter().length;
+            return SPOOLMANAGER_UTILS.buildFilterSelectionsCounter(
+                self.allColors().map(function (colorItem) {
+                    return colorItem.colorId;
+                }),
+                self.selectedColorsForFilter()
+            );
         }
         if ("material" == filterLabelName) {
             return SPOOLMANAGER_UTILS.buildFilterSelectionsCounter(

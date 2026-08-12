@@ -100,15 +100,13 @@
                         Filter:
                         {# Material - Filter #}
                         <span class="dropdown  tabdrop">
-{#                            <a href="#" data-toggle="dropdown" class="dropdown-toggle">Material (<span data-bind="text: spoolItemTableHelper.selectedMaterialsForFilter().length == spoolItemTableHelper.allMaterials().length#}
-{#                                                                                                                        ? 'all' : spoolItemTableHelper.selectedMaterialsForFilter().length" ></span>)#}
                             <a href="#" data-toggle="dropdown" class="dropdown-toggle">Material (<span data-bind="text: spoolItemTableHelper.buildFilterLabel('material')" ></span>)
                             <b class="caret"></b></a>
                             <ul class="dropdown-menu keep-open pre-scrollable" style="padding-left:10px" >
                                 <li>
                                     <div class="checkbox">
                                         <label>
-                                            <input type="checkbox" data-bind="checked:spoolItemTableHelper.showAllMaterialsForFilter , click:spoolItemTableHelper.doFilterSelectAll($data, 'material')"><i>select/deselect all</i>
+                                            <input type="checkbox" data-bind="checked:spoolItemTableHelper.showAllMaterialsForFilter"><i>select/deselect all</i>
                                         </label>
                                     </div>
                                 </li>
@@ -131,7 +129,7 @@
                                 <li>
                                     <div class="checkbox">
                                         <label>
-                                            <input type="checkbox" data-bind="checked:spoolItemTableHelper.showAllVendorsForFilter , click:spoolItemTableHelper.doFilterSelectAll($data, 'vendor')"><i>select/deselect all</i>
+                                            <input type="checkbox" data-bind="checked:spoolItemTableHelper.showAllVendorsForFilter"><i>select/deselect all</i>
                                         </label>
                                     </div>
                                 </li>
@@ -155,7 +153,7 @@
                                 <li>
                                     <div class="checkbox">
                                         <label>
-                                            <input type="checkbox" data-bind="checked:spoolItemTableHelper.showAllColorsForFilter , click:spoolItemTableHelper.doFilterSelectAll($data, 'color')"><i>select/deselect all</i>
+                                            <input type="checkbox" data-bind="checked:spoolItemTableHelper.showAllColorsForFilter"><i>select/deselect all</i>
                                         </label>
                                     </div>
                                 </li>
