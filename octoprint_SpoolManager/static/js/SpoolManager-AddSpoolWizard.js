@@ -754,6 +754,7 @@ function SpoolManagerAddSpoolWizard() {
             self.spoolItemForCreation,
             metadata,
             context.uid,
+            context.rfidTagKey,
             {
                 applyColor: function (colorValue) {
                     self._applyColorValue(colorValue);

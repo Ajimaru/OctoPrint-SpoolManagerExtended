@@ -30,7 +30,7 @@ from octoprint_SpoolManager.WrappedLoggingHandler import WrappedLoggingHandler
 
 FORCE_CREATE_TABLES = False
 
-CURRENT_DATABASE_SCHEME_VERSION = 9
+CURRENT_DATABASE_SCHEME_VERSION = 10
 
 # List all Models
 MODELS = [PluginMetaDataModel, SpoolModel]
@@ -235,12 +235,25 @@ class DatabaseManager(object):
     def _upgradeFrom9To10(self):
         self._logger.info(" Starting 9 -> 10")
         # What is changed:
-        # -
-        self._passMessageToClient(
-            "error",
-            "DatabaseManager",
-            "Could not upgrade database scheme V1 to V2. See OctoPrint.log for details!",
-        )
+        # - rfidTagKey = CharField(null=True, index=True) # since V10
+        # Database-agnostic migration (local SQLite and external MySQL/PostgreSQL),
+        # column check makes the migration idempotent (several OctoPrint instances may share one external database)
+        columnNames = [
+            column.name for column in self._database.get_columns("spo_spoolmodel")
+        ]
+        if "rfidTagKey" in columnNames:
+            self._logger.info(
+                "  column 'rfidTagKey' already present, skipping ALTER TABLE"
+            )
+        else:
+            self._database.execute_sql(
+                "ALTER TABLE spo_spoolmodel ADD COLUMN rfidTagKey VARCHAR(255)"
+            )
+
+        PluginMetaDataModel.update(value="10").where(
+            PluginMetaDataModel.key == PluginMetaDataModel.KEY_DATABASE_SCHEME_VERSION
+        ).execute()
+
         self._logger.info(" Successfully 9 -> 10")
 
     def _upgradeFrom8To9(self):
@@ -2005,6 +2018,29 @@ class DatabaseManager(object):
 
         return self._handleReusableConnection(
             databaseCallMethode, withReusedConnection, "loadSpoolByCode"
+        )
+
+    def loadSpoolByRfidTagKey(self, rfidTagKey, withReusedConnection=False):
+        # Resolves a spool by its `rfidTagKey` field - the stable per-spool key derived
+        # from the last 4 hex chars of a U1 RFID tag's CARD_UID (see
+        # U1RfidManager.deriveRfidTagKey()). Separate from loadSpoolByCode()/`code`,
+        # which is a free-text field a spool may already use for its own serial number.
+        # Same template-exclusion and newest-match-wins semantics as loadSpoolByCode().
+        def databaseCallMethode():
+            if rfidTagKey is None or len(str(rfidTagKey).strip()) == 0:
+                return None
+            return (
+                SpoolModel.select()
+                .where(
+                    (SpoolModel.rfidTagKey == str(rfidTagKey).strip())
+                    & ((SpoolModel.isTemplate == False) | (SpoolModel.isTemplate == None))
+                )
+                .order_by(SpoolModel.databaseId.desc())
+                .first()
+            )
+
+        return self._handleReusableConnection(
+            databaseCallMethode, withReusedConnection, "loadSpoolByRfidTagKey"
         )
 
     def loadSpoolTemplates(self, withReusedConnection=False):
