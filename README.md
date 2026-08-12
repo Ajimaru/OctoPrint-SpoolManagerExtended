@@ -103,6 +103,13 @@ Plugin sends the following custom events to the eventbus like this:
 | plugin_spoolmanager_spool_added |
 | plugin_spoolmanager_spool_deleted |
 
+`spool_selected` and `spool_deselected` fire only when the spool assigned to a
+tool actually changes - not on every settings read, sidebar poll, client
+(re)connect or file upload check. Re-selecting the spool already assigned to a
+tool (e.g. a repeated RFID read) does not fire another event. On plugin
+startup, each tool with a spool restored from settings gets one `spool_selected`
+so consumers learn the current state.
+
 HINT: In combination with the [MQTT Plugin](https://github.com/OctoPrint/OctoPrint-MQTT) you can subscribe e.g. to this topic:
 ```
 octoPrint/event/plugin_spoolmanager_spool_deselected
