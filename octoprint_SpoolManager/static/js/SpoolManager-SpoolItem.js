@@ -127,6 +127,9 @@ let SpoolItem;
         this.usedWeight = ko.observable();
         this.usedPercentage = ko.observable();
         this.code = ko.observable();
+        // Stable U1 RFID matching key (last 4 hex chars of the tag UID), separate from
+        // `code` - see U1RfidManager.deriveRfidTagKey(). Not user-editable.
+        this.rfidTagKey = ko.observable();
         this.batchNumber = ko.observable();
         this.noteText = ko.observable();
         this.noteDeltaFormat = ko.observable();
@@ -421,6 +424,7 @@ let SpoolItem;
         this.remainingWeight(parseFloat(updateData.remainingWeight));
         this.remainingPercentage(updateData.remainingPercentage);
         this.code(updateData.code);
+        this.rfidTagKey(updateData.rfidTagKey);
         this.batchNumber(updateData.batchNumber);
         this.usedPercentage(updateData.usedPercentage);
 

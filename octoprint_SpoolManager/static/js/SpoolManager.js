@@ -1857,6 +1857,7 @@ $(function () {
 
             var rfidContext = {
                 uid: data.uid,
+                rfidTagKey: data.rfidTagKey,
                 channel: data.channel,
                 metadata: data.metadata || {}
             };

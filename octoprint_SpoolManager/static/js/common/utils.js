@@ -394,9 +394,14 @@ SPOOLMANAGER_U1RFID = {
     // dialog's spoolItemForEditing). Only writes fields the tag actually carries and
     // never clears an existing value - this is a suggestion, not a takeover.
     //
+    // `rfidTagKey` is the stable matching key derived by the backend
+    // (U1RfidManager.deriveRfidTagKey(), last 4 hex chars of the UID) and passed through
+    // from the u1RfidUnknownTag push / getUnknownTags() response - NOT recomputed here,
+    // so there is exactly one place that owns the derivation rule.
+    //
     // `options.applyColor` receives the composed color code, because the two dialogs
     // drive their color pickers differently.
-    applyToSpoolItem: function (spoolItem, metadata, uid, options) {
+    applyToSpoolItem: function (spoolItem, metadata, uid, rfidTagKey, options) {
         if (spoolItem == null || metadata == null) {
             return;
         }
@@ -459,8 +464,14 @@ SPOOLMANAGER_U1RFID = {
             spoolItem.totalCombinedWeight(nominalWeight + existingSpoolWeight);
         }
 
-        // The UID is what makes the tag resolvable next time.
-        setIfPresent("code", uid);
+        // `code` is deliberately NOT set to the UID here: it's a free-text field a spool
+        // may already carry its own, unrelated serial number in, and none of the fields
+        // filament_detect exposes (SKU, MF_DATE, ...) is an actual serial number - they're
+        // product/batch data, identical across every spool of the same item (see
+        // U1RfidManager's SKU-collision note). `rfidTagKey` is the only thing
+        // U1RfidManager actually looks tags up by - see the PRELIMINARY collision note on
+        // SpoolModel.rfidTagKey / deriveRfidTagKey().
+        setIfPresent("rfidTagKey", rfidTagKey);
 
         var colorValue = SPOOLMANAGER_U1RFID.buildColorValue(metadata);
         if (colorValue != null && typeof options.applyColor === "function") {
