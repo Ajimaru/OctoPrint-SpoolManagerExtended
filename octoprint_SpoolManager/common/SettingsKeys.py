@@ -59,6 +59,11 @@ class SettingsKeys:
     ## OctoScale (external scale + NFC writer device)
     SETTINGS_KEY_OCTOSCALE_ENABLED = "octoScaleEnabled"
     SETTINGS_KEY_OCTOSCALE_URL = "octoScaleUrl"
+    # Which format an NFC-V/ISO15693 tag gets written in: "extended" (OctoScale's own
+    # full-field layout, default) or "openSpool" (NDEF/JSON, phone-readable, fewer fields -
+    # same tradeoff as NTAG's OpenSpool format). Global setting, not chosen per write -
+    # Mifare Classic has no OpenSpool option (see TagFormats.py's module docstring for why).
+    SETTINGS_KEY_OCTOSCALE_NFCV_FORMAT = "octoScaleNfcvFormat"
 
     ## SpoolmanDB-Community (optional remote temperature suggestions)
     SETTINGS_KEY_SPOOLMANDB_ENABLED = "spoolmanDbEnabled"

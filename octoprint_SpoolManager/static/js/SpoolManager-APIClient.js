@@ -495,11 +495,11 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
         );
     };
 
-    this.writeOctoScaleTag = function (databaseId, tagFormat, responseHandler) {
+    // No tagFormat parameter anymore: the firmware picks the format from the tag actually
+    // on the reader and reports which one it used via getOctoScaleWriteStatus below. This
+    // call only starts the write (device answers 202) - it does not wait for the result.
+    this.writeOctoScaleTag = function (databaseId, responseHandler) {
         var payload = {databaseId: databaseId};
-        if (tagFormat) {
-            payload.tagFormat = tagFormat;
-        }
 
         _callApi(
             _buildPluginUrl("octoscale/writeTag"),
@@ -512,6 +512,29 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
             function (body, rawText) {
                 responseHandler(
                     body || {success: false, error: rawText || "Could not write the tag."}
+                );
+            }
+        );
+    };
+
+    // Polls the result of a write started via writeOctoScaleTag. Returns
+    // {success, pending, done, ok, error, format, bytesWritten, droppedFields}. Stop
+    // polling once done=true - the device self-clears its status after being read once.
+    this.getOctoScaleWriteStatus = function (responseHandler) {
+        _callApi(
+            _buildPluginUrl("octoscale/writeStatus"),
+            {method: "GET"},
+            function (data) {
+                responseHandler(
+                    data || {success: false, error: "No answer from the plugin backend."}
+                );
+            },
+            function (body, rawText) {
+                responseHandler(
+                    body || {
+                        success: false,
+                        error: rawText || "Could not read the write status."
+                    }
                 );
             }
         );

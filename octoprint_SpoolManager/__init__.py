@@ -1336,6 +1336,7 @@ class SpoolmanagerPlugin(
         ## OctoScale
         settings[SettingsKeys.SETTINGS_KEY_OCTOSCALE_ENABLED] = False
         settings[SettingsKeys.SETTINGS_KEY_OCTOSCALE_URL] = ""
+        settings[SettingsKeys.SETTINGS_KEY_OCTOSCALE_NFCV_FORMAT] = "extended"
 
         ## SpoolmanDB-Community
         settings[SettingsKeys.SETTINGS_KEY_SPOOLMANDB_ENABLED] = False

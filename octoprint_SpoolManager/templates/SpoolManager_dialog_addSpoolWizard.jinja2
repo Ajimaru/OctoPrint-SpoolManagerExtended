@@ -429,7 +429,11 @@
                     </div>
                     <div data-bind="visible: octoScaleTagWriter.tagPresent">
                         <i class="fas fa-check text-success"></i> {{ _('Tag detected') }}
+                        <span class="muted" data-bind="visible: octoScaleTagWriter.formatLabel">(<span data-bind="text: octoScaleTagWriter.formatLabel"></span>)</span>
                         <span class="muted" data-bind="text: octoScaleTagWriter.tagSpoolId() != null ? '(' + octoScaleTagWriter.tagSpoolId() + ')' : ''"></span>
+                    </div>
+                    <div class="text-warning" data-bind="visible: octoScaleTagWriter.tagPresent() && octoScaleTagWriter.hasExtendedData">
+                        <i class="fas fa-info-circle"></i> {{ _('This tag already carries extended data (material/color/weights) which will be overwritten.') }}
                     </div>
 
                     <div class="alert alert-warning" style="margin-top: 8px;"
@@ -448,7 +452,10 @@
                     </div>
 
                     <div class="text-success" style="margin-top: 8px;" data-bind="visible: octoScaleTagWriter.writeSucceeded">
-                        <i class="fas fa-check"></i> {{ _('Tag written and verified.') }}
+                        <i class="fas fa-check"></i> {{ _('Tag written and verified') }}<span data-bind="visible: octoScaleTagWriter.writeFormatUsed"> (<span data-bind="text: octoScaleTagWriter.writeFormatUsed"></span>)</span>.
+                        <!-- ko if: octoScaleTagWriter.writeDroppedFields().length > 0 -->
+                        <br><small class="text-warning"><i class="fas fa-exclamation-triangle"></i> {{ _('Some fields did not fit on the tag and were left out') }}: <span data-bind="text: octoScaleTagWriter.writeDroppedFields().join(', ')"></span></small>
+                        <!-- /ko -->
                     </div>
                     <div class="text-error" style="margin-top: 8px;" data-bind="visible: octoScaleTagWriter.errorMessage">
                         <i class="fas fa-exclamation-triangle"></i> <span data-bind="text: octoScaleTagWriter.errorMessage"></span>

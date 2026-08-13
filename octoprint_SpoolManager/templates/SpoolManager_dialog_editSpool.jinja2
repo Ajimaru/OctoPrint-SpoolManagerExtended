@@ -764,7 +764,12 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                                     <i class="fas fa-spinner fa-spin"></i> <small>Place a tag on the reader...</small>
                                                 </span>
                                                 <span style="margin-left: 8px;" data-bind="visible: spoolDialog.octoScaleTagWriter.tagPresent">
-                                                    <i class="fas fa-check text-success"></i> <small>Tag detected</small>
+                                                    <i class="fas fa-check text-success"></i> <small>Tag detected<!--
+                                                    --><span data-bind="visible: spoolDialog.octoScaleTagWriter.formatLabel">: <span data-bind="text: spoolDialog.octoScaleTagWriter.formatLabel"></span></span></small>
+                                                </span>
+                                                <span class="help-block" style="margin-bottom: 0;"
+                                                      data-bind="visible: spoolDialog.octoScaleTagWriter.tagPresent() && spoolDialog.octoScaleTagWriter.hasExtendedData">
+                                                    <small class="text-warning"><i class="fas fa-info-circle"></i> This tag already carries extended data (material/color/weights) which will be overwritten.</small>
                                                 </span>
                                                 <span class="help-block" style="margin-bottom: 0;"
                                                       data-bind="visible: spoolDialog.octoScaleTagWriter.needsOverwriteConfirmation() && !spoolDialog.octoScaleTagWriter.overwriteConfirmed()">
@@ -773,7 +778,11 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                                             data-bind="click: spoolDialog.octoScaleTagWriter.confirmOverwrite">Overwrite anyway</button>
                                                 </span>
                                                 <span class="help-block text-success" style="margin-bottom: 0;" data-bind="visible: spoolDialog.octoScaleTagWriter.writeSucceeded">
-                                                    <small><i class="fas fa-check"></i> Tag written and verified.</small>
+                                                    <small><i class="fas fa-check"></i> Tag written and verified<!--
+                                                    --><span data-bind="visible: spoolDialog.octoScaleTagWriter.writeFormatUsed"> (<span data-bind="text: spoolDialog.octoScaleTagWriter.writeFormatUsed"></span>)</span>.</small>
+                                                    <!-- ko if: spoolDialog.octoScaleTagWriter.writeDroppedFields().length > 0 -->
+                                                    <br><small class="text-warning"><i class="fas fa-exclamation-triangle"></i> Some fields did not fit on the tag and were left out: <span data-bind="text: spoolDialog.octoScaleTagWriter.writeDroppedFields().join(', ')"></span></small>
+                                                    <!-- /ko -->
                                                 </span>
                                                 <span class="help-block text-error" style="margin-bottom: 0;" data-bind="visible: spoolDialog.octoScaleTagWriter.errorMessage">
                                                     <small><i class="fas fa-exclamation-triangle"></i> <span data-bind="text: spoolDialog.octoScaleTagWriter.errorMessage"></span></small>
