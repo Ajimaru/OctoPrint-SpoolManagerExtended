@@ -145,7 +145,11 @@ function SpoolManagerEditSpoolDialog() {
         diameterTolerance: "Diameter tolerance",
         flowRateCompensation: "Flow rate compensation",
         temperature: "Tool temperature",
+        minTemperature: "Tool temperature (min)",
+        maxTemperature: "Tool temperature (max)",
         bedTemperature: "Bed temperature",
+        minBedTemperature: "Bed temperature (min)",
+        maxBedTemperature: "Bed temperature (max)",
         enclosureTemperature: "Enclosure temperature",
         offsetTemperature: "Offset tool temperature",
         offsetBedTemperature: "Offset bed temperature",
@@ -838,7 +842,33 @@ function SpoolManagerEditSpoolDialog() {
             self._isEveryMandatoryFieldValid() &&
             self._isEveryFilledDateFieldValid() &&
             // block submit while any number field holds an invalid value (Fall A)
-            self.invalidNumberFields().length === 0
+            self.invalidNumberFields().length === 0 &&
+            self.isTemperatureRangePairValid()
+        );
+    });
+
+    // min/max temperature must both be set or both left empty, and min must not exceed max
+    self._isTemperatureRangePairValid = function (minValue, maxValue) {
+        var min = parseFloat(minValue);
+        var max = parseFloat(maxValue);
+        var minSet = !isNaN(min);
+        var maxSet = !isNaN(max);
+        if (minSet !== maxSet) {
+            return false;
+        }
+        return !minSet || !maxSet || min <= max;
+    };
+
+    self.isTemperatureRangePairValid = ko.pureComputed(function () {
+        return (
+            self._isTemperatureRangePairValid(
+                self.spoolItemForEditing.minTemperature(),
+                self.spoolItemForEditing.maxTemperature()
+            ) &&
+            self._isTemperatureRangePairValid(
+                self.spoolItemForEditing.minBedTemperature(),
+                self.spoolItemForEditing.maxBedTemperature()
+            )
         );
     });
 

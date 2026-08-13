@@ -518,7 +518,7 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
     };
 
     // Polls the result of a write started via writeOctoScaleTag. Returns
-    // {success, pending, done, ok, error, format, bytesWritten, droppedFields}. Stop
+    // {success, pending, done, ok, error, format, bytesWritten, droppedFields, warning}. Stop
     // polling once done=true - the device self-clears its status after being read once.
     this.getOctoScaleWriteStatus = function (responseHandler) {
         _callApi(
