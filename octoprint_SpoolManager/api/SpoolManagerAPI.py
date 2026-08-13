@@ -78,7 +78,11 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         "diameterTolerance": "Diameter tolerance",
         "flowRateCompensation": "Flow rate compensation",
         "temperature": "Tool temperature",
+        "minTemperature": "Tool temperature (min)",
+        "maxTemperature": "Tool temperature (max)",
         "bedTemperature": "Bed temperature",
+        "minBedTemperature": "Bed temperature (min)",
+        "maxBedTemperature": "Bed temperature (max)",
         "enclosureTemperature": "Enclosure temperature",
         "offsetTemperature": "Offset tool temperature",
         "offsetBedTemperature": "Offset bed temperature",
@@ -216,8 +220,34 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         spoolModel.temperature = self._toIntFromJSONOrNone(
             "temperature", jsonData, validationErrors, minValue=0
         )
+        spoolModel.minTemperature = self._toIntFromJSONOrNone(
+            "minTemperature", jsonData, validationErrors, minValue=0
+        )
+        spoolModel.maxTemperature = self._toIntFromJSONOrNone(
+            "maxTemperature", jsonData, validationErrors, minValue=0
+        )
         spoolModel.bedTemperature = self._toIntFromJSONOrNone(
             "bedTemperature", jsonData, validationErrors, minValue=0
+        )
+        spoolModel.minBedTemperature = self._toIntFromJSONOrNone(
+            "minBedTemperature", jsonData, validationErrors, minValue=0
+        )
+        spoolModel.maxBedTemperature = self._toIntFromJSONOrNone(
+            "maxBedTemperature", jsonData, validationErrors, minValue=0
+        )
+        self._validateTemperatureRangePair(
+            spoolModel.minTemperature,
+            spoolModel.maxTemperature,
+            "minTemperature",
+            "maxTemperature",
+            validationErrors,
+        )
+        self._validateTemperatureRangePair(
+            spoolModel.minBedTemperature,
+            spoolModel.maxBedTemperature,
+            "minBedTemperature",
+            "maxBedTemperature",
+            validationErrors,
         )
         spoolModel.enclosureTemperature = self._toIntFromJSONOrNone(
             "enclosureTemperature", jsonData, validationErrors, minValue=0
@@ -426,6 +456,23 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             else:
                 value = None
         return value
+
+    def _validateTemperatureRangePair(
+        self, minValue, maxValue, minKey, maxKey, validationErrors
+    ):
+        if (minValue is None) != (maxValue is None):
+            validationErrors.append(
+                self._fieldLabel(minKey)
+                + " and "
+                + self._fieldLabel(maxKey)
+                + " must both be set or both left empty"
+            )
+        elif minValue is not None and maxValue is not None and minValue > maxValue:
+            validationErrors.append(
+                self._fieldLabel(minKey)
+                + " must not be greater than "
+                + self._fieldLabel(maxKey)
+            )
 
     def _toDateTimeFromJSONOrNone(self, key, json, validationErrors=None):
         value = self._getValueFromJSONOrNone(key, json)
@@ -1503,8 +1550,8 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     @no_firstrun_access
     def getOctoScaleWriteStatus(self):
         # Proxies /nfcwritestatus: {pending, done, ok, error/msg, format, bytesWritten,
-        # droppedFields}. The device self-clears "done" once it has been read once, so the
-        # frontend must stop polling as soon as done=true comes back (see
+        # droppedFields, warning}. The device self-clears "done" once it has been read once, so
+        # the frontend must stop polling as soon as done=true comes back (see
         # SpoolManager-OctoScale.js).
         baseUrl, errorResponse = self._getOctoScaleBaseUrl()
         if errorResponse is not None:
@@ -1531,6 +1578,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 "format": statusData.get("format"),
                 "bytesWritten": statusData.get("bytesWritten"),
                 "droppedFields": statusData.get("droppedFields"),
+                "warning": statusData.get("warning") or None,
             }
         )
 

@@ -30,7 +30,7 @@ from octoprint_SpoolManager.WrappedLoggingHandler import WrappedLoggingHandler
 
 FORCE_CREATE_TABLES = False
 
-CURRENT_DATABASE_SCHEME_VERSION = 10
+CURRENT_DATABASE_SCHEME_VERSION = 11
 
 # List all Models
 MODELS = [PluginMetaDataModel, SpoolModel]
@@ -216,6 +216,7 @@ class DatabaseManager(object):
             self._upgradeFrom7To8,
             self._upgradeFrom8To9,
             self._upgradeFrom9To10,
+            self._upgradeFrom10To11,
         ]
 
         for migrationMethodIndex in range(
@@ -231,6 +232,39 @@ class DatabaseManager(object):
             migrationFunctions[migrationMethodIndex]()
             pass
         pass
+
+    def _upgradeFrom10To11(self):
+        self._logger.info(" Starting 10 -> 11")
+        # What is changed:
+        # - minTemperature = IntegerField(null=True) # since V11
+        # - maxTemperature = IntegerField(null=True) # since V11
+        # - minBedTemperature = IntegerField(null=True) # since V11
+        # - maxBedTemperature = IntegerField(null=True) # since V11
+        # Database-agnostic migration (local SQLite and external MySQL/PostgreSQL),
+        # column check makes the migration idempotent (several OctoPrint instances may share one external database)
+        columnNames = [
+            column.name for column in self._database.get_columns("spo_spoolmodel")
+        ]
+        for columnName in (
+            "minTemperature",
+            "maxTemperature",
+            "minBedTemperature",
+            "maxBedTemperature",
+        ):
+            if columnName in columnNames:
+                self._logger.info(
+                    "  column '" + columnName + "' already present, skipping ALTER TABLE"
+                )
+            else:
+                self._database.execute_sql(
+                    "ALTER TABLE spo_spoolmodel ADD COLUMN " + columnName + " INTEGER"
+                )
+
+        PluginMetaDataModel.update(value="11").where(
+            PluginMetaDataModel.key == PluginMetaDataModel.KEY_DATABASE_SCHEME_VERSION
+        ).execute()
+
+        self._logger.info(" Successfully 10 -> 11")
 
     def _upgradeFrom9To10(self):
         self._logger.info(" Starting 9 -> 10")

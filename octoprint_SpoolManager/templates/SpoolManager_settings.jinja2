@@ -993,6 +993,47 @@ FPE;	2.16
                                 {{ _('Chosen automatically by tag type: Mifare Classic 1K gets an extended layout (material, vendor, color, weights, temperatures); NTAG213/215/216 gets an OpenSpool NDEF/JSON record readable by phones; other tags fall back to the database id only.') }}
                             </small>
                         </span>
+                        <table class="table table-condensed" style="margin-bottom: 6px; margin-top: 6px;">
+                            <thead>
+                                <tr>
+                                    <th>{{ _('Tag') }}</th>
+                                    <th>{{ _('Extended') }}</th>
+                                    <th>{{ _('OpenSpool') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>{{ _('Mifare Classic 1K') }}</td>
+                                    <td>{{ _('everything') }}</td>
+                                    <td>{{ _('not supported (always Extended)') }}</td>
+                                </tr>
+                                <tr>
+                                    <td>{{ _('NTAG215 / NTAG216') }}</td>
+                                    <td>&ndash;</td>
+                                    <td>{{ _('everything') }}</td>
+                                </tr>
+                                <tr>
+                                    <td>{{ _('NTAG213') }}</td>
+                                    <td>&ndash;</td>
+                                    <td>{{ _('no temperatures, no diameter') }}</td>
+                                </tr>
+                                <tr>
+                                    <td>{{ _('NFC-V, small (SLI-X, 112 B)') }}</td>
+                                    <td>{{ _('everything') }}</td>
+                                    <td><strong>{{ _('ID + material only') }}</strong></td>
+                                </tr>
+                                <tr>
+                                    <td>{{ _('NFC-V, large (SLIX2, ST25DV, 316 B+)') }}</td>
+                                    <td>{{ _('everything') }}</td>
+                                    <td>{{ _('everything') }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <span class="help-block">
+                            <small>
+                                {{ _('OpenSpool can be read by any generic NFC app on a phone; Extended stores more on small tags but only OctoScale understands it. On small NFC-V tags, prefer Extended.') }}
+                            </small>
+                        </span>
                     </div>
                 </div>
                 <div class="control-group">
