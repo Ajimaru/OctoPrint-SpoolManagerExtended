@@ -16,6 +16,10 @@
 
 const OCTOSCALE_WEIGHT_POLL_INTERVAL_MS = 1000;
 const OCTOSCALE_NFC_POLL_INTERVAL_MS = 1200;
+const OCTOSCALE_WRITE_STATUS_POLL_INTERVAL_MS = 500;
+// The firmware self-clears its write status once read as done - if that never arrives
+// (device rebooted mid-write, lost the flag, etc.) stop polling rather than spin forever.
+const OCTOSCALE_WRITE_STATUS_TIMEOUT_MS = 20000;
 
 // The device is a single-core ESP32-S2 whose NFC task competes with its web server, so individual
 // requests occasionally take seconds or drop out entirely while the reader is polling. Reporting
@@ -143,6 +147,23 @@ function SpoolManagerOctoScaleTagWriter(apiClient) {
     self.writeSucceeded = ko.observable(false);
     self.overwriteConfirmed = ko.observable(false);
 
+    // Tag type as detected by the firmware: exactly one of "mifareClassic1k", "ntag",
+    // "nfcv", "unknown" (verified against the firmware source - NTAG213/215/216 are NOT
+    // distinguished in this field, that detail lives in formatLabel/capacityBytes
+    // instead). writeFormat/formatLabel are the format the firmware will actually pick
+    // (see common/TagFormats.py's formatForTagType for the same mapping, used server-side
+    // only as a fallback until the device's own answer arrives).
+    self.tagType = ko.observable(null);
+    self.tagTypeName = ko.observable(null); // coarse protocol class, e.g. "NFC-A"/"NFC-V"
+    self.writeFormat = ko.observable(null);
+    self.formatLabel = ko.observable(null); // human label, e.g. "Mifare Classic 1K"
+    self.hasExtendedData = ko.observable(false); // tag already carries an extended payload
+
+    // Result of the last completed write, once the async write finishes.
+    self.writeFormatUsed = ko.observable(null);
+    self.writeBytesWritten = ko.observable(null);
+    self.writeDroppedFields = ko.observableArray([]);
+
     // The spool the tag should point to. Set by the caller before starting.
     self.targetDatabaseId = ko.observable(null);
 
@@ -210,6 +231,20 @@ function SpoolManagerOctoScaleTagWriter(apiClient) {
                 self.tagSpoolDisplayName(
                     responseData.present === true ? responseData.spoolDisplayName : null
                 );
+                self.tagType(responseData.present === true ? responseData.tagType : null);
+                self.tagTypeName(
+                    responseData.present === true ? responseData.tagTypeName : null
+                );
+                self.writeFormat(
+                    responseData.present === true ? responseData.writeFormat : null
+                );
+                self.formatLabel(
+                    responseData.present === true ? responseData.formatLabel : null
+                );
+                self.hasExtendedData(
+                    responseData.present === true &&
+                        responseData.hasExtendedData === true
+                );
                 // a different tag on the reader invalidates a confirmation given for the previous one
                 if (previousSpoolId != self.tagSpoolId()) {
                     self.overwriteConfirmed(false);
@@ -246,15 +281,33 @@ function SpoolManagerOctoScaleTagWriter(apiClient) {
         pollTimerId = setInterval(readNfcStatus, OCTOSCALE_NFC_POLL_INTERVAL_MS);
     };
 
+    var writeStatusTimerId = null;
+    var writeStatusElapsedMs = 0;
+
+    var stopWriteStatusPolling = function () {
+        if (writeStatusTimerId != null) {
+            clearInterval(writeStatusTimerId);
+            writeStatusTimerId = null;
+        }
+        writeStatusElapsedMs = 0;
+    };
+
     self.stop = function () {
         if (pollTimerId != null) {
             clearInterval(pollTimerId);
             pollTimerId = null;
         }
+        stopWriteStatusPolling();
         self.isActive(false);
+        self.isWriting(false);
         self.tagPresent(false);
         self.tagSpoolId(null);
         self.tagSpoolDisplayName(null);
+        self.tagType(null);
+        self.tagTypeName(null);
+        self.writeFormat(null);
+        self.formatLabel(null);
+        self.hasExtendedData(false);
         self.overwriteConfirmed(false);
         self.errorMessage(null);
     };
@@ -263,30 +316,83 @@ function SpoolManagerOctoScaleTagWriter(apiClient) {
         self.overwriteConfirmed(true);
     };
 
+    // Writes are async on the firmware: writeOctoScaleTag only starts the write (device
+    // answers 202), the actual result is polled via getOctoScaleWriteStatus until "done".
     self.writeTag = function () {
         if (self.canWrite() == false) {
             return;
         }
         self.isWriting(true);
         self.errorMessage(null);
-        // "spoolIdNtag" is the only format the current hardware can write; see common/TagFormats.py
-        self.apiClient.writeOctoScaleTag(
-            self.targetDatabaseId(),
-            "spoolIdNtag",
-            function (responseData) {
+        self.writeSucceeded(false);
+        self.writeFormatUsed(null);
+        self.writeBytesWritten(null);
+        self.writeDroppedFields([]);
+
+        self.apiClient.writeOctoScaleTag(self.targetDatabaseId(), function (responseData) {
+            if (self.isActive() == false) {
+                return;
+            }
+            if (!responseData || responseData.success !== true) {
                 self.isWriting(false);
-                if (responseData && responseData.success === true) {
-                    self.writeSucceeded(true);
-                    self.errorMessage(null);
-                } else {
+                self.writeSucceeded(false);
+                self.errorMessage(
+                    responseData && responseData.error
+                        ? responseData.error
+                        : "Could not write the tag."
+                );
+                return;
+            }
+
+            // Accepted (202) - now poll /nfcwritestatus until the firmware reports done.
+            writeStatusElapsedMs = 0;
+            writeStatusTimerId = setInterval(function () {
+                if (self.isActive() == false) {
+                    stopWriteStatusPolling();
+                    return;
+                }
+                writeStatusElapsedMs += OCTOSCALE_WRITE_STATUS_POLL_INTERVAL_MS;
+                if (writeStatusElapsedMs >= OCTOSCALE_WRITE_STATUS_TIMEOUT_MS) {
+                    stopWriteStatusPolling();
+                    self.isWriting(false);
                     self.writeSucceeded(false);
                     self.errorMessage(
-                        responseData && responseData.error
-                            ? responseData.error
-                            : "Could not write the tag."
+                        "OctoScale did not report a write result in time."
                     );
+                    return;
                 }
-            }
-        );
+
+                self.apiClient.getOctoScaleWriteStatus(function (statusData) {
+                    if (self.isActive() == false) {
+                        stopWriteStatusPolling();
+                        return;
+                    }
+                    if (!statusData || statusData.success !== true) {
+                        // transient read failure while polling - keep trying until the timeout
+                        return;
+                    }
+                    if (statusData.done !== true) {
+                        return;
+                    }
+
+                    stopWriteStatusPolling();
+                    self.isWriting(false);
+                    if (statusData.ok === true) {
+                        self.writeSucceeded(true);
+                        self.errorMessage(null);
+                        self.writeFormatUsed(statusData.format || null);
+                        self.writeBytesWritten(
+                            statusData.bytesWritten != null
+                                ? statusData.bytesWritten
+                                : null
+                        );
+                        self.writeDroppedFields(statusData.droppedFields || []);
+                    } else {
+                        self.writeSucceeded(false);
+                        self.errorMessage(statusData.error || "Could not write the tag.");
+                    }
+                });
+            }, OCTOSCALE_WRITE_STATUS_POLL_INTERVAL_MS);
+        });
     };
 }
