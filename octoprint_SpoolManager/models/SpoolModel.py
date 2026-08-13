@@ -101,7 +101,11 @@ class SpoolModel(BaseModel):
     flowRateCompensation = IntegerField(null=True)  # since V3
     # Temperature
     temperature = IntegerField(null=True)
+    minTemperature = IntegerField(null=True)  # since V11
+    maxTemperature = IntegerField(null=True)  # since V11
     bedTemperature = IntegerField(null=True)  # since V3
+    minBedTemperature = IntegerField(null=True)  # since V11
+    maxBedTemperature = IntegerField(null=True)  # since V11
     enclosureTemperature = IntegerField(
         null=True
     )  # since V3, V4 renamed from encloser to enclosure

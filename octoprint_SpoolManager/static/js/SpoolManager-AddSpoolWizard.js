@@ -205,9 +205,23 @@ function SpoolManagerAddSpoolWizard() {
         self._spoolmanApplyingTemperatures = true;
         if (!self._spoolmanTemperatureEdited.tool && product.extruder_temp != null) {
             self.spoolItemForCreation.temperature(product.extruder_temp);
+            if (Array.isArray(product.extruder_temp_range) && product.extruder_temp_range.length === 2) {
+                self.spoolItemForCreation.minTemperature(product.extruder_temp_range[0]);
+                self.spoolItemForCreation.maxTemperature(product.extruder_temp_range[1]);
+            } else {
+                self.spoolItemForCreation.minTemperature(null);
+                self.spoolItemForCreation.maxTemperature(null);
+            }
         }
         if (!self._spoolmanTemperatureEdited.bed && product.bed_temp != null) {
             self.spoolItemForCreation.bedTemperature(product.bed_temp);
+            if (Array.isArray(product.bed_temp_range) && product.bed_temp_range.length === 2) {
+                self.spoolItemForCreation.minBedTemperature(product.bed_temp_range[0]);
+                self.spoolItemForCreation.maxBedTemperature(product.bed_temp_range[1]);
+            } else {
+                self.spoolItemForCreation.minBedTemperature(null);
+                self.spoolItemForCreation.maxBedTemperature(null);
+            }
         }
         self._spoolmanApplyingTemperatures = false;
     };
@@ -558,8 +572,34 @@ function SpoolManagerAddSpoolWizard() {
         if (stepId === "weight" && !self.isWeightRequirementMet()) {
             return "Please enter the total weight (spool including filament).";
         }
+        if (stepId === "temperatures" && !self._isTemperatureRangePairValid()) {
+            return "Set both min and max for each temperature range, with min not greater than max.";
+        }
         return "";
     });
+
+    self._isTemperatureRangePairValid = function () {
+        var isPairValid = function (minValue, maxValue) {
+            var min = parseFloat(minValue);
+            var max = parseFloat(maxValue);
+            var minSet = !isNaN(min);
+            var maxSet = !isNaN(max);
+            if (minSet !== maxSet) {
+                return false;
+            }
+            return !minSet || !maxSet || min <= max;
+        };
+        return (
+            isPairValid(
+                self.spoolItemForCreation.minTemperature(),
+                self.spoolItemForCreation.maxTemperature()
+            ) &&
+            isPairValid(
+                self.spoolItemForCreation.minBedTemperature(),
+                self.spoolItemForCreation.maxBedTemperature()
+            )
+        );
+    };
 
     self.canGoNext = ko.pureComputed(function () {
         return self.currentStepBlockReason().length === 0;
@@ -982,7 +1022,19 @@ function SpoolManagerAddSpoolWizard() {
         if (self.useFullFieldSet()) {
             entries = entries.concat([
                 reviewEntry("Tool temperature", item.temperature()),
+                reviewEntry(
+                    "Tool temperature range",
+                    item.minTemperature() != null && item.maxTemperature() != null
+                        ? item.minTemperature() + " - " + item.maxTemperature() + " °C"
+                        : null
+                ),
                 reviewEntry("Bed temperature", item.bedTemperature()),
+                reviewEntry(
+                    "Bed temperature range",
+                    item.minBedTemperature() != null && item.maxBedTemperature() != null
+                        ? item.minBedTemperature() + " - " + item.maxBedTemperature() + " °C"
+                        : null
+                ),
                 reviewEntry("Enclosure temperature", item.enclosureTemperature()),
                 reviewEntry("Flow rate compensation", item.flowRateCompensation()),
                 reviewEntry("Serial number", item.code()),
@@ -1167,6 +1219,26 @@ function SpoolManagerAddSpoolWizard() {
             }
         });
         self.spoolItemForCreation.bedTemperature.subscribe(function () {
+            if (!self._spoolmanApplyingTemperatures) {
+                self._spoolmanTemperatureEdited.bed = true;
+            }
+        });
+        self.spoolItemForCreation.minTemperature.subscribe(function () {
+            if (!self._spoolmanApplyingTemperatures) {
+                self._spoolmanTemperatureEdited.tool = true;
+            }
+        });
+        self.spoolItemForCreation.maxTemperature.subscribe(function () {
+            if (!self._spoolmanApplyingTemperatures) {
+                self._spoolmanTemperatureEdited.tool = true;
+            }
+        });
+        self.spoolItemForCreation.minBedTemperature.subscribe(function () {
+            if (!self._spoolmanApplyingTemperatures) {
+                self._spoolmanTemperatureEdited.bed = true;
+            }
+        });
+        self.spoolItemForCreation.maxBedTemperature.subscribe(function () {
             if (!self._spoolmanApplyingTemperatures) {
                 self._spoolmanTemperatureEdited.bed = true;
             }

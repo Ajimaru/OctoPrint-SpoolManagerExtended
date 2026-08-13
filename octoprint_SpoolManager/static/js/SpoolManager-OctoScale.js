@@ -163,6 +163,9 @@ function SpoolManagerOctoScaleTagWriter(apiClient) {
     self.writeFormatUsed = ko.observable(null);
     self.writeBytesWritten = ko.observable(null);
     self.writeDroppedFields = ko.observableArray([]);
+    // Human-readable warning from the firmware (e.g. tag too small for the chosen
+    // format), null when the write had no caveats.
+    self.writeWarning = ko.observable(null);
 
     // The spool the tag should point to. Set by the caller before starting.
     self.targetDatabaseId = ko.observable(null);
@@ -328,6 +331,7 @@ function SpoolManagerOctoScaleTagWriter(apiClient) {
         self.writeFormatUsed(null);
         self.writeBytesWritten(null);
         self.writeDroppedFields([]);
+        self.writeWarning(null);
 
         self.apiClient.writeOctoScaleTag(self.targetDatabaseId(), function (responseData) {
             if (self.isActive() == false) {
@@ -387,6 +391,7 @@ function SpoolManagerOctoScaleTagWriter(apiClient) {
                                 : null
                         );
                         self.writeDroppedFields(statusData.droppedFields || []);
+                        self.writeWarning(statusData.warning || null);
                     } else {
                         self.writeSucceeded(false);
                         self.errorMessage(statusData.error || "Could not write the tag.");

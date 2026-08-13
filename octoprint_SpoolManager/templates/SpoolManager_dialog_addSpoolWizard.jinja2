@@ -114,7 +114,7 @@
                                                               enable: !spoolmanLoading() && !isU1RfidFlow()"></select>
                         <span class="help-block" data-bind="visible: isU1RfidFlow"><small>{{ _('Disabled - this spool is prefilled from its RFID tag, which knows the exact values for this physical spool. Picking a catalog product here would overwrite them with generic ones.') }}</small></span>
                         <span class="help-block" data-bind="visible: !isU1RfidFlow() && selectedSpoolmanProduct() && selectedSpoolmanProduct().ambiguous"><small>{{ _('Multiple temperature variants exist; no temperature is prefilled.') }}</small></span>
-                        <span class="help-block" data-bind="visible: !isU1RfidFlow() && selectedSpoolmanProduct() && (selectedSpoolmanProduct().extruder_temp_range || selectedSpoolmanProduct().bed_temp_range)"><small>{{ _('A range is shown as its midpoint suggestion.') }}</small></span>
+                        <span class="help-block" data-bind="visible: !isU1RfidFlow() && selectedSpoolmanProduct() && (selectedSpoolmanProduct().extruder_temp_range || selectedSpoolmanProduct().bed_temp_range)"><small>{{ _('A range is prefilled into the min/max temperature fields below.') }}</small></span>
                     </div>
                 </div>
             </div>
@@ -302,12 +302,36 @@
                     </div>
                 </div>
                 <div class="control-group">
+                    <label class="control-label">{{ _('Tool temperature range') }}</label>
+                    <div class="controls">
+                        <div class="input-append">
+                            <input type="number" step="1" class="input-mini text-right" placeholder="min" data-bind="value: spoolItemForCreation.minTemperature">
+                            <span class="add-on">°C</span>
+                            <input type="number" step="1" class="input-mini text-right" placeholder="max" data-bind="value: spoolItemForCreation.maxTemperature">
+                            <span class="add-on">°C</span>
+                        </div>
+                        <span class="help-block"><small>{{ _('Optional. Leave blank to use the tool temperature above for both.') }}</small></span>
+                    </div>
+                </div>
+                <div class="control-group">
                     <label class="control-label">{{ _('Bed temperature') }}</label>
                     <div class="controls">
                         <div class="input-append">
                             <input type="number" step="1" class="input-mini text-right" data-bind="value: spoolItemForCreation.bedTemperature">
                             <span class="add-on">°C</span>
                         </div>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">{{ _('Bed temperature range') }}</label>
+                    <div class="controls">
+                        <div class="input-append">
+                            <input type="number" step="1" class="input-mini text-right" placeholder="min" data-bind="value: spoolItemForCreation.minBedTemperature">
+                            <span class="add-on">°C</span>
+                            <input type="number" step="1" class="input-mini text-right" placeholder="max" data-bind="value: spoolItemForCreation.maxBedTemperature">
+                            <span class="add-on">°C</span>
+                        </div>
+                        <span class="help-block"><small>{{ _('Optional. Leave blank to use the bed temperature above for both.') }}</small></span>
                     </div>
                 </div>
                 <div class="control-group">
@@ -455,6 +479,9 @@
                         <i class="fas fa-check"></i> {{ _('Tag written and verified') }}<span data-bind="visible: octoScaleTagWriter.writeFormatUsed"> (<span data-bind="text: octoScaleTagWriter.writeFormatUsed"></span>)</span>.
                         <!-- ko if: octoScaleTagWriter.writeDroppedFields().length > 0 -->
                         <br><small class="text-warning"><i class="fas fa-exclamation-triangle"></i> {{ _('Some fields did not fit on the tag and were left out') }}: <span data-bind="text: octoScaleTagWriter.writeDroppedFields().join(', ')"></span></small>
+                        <!-- /ko -->
+                        <!-- ko if: octoScaleTagWriter.writeWarning -->
+                        <br><small class="text-warning"><i class="fas fa-exclamation-triangle"></i> <span data-bind="text: octoScaleTagWriter.writeWarning"></span></small>
                         <!-- /ko -->
                     </div>
                     <div class="text-error" style="margin-top: 8px;" data-bind="visible: octoScaleTagWriter.errorMessage">
