@@ -1210,8 +1210,17 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     # network. The browser cannot talk to it directly: OctoPrint is frequently served over HTTPS
     # (mixed content) and the device sends no CORS headers. So every call is proxied here.
     #
-    # Device API (see the OctoScale firmware): GET /version, /weight, /tare, /nfc, /nfcwriteid?id=N.
-    # All of them answer plain text except /nfc, which answers JSON.
+    # Device API (see the OctoScale firmware): GET /version, /weight, /tare, /nfcprobe,
+    # POST /nfcwritespool, GET /nfcwritestatus. /version, /weight and /tare answer plain
+    # text; /nfcprobe, /nfcwritestatus and the /nfcwritespool response are JSON.
+    #
+    # NOTE: there is no "/nfc" endpoint on the device - an earlier version of this plugin
+    # called one and always got HTTP 404 (confirmed live). /nfcprobe is what actually
+    # exists and reports the tag currently on the reader (present/type/uid/parsed id).
+    # Writing was always asynchronous on the firmware side too: /nfcwriteid (legacy,
+    # id-only) and /nfcwritespool (extended fields) both return 202 immediately and the
+    # result must be polled via /nfcwritestatus - this plugin previously treated the write
+    # call as synchronous, which never actually reflected a real success/failure.
 
     # The device is a single-core ESP32-S2: its NFC polling task competes with the web server for
     # the one core, so an otherwise instant request can take several seconds (measured: 0.02s to
@@ -1266,15 +1275,20 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             baseUrl = "http://" + baseUrl
         return baseUrl
 
-    def _callOctoScale(self, baseUrl, path, timeout=None):
+    def _callOctoScale(self, baseUrl, path, timeout=None, method="GET", json=None):
         # Returns (response, errorMessage). Never raises - every transport problem comes back
         # as a message the UI can show next to the weight readout.
+        # /nfcwritespool needs a POST with a JSON body (the field write, not just a start
+        # signal) - method/json are only used by that caller, everything else keeps
+        # defaulting to the plain GETs the device otherwise expects.
         import requests
 
         url = baseUrl + path
         try:
-            response = requests.get(
+            response = requests.request(
+                method,
                 url,
+                json=json,
                 timeout=(
                     timeout if timeout is not None else self.OCTOSCALE_TIMEOUT_SECONDS
                 ),
@@ -1284,7 +1298,9 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         except requests.exceptions.RequestException as e:
             return (None, "Could not reach OctoScale: " + str(e))
 
-        if response.status_code != 200:
+        # /nfcwritespool and /nfcwriteid answer 202 "started" for an accepted async write -
+        # that is success, not an error, so 2xx is accepted wholesale rather than just 200.
+        if response.status_code < 200 or response.status_code >= 300:
             return (None, "OctoScale answered with HTTP " + str(response.status_code))
         return (response, None)
 
@@ -1358,13 +1374,22 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     @octoprint.plugin.BlueprintPlugin.route("/octoscale/nfc", methods=["GET"])
     @no_firstrun_access
     def getOctoScaleNfcStatus(self):
-        # Device answers {ready, present, uid, data}; "data" holds the spool id already on the tag
-        # (as ASCII digits) or an empty string for a blank tag.
+        # Talks to /nfcprobe (there is no "/nfc" endpoint on the device, see the class
+        # comment above). /nfcprobe answers roughly:
+        # {debug, ready, present, type, typeName, uid, idParsed, idText, flowWouldUse,
+        #  tagType, capacityBytes, writeFormat, formatLabel, hasExtendedData}
+        # idParsed/idText hold the spool id already on the tag (idParsed is -1 / idText is
+        # "" for a blank tag or a tag with no parseable id). tagType/capacityBytes/
+        # writeFormat/formatLabel/hasExtendedData are newer fields older firmware may not
+        # send yet - all are read with .get() and degrade gracefully to "unknown"/the
+        # legacy format. NOTE: "typeName" is the coarse protocol class the firmware
+        # reports ("NFC-A"/"NFC-V"/"no tag"), NOT a human label for the specific tag -
+        # "formatLabel" is the human-readable one ("Mifare Classic 1K", "NTAG215", ...).
         baseUrl, errorResponse = self._getOctoScaleBaseUrl()
         if errorResponse is not None:
             return errorResponse
 
-        response, errorMessage = self._callOctoScale(baseUrl, "/nfc")
+        response, errorMessage = self._callOctoScale(baseUrl, "/nfcprobe")
         if errorMessage is not None:
             return flask.jsonify({"success": False, "error": errorMessage})
 
@@ -1376,9 +1401,18 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             )
 
         existingSpoolId = None
-        rawTagData = nfcData.get("data")
-        if rawTagData is not None and str(rawTagData).strip().isdigit():
-            existingSpoolId = int(str(rawTagData).strip())
+        idParsed = nfcData.get("idParsed")
+        if isinstance(idParsed, int) and idParsed >= 0:
+            existingSpoolId = idParsed
+        else:
+            rawIdText = nfcData.get("idText")
+            if rawIdText is not None and str(rawIdText).strip().isdigit():
+                existingSpoolId = int(str(rawIdText).strip())
+
+        tagType = nfcData.get("tagType") or "unknown"
+        nfcvFormatSetting = self._settings.get(
+            [SettingsKeys.SETTINGS_KEY_OCTOSCALE_NFCV_FORMAT]
+        )
 
         result = {
             "success": True,
@@ -1386,6 +1420,13 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             "present": nfcData.get("present"),
             "uid": nfcData.get("uid"),
             "spoolId": existingSpoolId,
+            "tagType": tagType,
+            "tagTypeName": nfcData.get("typeName"),
+            "capacityBytes": nfcData.get("capacityBytes"),
+            "writeFormat": nfcData.get("writeFormat")
+            or TagFormats.formatForTagType(tagType, nfcvFormatSetting),
+            "formatLabel": nfcData.get("formatLabel"),
+            "hasExtendedData": nfcData.get("hasExtendedData") or False,
         }
 
         # Resolve the id already on the tag to a name, so the UI can warn with something
@@ -1401,6 +1442,11 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     @octoprint.plugin.BlueprintPlugin.route("/octoscale/writeTag", methods=["POST"])
     @no_firstrun_access
     def writeOctoScaleTag(self):
+        # Fires the write and returns as soon as OctoScale accepts it (202) - the actual
+        # write+verify happens on the device's own task and is polled via
+        # getOctoScaleWriteStatus below. Treating this call as synchronous (the previous
+        # implementation) never reflected a real result, since the firmware already
+        # answered immediately.
         baseUrl, errorResponse = self._getOctoScaleBaseUrl()
         if errorResponse is not None:
             return errorResponse
@@ -1421,60 +1467,71 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             )
         databaseId = int(str(databaseId).strip())
 
-        # The tag format is routed through the registry so an OpenPrintTag writer can be added
-        # later without touching this endpoint's contract (issue #56).
-        tagFormatId = jsonData.get("tagFormat")
-        if tagFormatId is None:
-            tagFormatId = TagFormats.TAG_FORMAT_SPOOL_ID_NTAG
-        tagFormat = TagFormats.getTagFormat(tagFormatId)
-        if tagFormat is None:
-            return make_response(
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Unknown tag format '" + str(tagFormatId) + "'",
-                    }
-                ),
-                400,
-            )
-        if not tagFormat["supported"]:
-            return make_response(
-                jsonify(
-                    {
-                        "success": False,
-                        "error": tagFormat["label"]
-                        + " cannot be written by the connected hardware yet.",
-                    }
-                ),
-                400,
-            )
-
         spoolModel = self._databaseManager.loadSpool(databaseId)
         if spoolModel is None:
             abort(404)
+
+        # The format is not requested by the caller: the firmware picks it from the tag
+        # actually on the reader (Mifare Classic -> extended, NTAG -> OpenSpool, anything
+        # else -> id-only) and reports back which one it used. We always send the full
+        # field set; the firmware ignores what it can't use for the tag it sees.
+        #
+        # The one exception is NFC-V: it has two possible formats (extended/OpenSpool),
+        # and which one to use is a global user preference
+        # (SETTINGS_KEY_OCTOSCALE_NFCV_FORMAT), not something the firmware can infer from
+        # the tag alone - so it's passed explicitly. The firmware ignores this field for
+        # any other tag type.
+        payload = TagFormats.getTagFormat(
+            TagFormats.TAG_FORMAT_OCTOSCALE_EXTENDED
+        )["buildPayload"](spoolModel)
+        payload["preferredNfcvFormat"] = self._settings.get(
+            [SettingsKeys.SETTINGS_KEY_OCTOSCALE_NFCV_FORMAT]
+        )
 
         self._logger.info(
             "Writing NFC tag for spool with database id '" + str(databaseId) + "'"
         )
         response, errorMessage = self._callOctoScale(
-            baseUrl, "/nfcwriteid?id=" + str(databaseId), timeout=8.0
+            baseUrl, "/nfcwritespool", method="POST", json=payload, timeout=8.0
         )
         if errorMessage is not None:
             return flask.jsonify({"success": False, "error": errorMessage})
 
-        # The firmware writes and verifies, then answers with a short status text. Anything
-        # mentioning an error means the verify step failed - surface that instead of a fake success.
-        responseText = response.text.strip()
-        if "error" in responseText.lower() or "fail" in responseText.lower():
+        return flask.jsonify({"success": True, "databaseId": databaseId, "pending": True})
+
+    @octoprint.plugin.BlueprintPlugin.route("/octoscale/writeStatus", methods=["GET"])
+    @no_firstrun_access
+    def getOctoScaleWriteStatus(self):
+        # Proxies /nfcwritestatus: {pending, done, ok, error/msg, format, bytesWritten,
+        # droppedFields}. The device self-clears "done" once it has been read once, so the
+        # frontend must stop polling as soon as done=true comes back (see
+        # SpoolManager-OctoScale.js).
+        baseUrl, errorResponse = self._getOctoScaleBaseUrl()
+        if errorResponse is not None:
+            return errorResponse
+
+        response, errorMessage = self._callOctoScale(baseUrl, "/nfcwritestatus")
+        if errorMessage is not None:
+            return flask.jsonify({"success": False, "error": errorMessage})
+
+        try:
+            statusData = response.json()
+        except ValueError:
             return flask.jsonify(
-                {
-                    "success": False,
-                    "error": "OctoScale could not write the tag: " + responseText,
-                }
+                {"success": False, "error": "OctoScale sent an unreadable write status"}
             )
 
         return flask.jsonify(
-            {"success": True, "databaseId": databaseId, "message": responseText}
+            {
+                "success": True,
+                "pending": statusData.get("pending"),
+                "done": statusData.get("done"),
+                "ok": statusData.get("ok"),
+                "error": statusData.get("error") or statusData.get("msg"),
+                "format": statusData.get("format"),
+                "bytesWritten": statusData.get("bytesWritten"),
+                "droppedFields": statusData.get("droppedFields"),
+            }
         )
 
     #####################################################################################################   OPENPRINTTAG

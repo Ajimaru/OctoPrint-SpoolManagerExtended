@@ -3,10 +3,11 @@
 # OpenPrintTag support (https://github.com/OpenPrintTag/openprinttag-specification), issue #56.
 #
 # Status: the mapping and the encoders below are complete and unit tested, but the tag cannot be
-# written yet - OpenPrintTag uses ISO 15693 / NFC-V (reference chip: NXP ICODE SLIX2) while the
-# OctoScale reader (PN532) only speaks ISO 14443A. Writing needs a PN5180 or comparable reader.
-# Until then the payload is exposed read-only through the API so the firmware side can be built
-# against it, and so the mapping can be verified against real spools.
+# written yet. NOT a hardware limitation anymore - OctoScale's reader is a PN5180, which already
+# reads and writes ISO 15693 / NFC-V (reference chip for OpenPrintTag: NXP ICODE SLIX2). The real
+# blocker is FIELD_KEY_MAP below: the integer keys are not yet transcribed from the specification,
+# so encodeSection() refuses to encode. Until that's done the payload is exposed read-only through
+# the API so the mapping can be verified against real spools ahead of enabling writes.
 #
 # Encoding chain: spool -> named field dict -> CBOR map with integer keys -> NDEF record
 # (MIME type "application/vnd.openprinttag").
