@@ -35,6 +35,20 @@ def _buildFullSpoolPayload(spoolModel):
     # Every field the firmware knows how to place on an extended Mifare Classic tag or in
     # an OpenSpool NDEF/JSON record. The firmware picks which of these fit (and which format
     # applies) based on the tag actually on the reader - this plugin does not decide that.
+    minTemperature = spoolModel.minTemperature
+    maxTemperature = spoolModel.maxTemperature
+    if minTemperature is None:
+        minTemperature = spoolModel.temperature
+    if maxTemperature is None:
+        maxTemperature = spoolModel.temperature
+
+    minBedTemperature = spoolModel.minBedTemperature
+    maxBedTemperature = spoolModel.maxBedTemperature
+    if minBedTemperature is None:
+        minBedTemperature = spoolModel.bedTemperature
+    if maxBedTemperature is None:
+        maxBedTemperature = spoolModel.bedTemperature
+
     return {
         "databaseId": spoolModel.databaseId,
         "material": spoolModel.material,
@@ -47,7 +61,11 @@ def _buildFullSpoolPayload(spoolModel):
         "spoolWeight": spoolModel.spoolWeight,
         "usedWeight": spoolModel.usedWeight,
         "temperature": spoolModel.temperature,
+        "minTemperature": minTemperature,
+        "maxTemperature": maxTemperature,
         "bedTemperature": spoolModel.bedTemperature,
+        "minBedTemperature": minBedTemperature,
+        "maxBedTemperature": maxBedTemperature,
     }
 
 
