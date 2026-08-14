@@ -380,6 +380,10 @@ $(function () {
             );
         };
 
+        // Collapsed by default - purely a "what does each format actually write" reference
+        // under the NFC tag format capacity table, no persistence needed.
+        self.nfcFormatFieldsExpanded = ko.observable(false);
+
         self.spoolmanDbRefreshBusy = ko.observable(false);
         self.spoolmanDbRefreshResult = ko.observable(null);
         self.refreshSpoolmanDbStatus = function () {

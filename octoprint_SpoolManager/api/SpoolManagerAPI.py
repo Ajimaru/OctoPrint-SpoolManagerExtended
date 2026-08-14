@@ -20,11 +20,12 @@ from octoprint.access.permissions import Permissions
 from octoprint.server.util.flask import no_firstrun_access
 
 from octoprint_SpoolManager import DatabaseManager
-from octoprint_SpoolManager.U1RfidManager import deriveRfidTagKey
+from octoprint_SpoolManager.U1RfidManager import deriveRfidTagKey, normalizeCardUid
 from octoprint_SpoolManager.api import Transformer
 from octoprint_SpoolManager.common import (
     CSVExportImporter,
     OpenPrintTag,
+    RfidTeachIn,
     StringUtils,
     TagFormats,
 )
@@ -1531,12 +1532,29 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         payload = TagFormats.getTagFormat(
             TagFormats.TAG_FORMAT_OCTOSCALE_EXTENDED
         )["buildPayload"](spoolModel)
-        payload["preferredNfcvFormat"] = self._settings.get(
+
+        nfcvFormatSetting = self._settings.get(
             [SettingsKeys.SETTINGS_KEY_OCTOSCALE_NFCV_FORMAT]
         )
+        if nfcvFormatSetting not in TagFormats.NFCV_FORMAT_SETTING_TO_TAG_FORMAT:
+            # Guards against a stale/hand-edited setting reaching the firmware as an
+            # unrecognized string; "extended" is the long-standing default/fallback.
+            self._logger.warning(
+                "Unknown "
+                + SettingsKeys.SETTINGS_KEY_OCTOSCALE_NFCV_FORMAT
+                + " value '"
+                + str(nfcvFormatSetting)
+                + "', falling back to 'extended'"
+            )
+            nfcvFormatSetting = "extended"
+        payload["preferredNfcvFormat"] = nfcvFormatSetting
 
         self._logger.info(
-            "Writing NFC tag for spool with database id '" + str(databaseId) + "'"
+            "Writing NFC tag for spool with database id '"
+            + str(databaseId)
+            + "', preferredNfcvFormat='"
+            + str(nfcvFormatSetting)
+            + "'"
         )
         response, errorMessage = self._callOctoScale(
             baseUrl, "/nfcwritespool", method="POST", json=payload, timeout=8.0
@@ -1579,8 +1597,101 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 "bytesWritten": statusData.get("bytesWritten"),
                 "droppedFields": statusData.get("droppedFields"),
                 "warning": statusData.get("warning") or None,
+                # UID of the tag actually written, used to auto-teach-in rfidTagKey after an
+                # OpenPrintTag write (see /octoscale/teachRfidTagKey below). Older firmware
+                # doesn't send this field yet - absence here just means teach-in falls back
+                # to the UID last seen via /octoscale/nfc on the frontend side.
+                "uid": statusData.get("uid"),
             }
         )
+
+    @octoprint.plugin.BlueprintPlugin.route(
+        "/octoscale/teachRfidTagKey", methods=["POST"]
+    )
+    @no_firstrun_access
+    def teachOctoScaleRfidTagKey(self):
+        # Auto-teach-in after a successful OpenPrintTag write: OPT tags carry no database id
+        # (see the TagFormats.TAG_FORMAT_NFCV_OPENPRINTTAG docstring), so reading one back
+        # falls to a UID lookup (GET /spool/byCode/<uid>) that resolves via rfidTagKey - the
+        # same mechanism used for Snapmaker U1 tags. Without this endpoint the user would
+        # have to copy the UID into the spool's Serial number/rfidTagKey by hand.
+        #
+        # Deliberately a separate endpoint rather than a side effect of the writeStatus poll
+        # above: that endpoint is a pure proxy polled repeatedly while pending, a write
+        # side-effect inside a polling GET would be wrong, and the device self-clears "done"
+        # after one read so a retry there would silently lose the chance to teach in.
+        #
+        # Never overwrites silently - mirrors the warning deriveRfidTagKey()'s own docstring
+        # prescribes for the U1 flow: an existing, different key or a collision with another
+        # spool is reported back rather than applied, unless the caller passes force=true.
+        jsonData = request.json
+        if jsonData is None:
+            return make_response(
+                jsonify({"success": False, "error": "Request body must be JSON"}), 400
+            )
+
+        databaseId = jsonData.get("databaseId")
+        if databaseId is None or not str(databaseId).strip().isdigit():
+            return make_response(
+                jsonify(
+                    {"success": False, "error": "A numeric databaseId is required"}
+                ),
+                400,
+            )
+        databaseId = int(str(databaseId).strip())
+        force = bool(jsonData.get("force"))
+
+        spoolModel = self._databaseManager.loadSpool(databaseId)
+        if spoolModel is None:
+            abort(404)
+
+        normalizedUid = normalizeCardUid(jsonData.get("uid"))
+        newKey = deriveRfidTagKey(normalizedUid)
+
+        conflictingSpool = None
+        if newKey:
+            conflictingSpool = self._databaseManager.loadSpoolByRfidTagKey(newKey)
+
+        shouldSave, reason = RfidTeachIn.evaluateTeachIn(
+            newKey=newKey,
+            existingKeyOnTargetSpool=spoolModel.rfidTagKey,
+            conflictingSpoolId=(
+                conflictingSpool.databaseId if conflictingSpool is not None else None
+            ),
+            targetSpoolId=databaseId,
+            force=force,
+        )
+
+        if not shouldSave:
+            self._logger.info(
+                "OpenPrintTag rfidTagKey teach-in skipped for spool "
+                + str(databaseId)
+                + " (reason: "
+                + reason
+                + ")"
+            )
+            response = {"success": True, "taught": False, "reason": reason}
+            if reason == RfidTeachIn.REASON_EXISTING_KEY_DIFFERS:
+                response["existingKey"] = spoolModel.rfidTagKey
+                response["newKey"] = newKey
+            elif reason == RfidTeachIn.REASON_COLLISION:
+                response["conflictingSpoolId"] = conflictingSpool.databaseId
+                response["conflictingSpoolDisplayName"] = getattr(
+                    conflictingSpool, "displayName", None
+                )
+                response["newKey"] = newKey
+            return flask.jsonify(response)
+
+        spoolModel.rfidTagKey = newKey
+        self._databaseManager.saveSpool(spoolModel)
+        self._logger.info(
+            "OpenPrintTag rfidTagKey teach-in: spool "
+            + str(databaseId)
+            + " -> rfidTagKey '"
+            + str(newKey)
+            + "'"
+        )
+        return flask.jsonify({"success": True, "taught": True, "rfidTagKey": newKey})
 
     #####################################################################################################   OPENPRINTTAG
 
@@ -1598,7 +1709,11 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             abort(404)
 
         fields = OpenPrintTag.spoolModelToFields(spoolModel)
+        # Should always be empty now that FIELD_KEY_MAP is complete - a non-empty result here
+        # means a field was added to spoolModelToFields() without a matching key, i.e. a bug.
         unresolvedFields = OpenPrintTag.getUnresolvedFieldNames(fields)
+        droppedFields = OpenPrintTag.getDroppedFieldNames(spoolModel)
+        truncatedFields = OpenPrintTag.getTruncatedFieldNames(spoolModel)
 
         payloadBase64 = None
         encodingError = None
@@ -1618,12 +1733,18 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 "payloadBase64": payloadBase64,
                 "encodingComplete": payloadBase64 is not None,
                 "unresolvedFields": unresolvedFields,
+                # Values this spool has that the OpenPrintTag specification has no field for
+                # at all (colorName, remainingWeight, enclosureTemperature, serial number,
+                # batchNumber, purchasedOn) - they will not survive a write to this format.
+                "droppedFields": droppedFields,
+                # material_name/brand_name shortened to fit the spec's byte caps (63/31 UTF-8
+                # bytes) - the firmware hard-fails on overflow rather than truncating, so this
+                # flags a mismatch between what the preview shows and what a real write does.
+                "truncatedFields": truncatedFields,
                 "error": encodingError,
                 "notes": (
-                    (
-                        "The OpenPrintTag integer key map is not transcribed from the specification yet, "
-                        "so only the named field preview is available."
-                    )
+                    "The OpenPrintTag integer key map has an internal inconsistency - please "
+                    "report this."
                     if unresolvedFields
                     else None
                 ),

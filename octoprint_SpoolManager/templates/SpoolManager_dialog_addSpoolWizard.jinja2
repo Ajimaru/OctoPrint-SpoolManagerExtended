@@ -483,6 +483,24 @@
                         <!-- ko if: octoScaleTagWriter.writeWarning -->
                         <br><small class="text-warning"><i class="fas fa-exclamation-triangle"></i> <span data-bind="text: octoScaleTagWriter.writeWarning"></span></small>
                         <!-- /ko -->
+                        {# See the same block in SpoolManager_dialog_editSpool.jinja2 for the rationale -
+                           OpenPrintTag stores no database id, so a successful write auto-teaches this
+                           spool's rfidTagKey from the tag's UID. #}
+                        <!-- ko if: octoScaleTagWriter.teachInResult -->
+                        <!-- ko if: octoScaleTagWriter.teachInResult().taught -->
+                        <br><small><i class="fas fa-id-card"></i> {{ _('Spool taught in for this tag (key') }} <span data-bind="text: octoScaleTagWriter.teachInResult().rfidTagKey"></span>).</small>
+                        <!-- /ko -->
+                        <!-- ko if: octoScaleTagWriter.teachInResult().reason === 'existingKeyDiffers' -->
+                        <br><small class="text-warning"><i class="fas fa-exclamation-triangle"></i> {{ _('This spool already has a different tag key assigned.') }}
+                        <button type="button" class="btn btn-mini btn-warning" style="margin-left: 6px;"
+                                data-bind="click: octoScaleTagWriter.forceTeachRfidTagKey">{{ _('Assign anyway') }}</button></small>
+                        <!-- /ko -->
+                        <!-- ko if: octoScaleTagWriter.teachInResult().reason === 'collision' -->
+                        <br><small class="text-warning"><i class="fas fa-exclamation-triangle"></i> {{ _("This tag's key is already assigned to") }} <span data-bind="text: octoScaleTagWriter.teachInResult().conflictingSpoolDisplayName || ('spool id ' + octoScaleTagWriter.teachInResult().conflictingSpoolId)"></span>.
+                        <button type="button" class="btn btn-mini btn-warning" style="margin-left: 6px;"
+                                data-bind="click: octoScaleTagWriter.forceTeachRfidTagKey">{{ _('Assign anyway') }}</button></small>
+                        <!-- /ko -->
+                        <!-- /ko -->
                     </div>
                     <div class="text-error" style="margin-top: 8px;" data-bind="visible: octoScaleTagWriter.errorMessage">
                         <i class="fas fa-exclamation-triangle"></i> <span data-bind="text: octoScaleTagWriter.errorMessage"></span>

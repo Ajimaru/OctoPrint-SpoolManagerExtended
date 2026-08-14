@@ -818,6 +818,25 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                                     <!-- ko if: spoolDialog.octoScaleTagWriter.writeWarning -->
                                                     <br><small class="text-warning"><i class="fas fa-exclamation-triangle"></i> <span data-bind="text: spoolDialog.octoScaleTagWriter.writeWarning"></span></small>
                                                     <!-- /ko -->
+                                                    {# OpenPrintTag has no room for the database id, so a successful write auto-teaches
+                                                       this spool's rfidTagKey from the tag's UID (see teachRfidTagKeyIfNeeded() in
+                                                       SpoolManager-OctoScale.js) - this block surfaces that outcome right under the
+                                                       write result, since it's the only way the spool becomes findable again by scan. #}
+                                                    <!-- ko if: spoolDialog.octoScaleTagWriter.teachInResult -->
+                                                    <!-- ko if: spoolDialog.octoScaleTagWriter.teachInResult().taught -->
+                                                    <br><small><i class="fas fa-id-card"></i> Spool taught in for this tag (key <span data-bind="text: spoolDialog.octoScaleTagWriter.teachInResult().rfidTagKey"></span>).</small>
+                                                    <!-- /ko -->
+                                                    <!-- ko if: spoolDialog.octoScaleTagWriter.teachInResult().reason === 'existingKeyDiffers' -->
+                                                    <br><small class="text-warning"><i class="fas fa-exclamation-triangle"></i> This spool already has a different tag key assigned.
+                                                    <button type="button" class="btn btn-mini btn-warning" style="margin-left: 6px;"
+                                                            data-bind="click: spoolDialog.octoScaleTagWriter.forceTeachRfidTagKey">Assign anyway</button></small>
+                                                    <!-- /ko -->
+                                                    <!-- ko if: spoolDialog.octoScaleTagWriter.teachInResult().reason === 'collision' -->
+                                                    <br><small class="text-warning"><i class="fas fa-exclamation-triangle"></i> This tag's key is already assigned to <span data-bind="text: spoolDialog.octoScaleTagWriter.teachInResult().conflictingSpoolDisplayName || ('spool id ' + spoolDialog.octoScaleTagWriter.teachInResult().conflictingSpoolId)"></span>.
+                                                    <button type="button" class="btn btn-mini btn-warning" style="margin-left: 6px;"
+                                                            data-bind="click: spoolDialog.octoScaleTagWriter.forceTeachRfidTagKey">Assign anyway</button></small>
+                                                    <!-- /ko -->
+                                                    <!-- /ko -->
                                                 </span>
                                                 <span class="help-block text-error" style="margin-bottom: 0;" data-bind="visible: spoolDialog.octoScaleTagWriter.errorMessage">
                                                     <small><i class="fas fa-exclamation-triangle"></i> <span data-bind="text: spoolDialog.octoScaleTagWriter.errorMessage"></span></small>
