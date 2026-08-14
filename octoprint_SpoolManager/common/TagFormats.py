@@ -32,6 +32,17 @@ import datetime
 #  - capacity overflow is a hard failure on write (no partial/field-dropped write like
 #    OpenSpool) - a spool with a full field set needs a large NFC-V tag (SLIX2/ST25DV,
 #    ~316 bytes+); it will not fit on a 112-byte SLI-X.
+#
+# NTAG213/215/216 mirror NFC-V's choice as of the firmware's "ntagExtended" layout: a global
+# preference (SETTINGS_KEY_OCTOSCALE_NTAG_FORMAT), sent as "preferredNtagFormat" alongside
+# "preferredNfcvFormat" (two independent parameters - a user may want Extended on NFC-V but
+# OpenSpool on NTAG, or vice versa). Extended is an own binary page layout (own NDEF-less
+# framing, CRC-8-checked, commit-marker page written last so an interrupted write reads back
+# as "no extended data" rather than corrupt), carrying the same v1/v2/v3 field set as the
+# Mifare Classic/NFC-V extended formats. NTAG213 has no Extended option - confirmed against
+# the firmware team: it rejects an Extended write on NTAG213 (or any unrecognized NTAG
+# sub-type) outright rather than attempting a partial write, since the v3 field set alone
+# needs more room than a 213 has.
 
 TAG_FORMAT_SPOOL_ID_NTAG = "spoolIdNtag"
 TAG_FORMAT_OCTOSCALE_EXTENDED = "octoscaleExtended"
@@ -39,6 +50,7 @@ TAG_FORMAT_OPENSPOOL = "openSpool"
 TAG_FORMAT_NFCV_EXTENDED = "nfcvExtended"
 TAG_FORMAT_NFCV_OPENSPOOL = "nfcvOpenSpool"
 TAG_FORMAT_NFCV_OPENPRINTTAG = "nfcvOpenPrintTag"
+TAG_FORMAT_NTAG_EXTENDED = "ntagExtended"
 
 
 def _buildSpoolIdPayload(spoolModel):
@@ -163,6 +175,17 @@ TAG_FORMATS = {
         "description": "Writes an OpenSpool-format NDEF/JSON record onto an NTAG213/215/216 "
         "tag, readable by phones and other OpenSpool-aware devices.",
     },
+    TAG_FORMAT_NTAG_EXTENDED: {
+        "id": TAG_FORMAT_NTAG_EXTENDED,
+        "label": "Extended (NTAG)",
+        "supported": True,
+        "buildPayload": _buildFullSpoolPayload,
+        "description": "Writes every field OctoScale knows onto an NTAG215/216 tag in an "
+        "OctoScale-specific binary layout, in addition to the database id. NTAG213 has too "
+        "little room for the full field set - the firmware rejects an Extended write there "
+        "outright rather than dropping fields, so this format is only offered for "
+        "NTAG215/216.",
+    },
     TAG_FORMAT_NFCV_EXTENDED: {
         "id": TAG_FORMAT_NFCV_EXTENDED,
         "label": "Extended (NFC-V)",
@@ -218,9 +241,13 @@ def isSupported(formatId):
 #                                 proprietary NXP mapping, never readable on iPhone, only on
 #                                 some Android NFC chipsets, and paxx12/Snapmaker U1 routes
 #                                 SAK 0x08 straight to its own proprietary parser regardless)
-#   tagType "ntag"            -> writeFormat "openSpool"       (NTAG213/215/216, no
-#                                 sub-variant in tagType - that detail lives in
-#                                 formatLabel/capacityBytes instead)
+#   tagType "ntag"            -> writeFormat "openSpool" or "ntagExtended", depending on
+#                                 SETTINGS_KEY_OCTOSCALE_NTAG_FORMAT (a global setting, not
+#                                 chosen per write, mirrors the NFC-V preference below). No
+#                                 sub-variant in tagType itself - that detail lives in
+#                                 formatLabel/capacityBytes instead, which is why Extended is
+#                                 offered here regardless of NTAG213/215/216: the firmware is
+#                                 the one that rejects it outright on a 213.
 #   tagType "nfcv"            -> writeFormat "nfcvExtended", "nfcvOpenSpool" or
 #                                 "nfcvOpenPrintTag", depending on
 #                                 SETTINGS_KEY_OCTOSCALE_NFCV_FORMAT (a global setting, not
@@ -242,10 +269,19 @@ NFCV_FORMAT_SETTING_TO_TAG_FORMAT = {
     "openPrintTag": TAG_FORMAT_NFCV_OPENPRINTTAG,
 }
 
+NTAG_FORMAT_SETTING_TO_TAG_FORMAT = {
+    "openSpool": TAG_FORMAT_OPENSPOOL,
+    "extended": TAG_FORMAT_NTAG_EXTENDED,
+}
 
-def formatForTagType(tagType, nfcvFormatSetting=None):
+
+def formatForTagType(tagType, nfcvFormatSetting=None, ntagFormatSetting=None):
     if tagType == "nfcv":
         return NFCV_FORMAT_SETTING_TO_TAG_FORMAT.get(
             nfcvFormatSetting, TAG_FORMAT_NFCV_EXTENDED
+        )
+    if tagType == "ntag":
+        return NTAG_FORMAT_SETTING_TO_TAG_FORMAT.get(
+            ntagFormatSetting, TAG_FORMAT_OPENSPOOL
         )
     return TAG_TYPE_TO_FORMAT.get(tagType, TAG_FORMAT_SPOOL_ID_NTAG)
