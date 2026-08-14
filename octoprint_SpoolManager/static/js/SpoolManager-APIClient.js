@@ -540,6 +540,35 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
         );
     };
 
+    // Teaches a spool the rfidTagKey derived from a tag's UID - used to auto-resolve
+    // OpenPrintTag tags after a write, since that format stores no database id on the tag
+    // itself (see TagFormats.TAG_FORMAT_NFCV_OPENPRINTTAG). Never overwrites an existing,
+    // different key or a key already claimed by another spool unless force=true; check
+    // responseData.taught/.reason ("noUid"/"unchanged"/"existingKeyDiffers"/"collision"/
+    // "taught") rather than only responseData.success, which is true even when nothing was
+    // written (an expected outcome, not a request failure).
+    this.teachOctoScaleRfidTagKey = function (databaseId, uid, force, responseHandler) {
+        var payload = {databaseId: databaseId, uid: uid, force: force === true};
+
+        _callApi(
+            _buildPluginUrl("octoscale/teachRfidTagKey"),
+            {method: "POST", body: JSON.stringify(payload)},
+            function (data) {
+                responseHandler(
+                    data || {success: false, error: "No answer from the plugin backend."}
+                );
+            },
+            function (body, rawText) {
+                responseHandler(
+                    body || {
+                        success: false,
+                        error: rawText || "Could not teach in the tag UID."
+                    }
+                );
+            }
+        );
+    };
+
     ////////////////////////////////////////////////////////////////////////////////////////////////// DELETE Spool-Item
     this.callDeleteSpool = function (databaseId, responseHandler) {
         _callApi(
