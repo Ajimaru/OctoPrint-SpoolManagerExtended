@@ -1461,6 +1461,9 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         nfcvFormatSetting = self._settings.get(
             [SettingsKeys.SETTINGS_KEY_OCTOSCALE_NFCV_FORMAT]
         )
+        ntagFormatSetting = self._settings.get(
+            [SettingsKeys.SETTINGS_KEY_OCTOSCALE_NTAG_FORMAT]
+        )
 
         result = {
             "success": True,
@@ -1472,7 +1475,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             "tagTypeName": nfcData.get("typeName"),
             "capacityBytes": nfcData.get("capacityBytes"),
             "writeFormat": nfcData.get("writeFormat")
-            or TagFormats.formatForTagType(tagType, nfcvFormatSetting),
+            or TagFormats.formatForTagType(tagType, nfcvFormatSetting, ntagFormatSetting),
             "formatLabel": nfcData.get("formatLabel"),
             "hasExtendedData": nfcData.get("hasExtendedData") or False,
         }
@@ -1524,11 +1527,14 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # else -> id-only) and reports back which one it used. We always send the full
         # field set; the firmware ignores what it can't use for the tag it sees.
         #
-        # The one exception is NFC-V: it has two possible formats (extended/OpenSpool),
-        # and which one to use is a global user preference
-        # (SETTINGS_KEY_OCTOSCALE_NFCV_FORMAT), not something the firmware can infer from
-        # the tag alone - so it's passed explicitly. The firmware ignores this field for
-        # any other tag type.
+        # The one exception is NFC-V: it has three possible formats
+        # (extended/OpenSpool/OpenPrintTag), and which one to use is a global user
+        # preference (SETTINGS_KEY_OCTOSCALE_NFCV_FORMAT), not something the firmware can
+        # infer from the tag alone - so it's passed explicitly. NTAG213/215/216 mirror this
+        # with their own independent preference (SETTINGS_KEY_OCTOSCALE_NTAG_FORMAT,
+        # "preferredNtagFormat") - openSpool or extended, extended silently rejected by the
+        # firmware on a too-small NTAG213. The firmware ignores whichever of these two
+        # fields doesn't apply to the tag actually on the reader.
         payload = TagFormats.getTagFormat(
             TagFormats.TAG_FORMAT_OCTOSCALE_EXTENDED
         )["buildPayload"](spoolModel)
@@ -1549,11 +1555,28 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             nfcvFormatSetting = "extended"
         payload["preferredNfcvFormat"] = nfcvFormatSetting
 
+        ntagFormatSetting = self._settings.get(
+            [SettingsKeys.SETTINGS_KEY_OCTOSCALE_NTAG_FORMAT]
+        )
+        if ntagFormatSetting not in TagFormats.NTAG_FORMAT_SETTING_TO_TAG_FORMAT:
+            # Same guard as above; "openSpool" is the NTAG default/fallback.
+            self._logger.warning(
+                "Unknown "
+                + SettingsKeys.SETTINGS_KEY_OCTOSCALE_NTAG_FORMAT
+                + " value '"
+                + str(ntagFormatSetting)
+                + "', falling back to 'openSpool'"
+            )
+            ntagFormatSetting = "openSpool"
+        payload["preferredNtagFormat"] = ntagFormatSetting
+
         self._logger.info(
             "Writing NFC tag for spool with database id '"
             + str(databaseId)
             + "', preferredNfcvFormat='"
             + str(nfcvFormatSetting)
+            + "', preferredNtagFormat='"
+            + str(ntagFormatSetting)
             + "'"
         )
         response, errorMessage = self._callOctoScale(
