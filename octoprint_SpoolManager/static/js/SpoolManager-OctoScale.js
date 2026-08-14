@@ -167,6 +167,17 @@ function SpoolManagerOctoScaleTagWriter(apiClient) {
     // format), null when the write had no caveats.
     self.writeWarning = ko.observable(null);
 
+    // UID of the tag currently on the reader, as last reported by /octoscale/nfc. Used as a
+    // fallback source for the OpenPrintTag auto-teach-in below when /nfcwritestatus itself
+    // doesn't carry a uid (older firmware) - see teachRfidTagKeyIfNeeded().
+    self.tagUid = ko.observable(null);
+
+    // Outcome of the last auto-teach-in attempt (see teachRfidTagKeyIfNeeded below); null
+    // until a teach-in has actually been attempted. Never blocks/delays writeSucceeded -
+    // teach-in is a convenience on top of a write that already completed.
+    self.teachInResult = ko.observable(null); // {taught, reason, existingKey, newKey, conflictingSpoolId, conflictingSpoolDisplayName} or null
+    self.isTeachingIn = ko.observable(false);
+
     // The spool the tag should point to. Set by the caller before starting.
     self.targetDatabaseId = ko.observable(null);
 
@@ -228,6 +239,7 @@ function SpoolManagerOctoScaleTagWriter(apiClient) {
                 consecutiveFailures = 0;
                 var previousSpoolId = self.tagSpoolId();
                 self.tagPresent(responseData.present === true);
+                self.tagUid(responseData.present === true ? responseData.uid : null);
                 self.tagSpoolId(
                     responseData.present === true ? responseData.spoolId : null
                 );
@@ -304,6 +316,7 @@ function SpoolManagerOctoScaleTagWriter(apiClient) {
         self.isActive(false);
         self.isWriting(false);
         self.tagPresent(false);
+        self.tagUid(null);
         self.tagSpoolId(null);
         self.tagSpoolDisplayName(null);
         self.tagType(null);
@@ -313,10 +326,99 @@ function SpoolManagerOctoScaleTagWriter(apiClient) {
         self.hasExtendedData(false);
         self.overwriteConfirmed(false);
         self.errorMessage(null);
+        self.teachInResult(null);
+        self.isTeachingIn(false);
     };
 
     self.confirmOverwrite = function () {
         self.overwriteConfirmed(true);
+    };
+
+    // A written tag's format is only ever teach-in relevant if it's an OpenPrintTag format -
+    // extended/OpenSpool already carry the database id on the tag, so auto-writing rfidTagKey
+    // for them would be surprising. Matched loosely (substring, case-insensitive) against
+    // both the setting value ("openPrintTag") and the TagFormats id ("nfcvOpenPrintTag"),
+    // since the exact string the firmware echoes back in /nfcwritestatus's "format" field
+    // isn't guaranteed to match either spelling precisely.
+    var isOpenPrintTagFormat = function (formatString) {
+        if (!formatString) {
+            return false;
+        }
+        return formatString.toLowerCase().indexOf("openprinttag") !== -1;
+    };
+
+    // After a successful OpenPrintTag write, teaches the spool's rfidTagKey from the tag's
+    // UID automatically (see POST /octoscale/teachRfidTagKey) - OpenPrintTag tags carry no
+    // database id, so without this the user would have to copy the UID in by hand. Prefers
+    // the UID of the tag actually written (statusData.uid, newer firmware); falls back to
+    // the UID last seen on the reader via /octoscale/nfc otherwise. Never blocks or delays
+    // writeSucceeded - this runs after the write is already reported done.
+    self.teachRfidTagKeyIfNeeded = function (statusData) {
+        self.teachInResult(null);
+        if (!isOpenPrintTagFormat(statusData.format)) {
+            return;
+        }
+        var uid = statusData.uid || self.tagUid();
+        if (!uid) {
+            return;
+        }
+
+        self.isTeachingIn(true);
+        self.apiClient.teachOctoScaleRfidTagKey(
+            self.targetDatabaseId(),
+            uid,
+            false,
+            function (responseData) {
+                self.isTeachingIn(false);
+                if (self.isActive() == false) {
+                    return;
+                }
+                if (responseData && responseData.success === true) {
+                    self.teachInResult(responseData);
+                } else {
+                    self.teachInResult({
+                        taught: false,
+                        reason: "error",
+                        error:
+                            (responseData && responseData.error) ||
+                            "Could not teach in the tag UID.",
+                    });
+                }
+            }
+        );
+    };
+
+    // Re-attempts a teach-in that was blocked by an existing/conflicting rfidTagKey, this
+    // time overriding it. Only meaningful after teachInResult() reports "existingKeyDiffers"
+    // or "collision" - the UI offers this as an explicit "Assign anyway" action.
+    self.forceTeachRfidTagKey = function () {
+        var uid = self.tagUid();
+        if (!uid || self.targetDatabaseId() == null) {
+            return;
+        }
+        self.isTeachingIn(true);
+        self.apiClient.teachOctoScaleRfidTagKey(
+            self.targetDatabaseId(),
+            uid,
+            true,
+            function (responseData) {
+                self.isTeachingIn(false);
+                if (self.isActive() == false) {
+                    return;
+                }
+                if (responseData && responseData.success === true) {
+                    self.teachInResult(responseData);
+                } else {
+                    self.teachInResult({
+                        taught: false,
+                        reason: "error",
+                        error:
+                            (responseData && responseData.error) ||
+                            "Could not teach in the tag UID.",
+                    });
+                }
+            }
+        );
     };
 
     // Writes are async on the firmware: writeOctoScaleTag only starts the write (device
@@ -332,6 +434,7 @@ function SpoolManagerOctoScaleTagWriter(apiClient) {
         self.writeBytesWritten(null);
         self.writeDroppedFields([]);
         self.writeWarning(null);
+        self.teachInResult(null);
 
         self.apiClient.writeOctoScaleTag(self.targetDatabaseId(), function (responseData) {
             if (self.isActive() == false) {
@@ -392,6 +495,7 @@ function SpoolManagerOctoScaleTagWriter(apiClient) {
                         );
                         self.writeDroppedFields(statusData.droppedFields || []);
                         self.writeWarning(statusData.warning || null);
+                        self.teachRfidTagKeyIfNeeded(statusData);
                     } else {
                         self.writeSucceeded(false);
                         self.errorMessage(statusData.error || "Could not write the tag.");

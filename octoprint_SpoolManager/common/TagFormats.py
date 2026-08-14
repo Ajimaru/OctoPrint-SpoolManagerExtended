@@ -1,5 +1,7 @@
 # coding=utf-8
 
+import datetime
+
 # Which payload gets written onto an NFC tag.
 #
 # OctoScale's reader is a PN5180 (NOT a PN532 - an earlier version of this comment was
@@ -13,28 +15,42 @@
 # design - ISO15693/NFC-V tags turned out to have ample room too) the same extended field
 # set on NFC-V/ISO15693 tags.
 #
-# OpenPrintTag (https://github.com/OpenPrintTag/openprinttag-specification) is a separate,
-# still-unsupported format: it puts the spool data itself on the tag in CBOR, but the
-# integer field keys in openprinttag.py's FIELD_KEY_MAP are not yet transcribed from the
-# spec, so encodeSection() refuses to encode. The format is registered here as unsupported
-# so the UI can name it and the encoder can be exercised/tested ahead of that transcription.
+# OpenPrintTag (https://github.com/OpenPrintTag/openprinttag-specification) is a vendor-neutral
+# format, NFC-V only: it puts the spool data itself on the tag in CBOR (three regions -
+# meta/main/aux - in one NDEF record, MIME "application/vnd.openprinttag"). Unlike the other
+# NFC-V formats, the FIRMWARE does the CBOR encoding, not this plugin - we send the same flat
+# JSON payload as nfcvExtended/nfcvOpenSpool and the firmware picks which fields fit. Our own
+# encoder in openprinttag.py is not on this write path; it exists only to preview/verify the
+# mapping (see getOpenPrintTagPayload in SpoolManagerAPI.py) and as an independent reference
+# implementation to diff a real written tag against.
+#
+# Two behaviours that make OpenPrintTag different from the other NFC-V formats:
+#  - the spool's SpoolManager database id is NOT stored on the tag (the spec has no field for
+#    it) - a spool must be resolvable by the tag's own UID instead. Reading falls back to
+#    GET /spool/byCode/<uid>, which resolves via the last-4-hex-chars rfidTagKey (see
+#    U1RfidManager.deriveRfidTagKey()) - the same mechanism used for Snapmaker U1 tags.
+#  - capacity overflow is a hard failure on write (no partial/field-dropped write like
+#    OpenSpool) - a spool with a full field set needs a large NFC-V tag (SLIX2/ST25DV,
+#    ~316 bytes+); it will not fit on a 112-byte SLI-X.
 
 TAG_FORMAT_SPOOL_ID_NTAG = "spoolIdNtag"
 TAG_FORMAT_OCTOSCALE_EXTENDED = "octoscaleExtended"
 TAG_FORMAT_OPENSPOOL = "openSpool"
 TAG_FORMAT_NFCV_EXTENDED = "nfcvExtended"
 TAG_FORMAT_NFCV_OPENSPOOL = "nfcvOpenSpool"
-TAG_FORMAT_OPENPRINTTAG = "openPrintTag"
+TAG_FORMAT_NFCV_OPENPRINTTAG = "nfcvOpenPrintTag"
 
 
 def _buildSpoolIdPayload(spoolModel):
     return {"databaseId": spoolModel.databaseId}
 
 
-def _buildFullSpoolPayload(spoolModel):
-    # Every field the firmware knows how to place on an extended Mifare Classic tag or in
-    # an OpenSpool NDEF/JSON record. The firmware picks which of these fit (and which format
-    # applies) based on the tag actually on the reader - this plugin does not decide that.
+def resolveTemperatureRange(spoolModel):
+    # A spool may only have the single "target" temperature set (temperature/bedTemperature)
+    # without an explicit min/max range - in that case both ends of the range fall back to the
+    # target value instead of being left empty. Shared by _buildFullSpoolPayload() (OctoScale's
+    # own extended/OpenSpool JSON) and OpenPrintTag.spoolModelToFields() (issue #56) so preview
+    # and write payload can never disagree on what "the" temperature range for a spool is.
     minTemperature = spoolModel.minTemperature
     maxTemperature = spoolModel.maxTemperature
     if minTemperature is None:
@@ -48,6 +64,47 @@ def _buildFullSpoolPayload(spoolModel):
         minBedTemperature = spoolModel.bedTemperature
     if maxBedTemperature is None:
         maxBedTemperature = spoolModel.bedTemperature
+
+    return {
+        "minTemperature": minTemperature,
+        "maxTemperature": maxTemperature,
+        "minBedTemperature": minBedTemperature,
+        "maxBedTemperature": maxBedTemperature,
+    }
+
+
+_EPOCH_DATE = datetime.date(1970, 1, 1)
+
+
+def _epochDaysOrNone(value):
+    # Integer days since 1970-01-01 UTC, not an ISO string - the firmware's v3 extended
+    # layout parses these with ArduinoJson's `doc["firstUse"] | -1L` (ints only; a JSON
+    # string there silently falls back to -1L / "unset" instead of erroring, which is why
+    # this must match exactly, confirmed against src/main.cpp:1090 with the OctoScale team).
+    if value is None:
+        return None
+    if isinstance(value, datetime.datetime):
+        value = value.date()
+    if isinstance(value, datetime.date):
+        return (value - _EPOCH_DATE).days
+    return None
+
+
+def _buildFullSpoolPayload(spoolModel):
+    # Every field the firmware knows how to place on an extended Mifare Classic tag or in
+    # an OpenSpool NDEF/JSON record. The firmware picks which of these fit (and which format
+    # applies) based on the tag actually on the reader - this plugin does not decide that.
+    #
+    # v3 fields (remainingWeight..displayName below): added after a field-list request from
+    # the OctoScale team, matching the exact camelCase keys their /nfcwritespool handler
+    # parses (src/main.cpp:1085-1096) for the extended Mifare Classic v3 layout. None of
+    # these have an enforced max length/range on our side (see that conversation) - the
+    # firmware is expected to truncate/reject on overflow rather than assume a cap here.
+    temperatureRange = resolveTemperatureRange(spoolModel)
+    minTemperature = temperatureRange["minTemperature"]
+    maxTemperature = temperatureRange["maxTemperature"]
+    minBedTemperature = temperatureRange["minBedTemperature"]
+    maxBedTemperature = temperatureRange["maxBedTemperature"]
 
     return {
         "databaseId": spoolModel.databaseId,
@@ -66,6 +123,18 @@ def _buildFullSpoolPayload(spoolModel):
         "bedTemperature": spoolModel.bedTemperature,
         "minBedTemperature": minBedTemperature,
         "maxBedTemperature": maxBedTemperature,
+        "remainingWeight": spoolModel.remainingWeight,
+        "totalLength": spoolModel.totalLength,
+        "usedLength": spoolModel.usedLength,
+        "code": spoolModel.code,
+        "batchNumber": spoolModel.batchNumber,
+        "purchasedFrom": spoolModel.purchasedFrom,
+        "finish": spoolModel.finish,
+        "displayName": spoolModel.displayName,
+        "firstUse": _epochDaysOrNone(spoolModel.firstUse),
+        "lastUse": _epochDaysOrNone(spoolModel.lastUse),
+        "purchasedOn": _epochDaysOrNone(spoolModel.purchasedOn),
+        "cost": spoolModel.cost,
     }
 
 
@@ -115,15 +184,17 @@ TAG_FORMATS = {
         "firmware (its hardware has no ISO15693 support at all - a printer-side "
         "limitation, not fixable by tag formatting).",
     },
-    TAG_FORMAT_OPENPRINTTAG: {
-        "id": TAG_FORMAT_OPENPRINTTAG,
-        "label": "OpenPrintTag",
-        # not a hardware limitation (the PN5180 can drive NFC-V) - blocked on
-        # FIELD_KEY_MAP's unresolved integer keys in openprinttag.py, see module docstring
-        "supported": False,
-        "buildPayload": None,
-        "description": "Stores the spool data on the tag itself using the OpenPrintTag "
-        "specification. Not yet available - the field key mapping is incomplete.",
+    TAG_FORMAT_NFCV_OPENPRINTTAG: {
+        "id": TAG_FORMAT_NFCV_OPENPRINTTAG,
+        "label": "OpenPrintTag (NFC-V)",
+        "supported": True,
+        "buildPayload": _buildFullSpoolPayload,
+        "description": "Writes an OpenPrintTag-format CBOR/NDEF record onto an ISO15693/NFC-V "
+        "tag, a vendor-neutral open standard readable by other OpenPrintTag-aware tools/"
+        "printers, not just OctoScale. Unlike the other NFC-V formats: the spool's database "
+        "id is NOT stored on the tag (matching happens via the tag's own UID, see "
+        "rfidTagKey), and a spool that doesn't fit fails the write outright instead of "
+        "dropping fields - needs a large NFC-V tag (SLIX2/ST25DV, not a 112-byte SLI-X).",
     },
 }
 
@@ -150,7 +221,8 @@ def isSupported(formatId):
 #   tagType "ntag"            -> writeFormat "openSpool"       (NTAG213/215/216, no
 #                                 sub-variant in tagType - that detail lives in
 #                                 formatLabel/capacityBytes instead)
-#   tagType "nfcv"            -> writeFormat "nfcvExtended" or "nfcvOpenSpool", depending on
+#   tagType "nfcv"            -> writeFormat "nfcvExtended", "nfcvOpenSpool" or
+#                                 "nfcvOpenPrintTag", depending on
 #                                 SETTINGS_KEY_OCTOSCALE_NFCV_FORMAT (a global setting, not
 #                                 chosen per write - see the settings template). NFC-V/
 #                                 ISO15693 is NFC Forum Type 5, a real standard phones can
@@ -167,6 +239,7 @@ TAG_TYPE_TO_FORMAT = {
 NFCV_FORMAT_SETTING_TO_TAG_FORMAT = {
     "extended": TAG_FORMAT_NFCV_EXTENDED,
     "openSpool": TAG_FORMAT_NFCV_OPENSPOOL,
+    "openPrintTag": TAG_FORMAT_NFCV_OPENPRINTTAG,
 }
 
 
