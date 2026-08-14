@@ -470,6 +470,40 @@ class TestTagFormats(unittest.TestCase):
             TagFormats.TAG_FORMAT_OPENSPOOL,
         )
 
+    def test_ntag_format_setting_resolves_extended(self):
+        self.assertEqual(
+            TagFormats.NTAG_FORMAT_SETTING_TO_TAG_FORMAT["extended"],
+            TagFormats.TAG_FORMAT_NTAG_EXTENDED,
+        )
+
+    def test_format_for_tag_type_ntag_extended(self):
+        self.assertEqual(
+            TagFormats.formatForTagType("ntag", ntagFormatSetting="extended"),
+            TagFormats.TAG_FORMAT_NTAG_EXTENDED,
+        )
+
+    def test_format_for_tag_type_ntag_unknown_setting_falls_back_to_openspool(self):
+        self.assertEqual(
+            TagFormats.formatForTagType("ntag", ntagFormatSetting="bogus"),
+            TagFormats.TAG_FORMAT_OPENSPOOL,
+        )
+
+    def test_format_for_tag_type_ntag_extended_does_not_affect_nfcv(self):
+        # the two preferences are independent - a user may set NFC-V=extended and
+        # NTAG=extended (or any other combination) without either bleeding into the other
+        self.assertEqual(
+            TagFormats.formatForTagType(
+                "nfcv", nfcvFormatSetting="extended", ntagFormatSetting="extended"
+            ),
+            TagFormats.TAG_FORMAT_NFCV_EXTENDED,
+        )
+
+    def test_ntag_extended_is_registered_and_supported(self):
+        tagFormat = TagFormats.getTagFormat(TagFormats.TAG_FORMAT_NTAG_EXTENDED)
+        self.assertIsNotNone(tagFormat)
+        self.assertTrue(TagFormats.isSupported(TagFormats.TAG_FORMAT_NTAG_EXTENDED))
+        self.assertIsNotNone(tagFormat["buildPayload"])
+
     def test_resolve_temperature_range_falls_back_to_target(self):
         result = TagFormats.resolveTemperatureRange(
             SpoolStub(

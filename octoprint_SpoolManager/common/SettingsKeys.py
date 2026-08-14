@@ -64,6 +64,12 @@ class SettingsKeys:
     # same tradeoff as NTAG's OpenSpool format). Global setting, not chosen per write -
     # Mifare Classic has no OpenSpool option (see TagFormats.py's module docstring for why).
     SETTINGS_KEY_OCTOSCALE_NFCV_FORMAT = "octoScaleNfcvFormat"
+    # Which format an NTAG213/215/216 tag gets written in: "openSpool" (NDEF/JSON,
+    # phone-readable, default/unchanged) or "extended" (OctoScale's own full-field binary
+    # layout, mirrors the Mifare Classic/NFC-V extended format). Global setting, not chosen
+    # per write. NTAG213 has no Extended option - the firmware rejects it outright (too
+    # small), so the UI must warn rather than silently offer a write that always fails.
+    SETTINGS_KEY_OCTOSCALE_NTAG_FORMAT = "octoScaleNtagFormat"
 
     ## SpoolmanDB-Community (optional remote temperature suggestions)
     SETTINGS_KEY_SPOOLMANDB_ENABLED = "spoolmanDbEnabled"
