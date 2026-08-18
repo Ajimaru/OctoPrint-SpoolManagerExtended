@@ -824,7 +824,10 @@ function SpoolManagerEditSpoolDialog() {
         if (self.octoScaleTagWriter == null || self.isExistingSpool() != true) {
             return;
         }
-        self.octoScaleTagWriter.start(self.spoolItemForEditing.databaseId());
+        self.octoScaleTagWriter.start(
+            self.spoolItemForEditing.databaseId(),
+            self.spoolItemForEditing
+        );
     };
 
     this.stopTagWriting = function () {

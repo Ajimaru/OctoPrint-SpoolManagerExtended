@@ -1425,14 +1425,18 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # Talks to /nfcprobe (there is no "/nfc" endpoint on the device, see the class
         # comment above). /nfcprobe answers roughly:
         # {debug, ready, present, type, typeName, uid, idParsed, idText, flowWouldUse,
-        #  tagType, capacityBytes, writeFormat, formatLabel, hasExtendedData}
+        #  tagType, capacityBytes, writeFormat, formatLabel, hasExtendedData, extended}
         # idParsed/idText hold the spool id already on the tag (idParsed is -1 / idText is
         # "" for a blank tag or a tag with no parseable id). tagType/capacityBytes/
-        # writeFormat/formatLabel/hasExtendedData are newer fields older firmware may not
-        # send yet - all are read with .get() and degrade gracefully to "unknown"/the
-        # legacy format. NOTE: "typeName" is the coarse protocol class the firmware
+        # writeFormat/formatLabel/hasExtendedData/extended are newer fields older firmware
+        # may not send yet - all are read with .get() and degrade gracefully to "unknown"/
+        # the legacy format. NOTE: "typeName" is the coarse protocol class the firmware
         # reports ("NFC-A"/"NFC-V"/"no tag"), NOT a human label for the specific tag -
         # "formatLabel" is the human-readable one ("Mifare Classic 1K", "NTAG215", ...).
+        # "extended", when present, mirrors the same field set _buildFullSpoolPayload()
+        # writes (see TagFormats.py) with whatever subset actually fit on the tag - used
+        # by the UI to show a before/after diff when re-writing a tag that already
+        # belongs to the target spool, instead of just warning that data exists.
         baseUrl, errorResponse = self._getOctoScaleBaseUrl()
         if errorResponse is not None:
             return errorResponse
@@ -1478,6 +1482,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             or TagFormats.formatForTagType(tagType, nfcvFormatSetting, ntagFormatSetting),
             "formatLabel": nfcData.get("formatLabel"),
             "hasExtendedData": nfcData.get("hasExtendedData") or False,
+            "extended": nfcData.get("extended") or None,
         }
 
         # Resolve the id already on the tag to a name, so the UI can warn with something
