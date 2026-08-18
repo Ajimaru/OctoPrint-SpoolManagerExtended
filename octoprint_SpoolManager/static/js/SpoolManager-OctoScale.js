@@ -133,6 +133,122 @@ function SpoolManagerOctoScaleWeighing(apiClient, pluginSettings) {
     };
 }
 
+// Diff field definitions shared by tagValueDiff() below: logical field -> label/unit/
+// how to read the current value off a SpoolItem. Mirrors _buildFullSpoolPayload() in
+// TagFormats.py field-for-field, since that's exactly what a write would put on the tag.
+// Date fields (firstUse/lastUse/purchasedOn) are handled separately (see epoch-day
+// conversion in tagValueDiff) since SpoolItem stores them as formatted strings, not the
+// epoch-day ints the tag/firmware use.
+var OCTOSCALE_TAG_DIFF_FIELDS = [
+    {key: "material", label: "Material"},
+    {key: "vendor", label: "Vendor"},
+    {key: "color", label: "Color"},
+    {key: "colorName", label: "Color name"},
+    {key: "diameter", label: "Diameter", unit: "mm"},
+    {key: "density", label: "Density", unit: "g/cm³"},
+    {key: "totalWeight", label: "Total weight", unit: "g"},
+    {key: "spoolWeight", label: "Spool weight", unit: "g"},
+    {key: "usedWeight", label: "Used weight", unit: "g"},
+    {key: "temperature", label: "Nozzle temperature", unit: "°C"},
+    {key: "minTemperature", label: "Min nozzle temperature", unit: "°C"},
+    {key: "maxTemperature", label: "Max nozzle temperature", unit: "°C"},
+    {key: "bedTemperature", label: "Bed temperature", unit: "°C"},
+    {key: "minBedTemperature", label: "Min bed temperature", unit: "°C"},
+    {key: "maxBedTemperature", label: "Max bed temperature", unit: "°C"},
+    {key: "remainingWeight", label: "Remaining weight", unit: "g"},
+    {key: "totalLength", label: "Total length", unit: "mm"},
+    {key: "usedLength", label: "Used length", unit: "mm"},
+    {key: "code", label: "Code"},
+    {key: "batchNumber", label: "Batch number"},
+    {key: "purchasedFrom", label: "Purchased from"},
+    {key: "finish", label: "Finish"},
+    {key: "displayName", label: "Display name"},
+    {key: "cost", label: "Cost"}
+];
+
+// firstUse/lastUse/purchasedOn are compared separately: the tag carries epoch-day ints,
+// SpoolItem carries formatted strings (see PARSE_FORMAT_DATETIME/PARSE_FORMAT_DATE).
+var OCTOSCALE_TAG_DIFF_DATE_FIELDS = [
+    {
+        key: "firstUse",
+        label: "First use",
+        format: SPOOLMANAGER_CONSTANTS.DATES.PARSE_FORMATS.DATETIME
+    },
+    {
+        key: "lastUse",
+        label: "Last use",
+        format: SPOOLMANAGER_CONSTANTS.DATES.PARSE_FORMATS.DATETIME
+    },
+    {
+        key: "purchasedOn",
+        label: "Purchased on",
+        format: SPOOLMANAGER_CONSTANTS.DATES.PARSE_FORMATS.DATE
+    }
+];
+
+var OCTOSCALE_EPOCH_DATE_MS = Date.UTC(1970, 0, 1);
+
+function octoScaleEpochDaysToText(epochDays, format) {
+    // -1 is the firmware's "not set" sentinel here too (see octoScaleNormalizeTagValue) -
+    // caught explicitly since epoch day -1 (1969-12-31) is itself a valid moment() result
+    // and would otherwise silently read as a real date.
+    if (epochDays == null || epochDays === -1) {
+        return null;
+    }
+    return moment(OCTOSCALE_EPOCH_DATE_MS + epochDays * 86400000)
+        .utc()
+        .format(format);
+}
+
+// The firmware's "extended" payload uses -1 (numbers) / "" (strings) as its "field not
+// present on this tag" sentinel (confirmed against main.cpp/pn5180nfc.h's SpoolTagData -
+// every numeric extended field is populated this way, including on weaker formats like
+// OpenSpool/OpenPrintTag that don't carry every field) - normalize that to null so those
+// fields read as "not set" instead of showing up as a spurious diff against -1.
+function octoScaleNormalizeTagValue(rawValue) {
+    if (rawValue === "") {
+        return null;
+    }
+    if (typeof rawValue === "number" && rawValue === -1) {
+        return null;
+    }
+    return rawValue;
+}
+
+// Loosely-typed equality: the tag sends JSON numbers/strings, SpoolItem may hold either
+// depending on the field - normalize both sides before comparing so e.g. 195 vs "195" or
+// 0.2 vs "0.2" don't show up as spurious diffs.
+function octoScaleValuesDiffer(tagValue, currentValue) {
+    var tagEmpty = tagValue == null || tagValue === "";
+    var currentEmpty = currentValue == null || currentValue === "";
+    if (tagEmpty && currentEmpty) {
+        return false;
+    }
+    if (tagEmpty !== currentEmpty) {
+        return true;
+    }
+    if (typeof tagValue === "number" || typeof currentValue === "number") {
+        var tagNum = parseFloat(tagValue);
+        var currentNum = parseFloat(currentValue);
+        if (!isNaN(tagNum) && !isNaN(currentNum)) {
+            return Math.abs(tagNum - currentNum) > 1e-9;
+        }
+    }
+    return String(tagValue) !== String(currentValue);
+}
+
+// Plain-text rendering for a diff row's value: appends the unit if given and the value
+// is numeric, falls back to "(not set)" for null/empty so the diff never shows a blank cell.
+function octoScaleFormatDiffValue(value, unit) {
+    if (value == null || value === "") {
+        return "(not set)";
+    }
+    if (unit && (typeof value === "number" || !isNaN(parseFloat(value)))) {
+        return value + " " + unit;
+    }
+    return String(value);
+}
+
 function SpoolManagerOctoScaleTagWriter(apiClient) {
     var self = this;
 
@@ -142,6 +258,7 @@ function SpoolManagerOctoScaleTagWriter(apiClient) {
     self.tagPresent = ko.observable(false);
     self.tagSpoolId = ko.observable(null); // spool id already stored on the tag, if any
     self.tagSpoolDisplayName = ko.observable(null);
+    self.tagValues = ko.observable(null); // raw "extended" payload of the tag currently on the reader, if any
     self.errorMessage = ko.observable(null);
     self.isWriting = ko.observable(false);
     self.writeSucceeded = ko.observable(false);
@@ -180,6 +297,10 @@ function SpoolManagerOctoScaleTagWriter(apiClient) {
 
     // The spool the tag should point to. Set by the caller before starting.
     self.targetDatabaseId = ko.observable(null);
+    // The SpoolItem being edited, for diffing tagValues() against - set by the caller
+    // before starting alongside targetDatabaseId. Only used for the diff display; nothing
+    // here writes back to it.
+    self.targetSpoolItem = ko.observable(null);
 
     var pollTimerId = null;
 
@@ -191,6 +312,69 @@ function SpoolManagerOctoScaleTagWriter(apiClient) {
             return false;
         }
         return existingId != self.targetDatabaseId();
+    });
+
+    // True once a tag on the reader is confirmed to already belong to the spool being
+    // edited - the update case, as opposed to a blank tag or one belonging to another spool.
+    self.isOwnSpoolTag = ko.pureComputed(function () {
+        var existingId = self.tagSpoolId();
+        return (
+            existingId != null &&
+            existingId == self.targetDatabaseId() &&
+            self.hasExtendedData() === true
+        );
+    });
+
+    // Full before/after diff between the tag's extended payload and the spool currently
+    // being edited, field-for-field against what a write would actually put on the tag
+    // (see _buildFullSpoolPayload() in TagFormats.py / OCTOSCALE_TAG_DIFF_FIELDS above).
+    // Only meaningful (and only shown) for isOwnSpoolTag() - an unrelated/foreign tag's
+    // values aren't "changes", they're just a different tag.
+    self.tagValueDiff = ko.pureComputed(function () {
+        var tagValues = self.tagValues();
+        var spoolItem = self.targetSpoolItem();
+        if (!tagValues || !spoolItem) {
+            return [];
+        }
+
+        var diffs = [];
+
+        OCTOSCALE_TAG_DIFF_FIELDS.forEach(function (field) {
+            if (!Object.prototype.hasOwnProperty.call(tagValues, field.key)) {
+                return;
+            }
+            var tagValue = octoScaleNormalizeTagValue(tagValues[field.key]);
+            var currentValue =
+                typeof spoolItem[field.key] === "function" ? spoolItem[field.key]() : null;
+            if (!octoScaleValuesDiffer(tagValue, currentValue)) {
+                return;
+            }
+            diffs.push({
+                label: field.label,
+                oldValueText: octoScaleFormatDiffValue(tagValue, field.unit),
+                newValueText: octoScaleFormatDiffValue(currentValue, field.unit)
+            });
+        });
+
+        OCTOSCALE_TAG_DIFF_DATE_FIELDS.forEach(function (field) {
+            if (!Object.prototype.hasOwnProperty.call(tagValues, field.key)) {
+                return;
+            }
+            var tagEpochDays = tagValues[field.key];
+            var tagValueText = octoScaleEpochDaysToText(tagEpochDays, field.format);
+            var currentValueText =
+                typeof spoolItem[field.key] === "function" ? spoolItem[field.key]() : null;
+            if (!octoScaleValuesDiffer(tagValueText, currentValueText)) {
+                return;
+            }
+            diffs.push({
+                label: field.label,
+                oldValueText: tagValueText || "(not set)",
+                newValueText: currentValueText || "(not set)"
+            });
+        });
+
+        return diffs;
     });
 
     self.overwriteWarningText = ko.pureComputed(function () {
@@ -260,6 +444,9 @@ function SpoolManagerOctoScaleTagWriter(apiClient) {
                     responseData.present === true &&
                         responseData.hasExtendedData === true
                 );
+                self.tagValues(
+                    responseData.present === true ? responseData.extended || null : null
+                );
                 // a different tag on the reader invalidates a confirmation given for the previous one
                 if (previousSpoolId != self.tagSpoolId()) {
                     self.overwriteConfirmed(false);
@@ -282,8 +469,9 @@ function SpoolManagerOctoScaleTagWriter(apiClient) {
         });
     };
 
-    self.start = function (databaseId) {
+    self.start = function (databaseId, spoolItem) {
         self.targetDatabaseId(databaseId);
+        self.targetSpoolItem(spoolItem || null);
         self.writeSucceeded(false);
         self.overwriteConfirmed(false);
         self.errorMessage(null);
@@ -324,6 +512,8 @@ function SpoolManagerOctoScaleTagWriter(apiClient) {
         self.writeFormat(null);
         self.formatLabel(null);
         self.hasExtendedData(false);
+        self.tagValues(null);
+        self.targetSpoolItem(null);
         self.overwriteConfirmed(false);
         self.errorMessage(null);
         self.teachInResult(null);
