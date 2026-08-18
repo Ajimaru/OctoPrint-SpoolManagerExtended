@@ -1412,6 +1412,7 @@ class SpoolmanagerPlugin(
         return [
             dict(type="tab", name="Spools"),
             dict(type="settings", custom_bindings=True, name="Spool Manager"),
+            dict(type="sidebar", name="Spools", icon="life-ring", template="SpoolManager_sidebar.jinja2"),
         ]
 
     ##~~ AssetPlugin mixin
