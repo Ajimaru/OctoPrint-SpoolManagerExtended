@@ -800,9 +800,28 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                                     --><span data-bind="visible: spoolDialog.octoScaleTagWriter.formatLabel">: <span data-bind="text: spoolDialog.octoScaleTagWriter.formatLabel"></span></span></small>
                                                 </span>
                                                 <span class="help-block" style="margin-bottom: 0;"
-                                                      data-bind="visible: spoolDialog.octoScaleTagWriter.tagPresent() && spoolDialog.octoScaleTagWriter.hasExtendedData">
+                                                      data-bind="visible: spoolDialog.octoScaleTagWriter.tagPresent() && spoolDialog.octoScaleTagWriter.hasExtendedData() && !spoolDialog.octoScaleTagWriter.isOwnSpoolTag()">
                                                     <small class="text-warning"><i class="fas fa-info-circle"></i> This tag already carries extended data (material/color/weights) which will be overwritten.</small>
                                                 </span>
+                                                <!-- ko if: spoolDialog.octoScaleTagWriter.tagPresent() && spoolDialog.octoScaleTagWriter.isOwnSpoolTag() -->
+                                                <span class="help-block" style="margin-bottom: 0;"
+                                                      data-bind="visible: spoolDialog.octoScaleTagWriter.tagValueDiff().length > 0">
+                                                    <small class="text-warning"><i class="fas fa-info-circle"></i> This tag already belongs to this spool. The following values will be updated:</small>
+                                                    <table class="table table-condensed" style="margin: 4px 0 0 0;">
+                                                        <tbody data-bind="foreach: spoolDialog.octoScaleTagWriter.tagValueDiff">
+                                                            <tr>
+                                                                <td style="padding: 2px 8px 2px 0; border: none;"><small data-bind="text: label"></small></td>
+                                                                <td style="padding: 2px 8px; border: none;"><small data-bind="text: oldValueText"></small></td>
+                                                                <td style="padding: 2px 0; border: none;"><small><i class="fas fa-arrow-right"></i> <span data-bind="text: newValueText"></span></small></td>
+                                                            </tr>
+                                                        </tbody>
+                                                    </table>
+                                                </span>
+                                                <span class="help-block text-success" style="margin-bottom: 0;"
+                                                      data-bind="visible: spoolDialog.octoScaleTagWriter.tagValueDiff().length === 0">
+                                                    <small><i class="fas fa-check"></i> This tag already belongs to this spool and is up to date.</small>
+                                                </span>
+                                                <!-- /ko -->
                                                 <span class="help-block" style="margin-bottom: 0;"
                                                       data-bind="visible: spoolDialog.octoScaleTagWriter.needsOverwriteConfirmation() && !spoolDialog.octoScaleTagWriter.overwriteConfirmed()">
                                                     <small class="text-warning" data-bind="text: spoolDialog.octoScaleTagWriter.overwriteWarningText"></small>
