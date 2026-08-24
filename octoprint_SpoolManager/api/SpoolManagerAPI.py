@@ -20,10 +20,18 @@ from octoprint.access.permissions import Permissions
 from octoprint.server.util.flask import no_firstrun_access
 
 from octoprint_SpoolManager import DatabaseManager
-from octoprint_SpoolManager.U1RfidManager import deriveRfidTagKey, normalizeCardUid
+from octoprint_SpoolManager.U1RfidManager import (
+    deriveRfidTagKey,
+    isPlausibleTagUid,
+    normalizeCardUid,
+)
 from octoprint_SpoolManager.api import Transformer
 from octoprint_SpoolManager.common import (
     CSVExportImporter,
+    FilamentTagParsers,
+    FilamentTagReader,
+    FilamentTagToSpool,
+    OctoScaleUrl,
     OpenPrintTag,
     RfidTeachIn,
     StringUtils,
@@ -85,6 +93,9 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         "minBedTemperature": "Bed temperature (min)",
         "maxBedTemperature": "Bed temperature (max)",
         "enclosureTemperature": "Enclosure temperature",
+        "dryingTemperature": "Drying temperature",
+        "dryingTime": "Drying time",
+        "td": "Transmission distance",
         "offsetTemperature": "Offset tool temperature",
         "offsetBedTemperature": "Offset bed temperature",
         "offsetEnclosureTemperature": "Offset enclosure temperature",
@@ -252,6 +263,15 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         )
         spoolModel.enclosureTemperature = self._toIntFromJSONOrNone(
             "enclosureTemperature", jsonData, validationErrors, minValue=0
+        )
+        spoolModel.dryingTemperature = self._toIntFromJSONOrNone(
+            "dryingTemperature", jsonData, validationErrors, minValue=0
+        )
+        spoolModel.dryingTime = self._toIntFromJSONOrNone(
+            "dryingTime", jsonData, validationErrors, minValue=0
+        )
+        spoolModel.td = self._toFloatFromJSONOrNone(
+            "td", jsonData, validationErrors, minValue=0
         )
         spoolModel.offsetTemperature = self._toIntFromJSONOrNone(
             "offsetTemperature", jsonData, validationErrors
@@ -1270,11 +1290,17 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     # result must be polled via /nfcwritestatus - this plugin previously treated the write
     # call as synchronous, which never actually reflected a real success/failure.
 
-    # The device is a single-core ESP32-S2: its NFC polling task competes with the web server for
-    # the one core, so an otherwise instant request can take several seconds (measured: 0.02s to
-    # 5.0s for /weight while a tag is being polled). Timeouts below ~8s therefore report a
-    # connection failure for requests that actually succeed, which is what a short timeout looked
-    # like in practice. Kept generous rather than clever - a slow answer is still a correct answer.
+    # Requests to the device can occasionally take several seconds (measured: 0.02s to 5.0s for
+    # /weight while a tag is being polled). Timeouts below ~8s therefore report a connection
+    # failure for requests that actually succeed, which is what a short timeout looked like in
+    # practice. Kept generous rather than clever - a slow answer is still a correct answer.
+    #
+    # The cause of that spread is NOT core contention, contrary to what this comment claimed
+    # before: the device is a dual-core ESP32-S3 (platformio.ini: esp32-s3-devkitc-1) whose NFC
+    # and scale tasks are pinned to core 0 while the web server runs in loop() on core 1, so they
+    # do not compete for a core at all. The firmware's own /weight handler merely reads a variable
+    # the scale task already filled in. The real cause is unconfirmed - WiFi power-save or TCP
+    # handling are the likelier candidates - so the generous timeout stays as a safety margin.
     OCTOSCALE_TIMEOUT_SECONDS = 8.0
 
     def _getOctoScaleBaseUrl(self):
@@ -1313,15 +1339,9 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         return (baseUrl, None)
 
     def _normalizeOctoScaleUrl(self, baseUrl):
-        if baseUrl is None:
-            return None
-        baseUrl = str(baseUrl).strip().rstrip("/")
-        if not baseUrl:
-            return None
-        if not baseUrl.startswith("http://") and not baseUrl.startswith("https://"):
-            # a bare "192.168.1.139" is what people type; the device serves plain HTTP
-            baseUrl = "http://" + baseUrl
-        return baseUrl
+        # Implementation lives in common/OctoScaleUrl.py so it can be unit-tested without
+        # flask/OctoPrint; kept as a method here so all call sites stay unchanged.
+        return OctoScaleUrl.normalizeOctoScaleUrl(baseUrl)
 
     def _callOctoScale(self, baseUrl, path, timeout=None, method="GET", json=None):
         # Returns (response, errorMessage). Never raises - every transport problem comes back
@@ -1349,7 +1369,15 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # /nfcwritespool and /nfcwriteid answer 202 "started" for an accepted async write -
         # that is success, not an error, so 2xx is accepted wholesale rather than just 200.
         if response.status_code < 200 or response.status_code >= 300:
-            return (None, "OctoScale answered with HTTP " + str(response.status_code))
+            # A 409 is not a transport failure but a decision by the device: it refuses to
+            # overwrite a tag it recognized as foreign, or another RF job is already
+            # running. Those answers carry a structured JSON body the caller needs (error,
+            # retryable, overridable) - so hand the response along instead of dropping it.
+            # Everything else stays a plain message, unchanged.
+            errorMessage = "OctoScale answered with HTTP " + str(response.status_code)
+            if response.status_code == 409:
+                return (response, errorMessage)
+            return (None, errorMessage)
         return (response, None)
 
     def _octoScaleFloatOrError(self, response):
@@ -1483,6 +1511,14 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             "formatLabel": nfcData.get("formatLabel"),
             "hasExtendedData": nfcData.get("hasExtendedData") or False,
             "extended": nfcData.get("extended") or None,
+            # "empty" | "foreign" | "" - what the firmware makes of the data already on the
+            # tag. "foreign" means the tag carries data in a format OctoScale does not
+            # recognize (most likely another vendor's), which a write would destroy. Only
+            # reported for Mifare Classic and NTAG; NFC-V has no page reader on the normal
+            # poll path and always answers "", so the frontend keeps its own heuristic as a
+            # fallback (see isPossiblyForeignTag in SpoolManager-OctoScale.js). Read with
+            # .get() like every other newer field: older firmware simply omits it.
+            "occupancy": nfcData.get("occupancy") or "",
         }
 
         # Resolve the id already on the tag to a name, so the UI can warn with something
@@ -1575,6 +1611,12 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             ntagFormatSetting = "openSpool"
         payload["preferredNtagFormat"] = ntagFormatSetting
 
+        # Set once the user confirmed overwriting a tag the firmware flagged as foreign.
+        # Without it the device keeps refusing with 409 - the confirmation happens in the
+        # UI, but the decision has to reach the firmware for its own guard to step aside.
+        if jsonData.get("force") is True:
+            payload["force"] = True
+
         self._logger.info(
             "Writing NFC tag for spool with database id '"
             + str(databaseId)
@@ -1588,9 +1630,43 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             baseUrl, "/nfcwritespool", method="POST", json=payload, timeout=8.0
         )
         if errorMessage is not None:
-            return flask.jsonify({"success": False, "error": errorMessage})
+            return flask.jsonify(
+                self._describeOctoScaleWriteRefusal(response, errorMessage)
+            )
 
         return flask.jsonify({"success": True, "databaseId": databaseId, "pending": True})
+
+    # The firmware answers 409 for two very different situations, both with a structured
+    # JSON body: it refuses to overwrite a tag it recognized as foreign ("foreign tag",
+    # overridable with force=true), or another RF job is already running ("write in
+    # progress", transient). They must be told apart by the "error" field and NOT by the
+    # status code - one is a protection the user may consciously override, the other simply
+    # needs a retry. Without this the UI showed the bare "OctoScale answered with HTTP 409",
+    # which reads like a defect rather than the deliberate safeguard it is.
+    def _describeOctoScaleWriteRefusal(self, response, fallbackMessage):
+        result = {"success": False, "error": fallbackMessage}
+        if response is None:
+            return result
+
+        try:
+            body = response.json()
+        except ValueError:
+            return result
+        if not isinstance(body, dict):
+            return result
+
+        message = body.get("message") or body.get("error")
+        if message:
+            result["error"] = str(message)
+        # Passed through so the frontend can offer the right next step: an overridable
+        # refusal gets a confirm-and-retry, a retryable one just needs another attempt.
+        result["refusal"] = body.get("error") or None
+        result["retryable"] = body.get("retryable") is True
+        result["overridable"] = body.get("overridable") is True
+        occupancy = body.get("occupancy")
+        if occupancy:
+            result["occupancy"] = str(occupancy)
+        return result
 
     @octoprint.plugin.BlueprintPlugin.route("/octoscale/writeStatus", methods=["GET"])
     @no_firstrun_access
@@ -1624,12 +1700,211 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 "format": statusData.get("format"),
                 "bytesWritten": statusData.get("bytesWritten"),
                 "droppedFields": statusData.get("droppedFields"),
+                # Fields the chosen format has no place for at all - as opposed to
+                # droppedFields, which are those that were cut for lack of room. The
+                # distinction matters to the user: a dropped field fits on a bigger tag, an
+                # unsupported one only in a different format. Without this the write
+                # reported plain success while silently leaving data behind (OpenSpool has
+                # a fixed 12-key schema and can lose up to 15 of our fields).
+                "unsupportedFields": statusData.get("unsupportedFields"),
                 "warning": statusData.get("warning") or None,
                 # UID of the tag actually written, used to auto-teach-in rfidTagKey after an
                 # OpenPrintTag write (see /octoscale/teachRfidTagKey below). Older firmware
                 # doesn't send this field yet - absence here just means teach-in falls back
                 # to the UID last seen via /octoscale/nfc on the frontend side.
                 "uid": statusData.get("uid"),
+            }
+        )
+
+    @octoprint.plugin.BlueprintPlugin.route("/octoscale/readTag", methods=["POST"])
+    @no_firstrun_access
+    def readOctoScaleTag(self):
+        # Reads a vendor tag (Bambu, Anycubic, Elegoo, ...) off the reader and returns the
+        # spool fields it describes. Nothing is written to the database here: the answer is
+        # a suggestion the user confirms in the wizard or the edit dialog.
+        #
+        # Only ever triggered by an explicit user action, never by the background poll - a
+        # raw read costs the device up to a couple of seconds and blocks its RF hardware
+        # for that time, which would be a poor trade for someone who only wants to write.
+        if not self._settings.get_boolean(
+            [SettingsKeys.SETTINGS_KEY_OCTOSCALE_TAG_READING_ENABLED]
+        ):
+            return make_response(
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Reading vendor RFID tags is not enabled in the SpoolManager settings.",
+                    }
+                ),
+                409,
+            )
+
+        baseUrl, errorResponse = self._getOctoScaleBaseUrl()
+        if errorResponse is not None:
+            return errorResponse
+
+        reader = FilamentTagReader.OctoScaleTagReader(
+            self._callOctoScale, baseUrl, self._logger
+        )
+
+        scanResult = reader.probe()
+        if scanResult is None:
+            return flask.jsonify(
+                {
+                    "success": False,
+                    "error": "No tag on the reader.",
+                    "retryable": True,
+                }
+            )
+
+        # Phase 1 ships NTAG parsers only, all of them keyless: one page walk, then every
+        # parser gets a go at the same bytes. Mifare Classic needs per-parser keys and a
+        # read each, which arrives with the key store.
+        readResult = reader.readRaw()
+        if not readResult.ok:
+            self._logger.warning(
+                "Could not read the tag from OctoScale: "
+                + str(readResult.error)
+                + " (retryable="
+                + str(readResult.retryable)
+                + ")"
+            )
+            return flask.jsonify(
+                {
+                    "success": False,
+                    "error": readResult.error or "Could not read the tag.",
+                    "retryable": readResult.retryable,
+                    "diagnostics": readResult.toDiagnostics(),
+                }
+            )
+
+        # Guard against a truncated UID before anything is derived from it - the reader can
+        # report success on a partial anticollision result (see isPlausibleTagUid).
+        uid = readResult.uid or scanResult.uidHex
+        if not isPlausibleTagUid(uid):
+            self._logger.warning(
+                "Discarding a tag read with an implausible UID '"
+                + str(uid)
+                + "' ("
+                + str(len(uid) // 2 if uid else 0)
+                + " bytes) - the reader most likely aborted anticollision"
+            )
+            return flask.jsonify(
+                {
+                    "success": False,
+                    "error": "The reader returned an incomplete tag ID. Please place the tag back on the reader and try again.",
+                    "retryable": True,
+                    "diagnostics": readResult.toDiagnostics(),
+                }
+            )
+
+        # A UID that changed between the probe and the read means a different tag is on the
+        # reader now, so the bytes belong to neither with any certainty. Compared upper-case
+        # on both sides: uidHex is normalized, the device's string is not, and a case
+        # difference alone must not look like a swapped tag.
+        probeUid = (scanResult.uidHex or "").upper()
+        readUid = (readResult.uid or "").upper()
+        if readUid and probeUid and readUid != probeUid:
+            self._logger.warning(
+                "Discarding a tag read: the tag changed mid-read (probe='"
+                + str(scanResult.uidHex)
+                + "', read='"
+                + str(readResult.uid)
+                + "')"
+            )
+            return flask.jsonify(
+                {
+                    "success": False,
+                    "error": "The tag changed while it was being read. Please try again.",
+                    "retryable": True,
+                    "diagnostics": readResult.toDiagnostics(),
+                }
+            )
+
+        filament, parseDiagnostics = FilamentTagParsers.parseTagData(
+            scanResult, readResult.data
+        )
+
+        rfidTagKey = None
+        normalizedUid = normalizeCardUid(uid) if uid else None
+        if normalizedUid:
+            rfidTagKey = deriveRfidTagKey(normalizedUid)
+
+        diagnostics = dict(readResult.toDiagnostics())
+        diagnostics.update(parseDiagnostics)
+
+        if filament is None:
+            # The interesting failure: bytes arrived but no parser claimed them. Log which
+            # ones were tried and how much data came back, so the next step is a comparison
+            # against the tag's actual content rather than guesswork.
+            self._logger.info(
+                "Read vendor tag uid='"
+                + str(normalizedUid)
+                + "': no parser recognized it (tried: "
+                + ", ".join(parseDiagnostics.get("attemptedParsers") or ["none"])
+                + ", bytes="
+                + str(len(readResult.data) if readResult.data else 0)
+                + ")"
+            )
+            return flask.jsonify(
+                {
+                    "success": True,
+                    "parsed": False,
+                    "uid": normalizedUid,
+                    "rfidTagKey": rfidTagKey,
+                    "error": "This tag's format was not recognized.",
+                    "diagnostics": diagnostics,
+                }
+            )
+
+        diagnostics.update(
+            FilamentTagToSpool.diagnosticsFor(filament, normalizedUid, rfidTagKey)
+        )
+
+        # A vendor tag carries no SpoolManager id, so an already-known spool can only be
+        # found by the tag's own UID - the same path OpenPrintTag and the Snapmaker U1 use.
+        matchedSpool = None
+        if rfidTagKey:
+            try:
+                matchedSpool = self._databaseManager.loadSpoolByRfidTagKey(rfidTagKey)
+            except Exception:
+                self._logger.exception(
+                    "Could not look up a spool for rfidTagKey '" + str(rfidTagKey) + "'"
+                )
+
+        parserDescriptor = FilamentTagParsers.getParser(filament.source_processor)
+
+        # Logged because this endpoint was previously silent: a read that reached the device
+        # and came back 200 left no trace in the plugin log at all, so "did the button even
+        # work?" could only be answered from tornado's access log.
+        self._logger.info(
+            "Read vendor tag uid='"
+            + str(normalizedUid)
+            + "', recognized by parser '"
+            + str(filament.source_processor)
+            + "'"
+        )
+
+        return flask.jsonify(
+            {
+                "success": True,
+                "parsed": True,
+                "parserId": filament.source_processor,
+                "parserLabel": (
+                    parserDescriptor["label"] if parserDescriptor else None
+                ),
+                "fields": FilamentTagToSpool.genericFilamentToSpoolFields(
+                    filament, normalizedUid
+                ),
+                "uid": normalizedUid,
+                "rfidTagKey": rfidTagKey,
+                "matchedSpoolId": (
+                    matchedSpool.databaseId if matchedSpool is not None else None
+                ),
+                "matchedSpoolDisplayName": (
+                    matchedSpool.displayName if matchedSpool is not None else None
+                ),
+                "diagnostics": diagnostics,
             }
         )
 
@@ -1674,6 +1949,34 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             abort(404)
 
         normalizedUid = normalizeCardUid(jsonData.get("uid"))
+
+        # A truncated UID must never be taught in. The reader reports success even when its
+        # anticollision aborts halfway, and the resulting fragment derives a different key
+        # than the same tag's full UID - which would be written straight to the database
+        # here (this endpoint saves without a further confirmation step), binding the spool
+        # to a key the tag never presents again. deriveRfidTagKey() does not catch it: it
+        # only needs 4 hex characters, and a fragment has more. Refused rather than forced,
+        # since force=true is meant for overriding a *known* key, not a broken read.
+        if normalizedUid and not isPlausibleTagUid(normalizedUid):
+            self._logger.warning(
+                "Refusing rfidTagKey teach-in for spool "
+                + str(databaseId)
+                + ": implausible tag UID '"
+                + str(normalizedUid)
+                + "' ("
+                + str(len(normalizedUid) // 2)
+                + " bytes) - the reader most likely aborted anticollision"
+            )
+            return flask.jsonify(
+                {
+                    "success": True,
+                    "taught": False,
+                    "reason": RfidTeachIn.REASON_NO_UID,
+                    "error": "The reader reported an incomplete tag ID, so no tag key was stored. Please place the tag on the reader again.",
+                    "retryable": True,
+                }
+            )
+
         newKey = deriveRfidTagKey(normalizedUid)
 
         conflictingSpool = None

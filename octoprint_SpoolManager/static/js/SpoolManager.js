@@ -384,6 +384,11 @@ $(function () {
         // under the NFC tag format capacity table, no persistence needed.
         self.nfcFormatFieldsExpanded = ko.observable(false);
 
+        // Same idea for the reading side: which vendor tags can be read and which fields
+        // come off them. Kept separate from the writing reference above because the two
+        // answer different questions - what we put on a tag vs. what we can get off one.
+        self.vendorTagFormatsExpanded = ko.observable(false);
+
         self.spoolmanDbRefreshBusy = ko.observable(false);
         self.spoolmanDbRefreshResult = ko.observable(null);
         self.refreshSpoolmanDbStatus = function () {

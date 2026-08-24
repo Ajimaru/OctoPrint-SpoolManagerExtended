@@ -47,7 +47,9 @@ SPOOLMANAGER_UTILS = {
     selectAllIntoFilter: function (allKo, selectedKo, idMapper) {
         var allEntries = allKo();
         var newSelection =
-            typeof idMapper === "function" ? allEntries.map(idMapper) : allEntries.slice();
+            typeof idMapper === "function"
+                ? allEntries.map(idMapper)
+                : allEntries.slice();
         selectedKo(newSelection);
     },
 
@@ -77,11 +79,15 @@ SPOOLMANAGER_UTILS = {
                 },
                 write: function (isChecked) {
                     if (isChecked) {
-                        SPOOLMANAGER_UTILS.selectAllIntoFilter(allKo, selectedKo, idMapper);
+                        SPOOLMANAGER_UTILS.selectAllIntoFilter(
+                            allKo,
+                            selectedKo,
+                            idMapper
+                        );
                     } else {
                         selectedKo.removeAll();
                     }
-                },
+                }
             })
             .extend({throttle: 1});
     },
@@ -504,7 +510,11 @@ SPOOLMANAGER_U1RFID = {
         // own _syncFilamentWeight() (called right after this) then derives totalWeight
         // back out of it, same as if the user had typed the combined weight by hand.
         var nominalWeight = parseFloat(metadata["WEIGHT"]);
-        if (!isNaN(nominalWeight) && nominalWeight > 0 && typeof spoolItem.totalCombinedWeight === "function") {
+        if (
+            !isNaN(nominalWeight) &&
+            nominalWeight > 0 &&
+            typeof spoolItem.totalCombinedWeight === "function"
+        ) {
             var existingSpoolWeight = parseFloat(spoolItem.spoolWeight());
             if (isNaN(existingSpoolWeight)) {
                 existingSpoolWeight = 0;
@@ -536,6 +546,98 @@ SPOOLMANAGER_U1RFID = {
         // #080A0D (near-black) has no tinycolor name, so the mandatory field would stay
         // empty (or stale). Only step in for that gap, and only after the dialog's own
         // suggestion had its chance to run.
+        if (colorValue != null && typeof spoolItem.colorName === "function") {
+            var nameAfterSuggestion = (spoolItem.colorName() || "").trim();
+            if (nameAfterSuggestion === "") {
+                spoolItem.colorName(SPOOLMANAGER_U1RFID.buildColorName(colorValue));
+            }
+        }
+    },
+
+    // Applies vendor tag fields (from POST /octoscale/readTag) onto a spool item.
+    //
+    // Sibling of applyToSpoolItem above, and deliberately not a rewrite of it: that one
+    // takes the Snapmaker U1's own metadata keys (HOTEND_MAX_TEMP, RGB_1, ...), this one
+    // takes the flat camelCase field names the backend already speaks - the same names
+    // _buildFullSpoolPayload() writes to a tag. Same "suggestion, not a takeover" rule:
+    // only fields the tag actually carries are written, nothing is ever cleared.
+    applyTagFieldsToSpoolItem: function (spoolItem, fields, uid, rfidTagKey, options) {
+        if (spoolItem == null || fields == null) {
+            return;
+        }
+        options = options || {};
+
+        var setIfPresent = function (fieldName, value) {
+            if (value == null || value === "") {
+                return;
+            }
+            var observable = spoolItem[fieldName];
+            if (typeof observable === "function") {
+                observable(value);
+            }
+        };
+
+        // Everything except the three fields below is a straight write - the backend has
+        // already done the unit conversions and dropped values the tag did not carry.
+        var directFields = [
+            "vendor",
+            "material",
+            "materialCharacteristic",
+            "diameter",
+            "temperature",
+            "minTemperature",
+            "maxTemperature",
+            "bedTemperature",
+            "minBedTemperature",
+            "maxBedTemperature",
+            "dryingTemperature",
+            "dryingTime",
+            "td"
+        ];
+        directFields.forEach(function (fieldName) {
+            setIfPresent(fieldName, fields[fieldName]);
+        });
+
+        // Density is not on any vendor tag - look it up from the material name, the same
+        // way applyToSpoolItem does, so a tag-filled material does not leave it empty.
+        if (fields["material"] != null && typeof spoolItem.density === "function") {
+            var currentDensity = parseFloat(spoolItem.density());
+            if (isNaN(currentDensity) || currentDensity <= 0) {
+                var suggestedDensity =
+                    SPOOLMANAGER_CONSTANTS.MATERIALS_DENSITY_MAPPING[
+                        SPOOLMANAGER_UTILS.normalizeMaterialKey(fields["material"])
+                    ];
+                if (suggestedDensity) {
+                    spoolItem.density(suggestedDensity);
+                }
+            }
+        }
+
+        // Same reasoning as in applyToSpoolItem: the wizard's weight step validates
+        // totalCombinedWeight, which only derives from totalWeight during the initial
+        // update() - so a live edit has to go the other way round.
+        var nominalWeight = parseFloat(fields["totalWeight"]);
+        if (
+            !isNaN(nominalWeight) &&
+            nominalWeight > 0 &&
+            typeof spoolItem.totalCombinedWeight === "function"
+        ) {
+            var existingSpoolWeight = parseFloat(spoolItem.spoolWeight());
+            if (isNaN(existingSpoolWeight)) {
+                existingSpoolWeight = 0;
+            }
+            spoolItem.totalCombinedWeight(nominalWeight + existingSpoolWeight);
+        }
+
+        // `code` is deliberately left alone - see the note in applyToSpoolItem.
+        setIfPresent("rfidTagKey", rfidTagKey);
+
+        var colorValue = fields["color"];
+        if (colorValue != null && typeof options.applyColor === "function") {
+            options.applyColor(colorValue);
+        }
+        // Fill the mandatory colorName only if the dialog's own suggestion left it empty
+        // (near-black shades have no CSS name) - never fight the dialog for that field.
         if (colorValue != null && typeof spoolItem.colorName === "function") {
             var nameAfterSuggestion = (spoolItem.colorName() || "").trim();
             if (nameAfterSuggestion === "") {

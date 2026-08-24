@@ -102,6 +102,17 @@ def _epochDaysOrNone(value):
     return None
 
 
+def _dryingTimeMinutesOrNone(hours):
+    # SpoolManager stores drying time in hours, every tag format that carries it expects
+    # minutes. None stays None so an unset field is not written as "0 minutes".
+    if hours is None:
+        return None
+    try:
+        return int(hours) * 60
+    except (TypeError, ValueError):
+        return None
+
+
 def _buildFullSpoolPayload(spoolModel):
     # Every field the firmware knows how to place on an extended Mifare Classic tag or in
     # an OpenSpool NDEF/JSON record. The firmware picks which of these fit (and which format
@@ -147,6 +158,19 @@ def _buildFullSpoolPayload(spoolModel):
         "lastUse": _epochDaysOrNone(spoolModel.lastUse),
         "purchasedOn": _epochDaysOrNone(spoolModel.purchasedOn),
         "cost": spoolModel.cost,
+        # v12 fields. Sending them is safe on every firmware: /nfcwritespool reads only the
+        # names it knows (doc["name"] | default) and ignores the rest - confirmed against
+        # the firmware source rather than assumed, since this payload goes out on every
+        # write, including for users who never enable tag reading.
+        "dryingTemperature": spoolModel.dryingTemperature,
+        # MINUTES, not hours: the OpenPrintTag spec stores drying time in minutes
+        # (main_fields.yaml key 58, example 480 = 8 h) and the firmware writes what it is
+        # given without converting. SpoolManager stores hours, so the conversion has to
+        # happen here - otherwise 8 hours reach the tag as 8 minutes. Same conversion as
+        # OpenPrintTag._dryingTimeMinutes(), which feeds the preview endpoint; both have to
+        # agree or the preview would show something the write does not produce.
+        "dryingTime": _dryingTimeMinutesOrNone(spoolModel.dryingTime),
+        "td": spoolModel.td,
     }
 
 

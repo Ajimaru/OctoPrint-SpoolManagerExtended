@@ -15,7 +15,7 @@ plugin_name = "OctoPrint-SpoolManager"
 
 # The plugin's version. Can be overwritten within OctoPrint's internal data via __plugin_version__ in the plugin module
 #
-plugin_version = "1.8.0a3.dev231"
+plugin_version = "1.8.0a3.dev244"
 
 # The plugin's description. Can be overwritten within OctoPrint's internal data via __plugin_description__ in the plugin
 # module
@@ -42,7 +42,7 @@ plugin_requires = [
     "peewee>=3.14,<5",
     "psycopg2-binary",  # postgres - driver
     "pymysql",  # mysql - driver
-    "cryptography",  # connecting to MySQL
+    "cryptography",  # connecting to MySQL; HKDF key derivation for vendor RFID tags
     "requests",  # talking to an OctoScale device (scale + NFC writer); ships with OctoPrint
     "websocket-client",  # Moonraker JSON-RPC socket of the Snapmaker U1 (RFID reader)
 ]

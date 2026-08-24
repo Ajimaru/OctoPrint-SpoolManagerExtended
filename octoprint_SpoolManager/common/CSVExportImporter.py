@@ -25,6 +25,9 @@ COLUMN_FLOWRATECOMPENSATION = "Flow rate compensation [%]"
 COLUMN_TEMPERATURE = "Temperature [C]"
 COLUMN_TEMPERATURE_BED = "Bed Temperature [C]"
 COLUMN_TEMPERATURE_ENCLOSURE = "Enclosure Temperature [C]"
+COLUMN_TEMPERATURE_DRYING = "Drying Temperature [C]"
+COLUMN_TIME_DRYING = "Drying Time [h]"
+COLUMN_TD = "TD [mm]"
 COLUMN_OFFSET_TEMPERATURE = "Offset Temperature [C]"
 COLUMN_OFFSET_TEMPERATURE_BED = "Offset Bed Temperature [C]"
 COLUMN_OFFSET_TEMPERATURE_ENCLOSURE = "Offset Enclosure Temperature [C]"
@@ -212,6 +215,13 @@ class NumberCSVFormattorParser:
             fieldValue = int(fieldValue)
         if "enclosureTemperature" == fieldName:
             fieldValue = int(fieldValue)
+        if "dryingTemperature" == fieldName:
+            fieldValue = int(fieldValue)
+        if "dryingTime" == fieldName:
+            fieldValue = int(fieldValue)
+        if "td" == fieldName:
+            # float, unlike the drying values: a measured optical property, not a setpoint
+            fieldValue = float(fieldValue)
         if "offsetTemperature" == fieldName:
             fieldValue = int(fieldValue)
         if "offsetBedTemperature" == fieldName:
@@ -251,6 +261,9 @@ ALL_COLUMNS_SORTED = [
     COLUMN_TEMPERATURE,
     COLUMN_TEMPERATURE_BED,
     COLUMN_TEMPERATURE_ENCLOSURE,
+    COLUMN_TEMPERATURE_DRYING,
+    COLUMN_TIME_DRYING,
+    COLUMN_TD,
     COLUMN_OFFSET_TEMPERATURE,
     COLUMN_OFFSET_TEMPERATURE_BED,
     COLUMN_OFFSET_TEMPERATURE_ENCLOSURE,
@@ -316,6 +329,16 @@ ALL_COLUMNS = {
         "",
         NumberCSVFormattorParser(),
     ),
+    COLUMN_TEMPERATURE_DRYING: CSVColumn(
+        "dryingTemperature",
+        COLUMN_TEMPERATURE_DRYING,
+        "",
+        NumberCSVFormattorParser(),
+    ),
+    COLUMN_TIME_DRYING: CSVColumn(
+        "dryingTime", COLUMN_TIME_DRYING, "", NumberCSVFormattorParser()
+    ),
+    COLUMN_TD: CSVColumn("td", COLUMN_TD, "", NumberCSVFormattorParser()),
     COLUMN_OFFSET_TEMPERATURE: CSVColumn(
         "offsetTemperature", COLUMN_OFFSET_TEMPERATURE, "", NumberCSVFormattorParser()
     ),

@@ -1338,6 +1338,11 @@ class SpoolmanagerPlugin(
         settings[SettingsKeys.SETTINGS_KEY_OCTOSCALE_URL] = ""
         settings[SettingsKeys.SETTINGS_KEY_OCTOSCALE_NFCV_FORMAT] = "extended"
         settings[SettingsKeys.SETTINGS_KEY_OCTOSCALE_NTAG_FORMAT] = "openSpool"
+        settings[SettingsKeys.SETTINGS_KEY_OCTOSCALE_TAG_READING_ENABLED] = False
+
+        ## SpoolmanDB-Community
+        ## Optional spool fields
+        settings[SettingsKeys.SETTINGS_KEY_TD_FIELD_ENABLED] = False
 
         ## SpoolmanDB-Community
         settings[SettingsKeys.SETTINGS_KEY_SPOOLMANDB_ENABLED] = False

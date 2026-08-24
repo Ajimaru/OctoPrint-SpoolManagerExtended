@@ -160,6 +160,20 @@ FPE;	2.16
                 </div>
 -->
 
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.tdFieldEnabled"> {{ _('Show the TD field in the spool dialog') }}
+                        </label>
+                        <span class="help-block">
+                            <small>
+                                {{ _('TD (transmission distance) describes how far light travels through the filament before it becomes opaque - used by HueForge and OrcaSlicer\'s full-spectrum mode to plan color layers. Measuring it requires a printed test swatch, so the field is hidden unless you actually work with it.') }}<br>
+                                {{ _('The value is still read from vendor RFID tags and stored either way; this only controls whether the field is shown for manual editing.') }}
+                            </small>
+                        </span>
+                    </div>
+                </div>
+
             </div>
 
             <!-- TEMPERATURE - TAB -->
@@ -986,10 +1000,11 @@ FPE;	2.16
                     </div>
                 </div>
                 <div class="control-group">
-                    <label class="control-label">{{ _('NFC tag format') }}</label>
+                    <label class="control-label">{{ _('NFC tag format (writing)') }}</label>
                     <div class="controls">
                         <span class="help-block">
                             <small>
+                                {{ _('Applies to tags SpoolManager writes. Reading manufacturer tags is a separate feature - see "Read vendor RFID tags" below.') }}<br>
                                 {{ _('Chosen automatically by tag type: Mifare Classic 1K gets an extended layout (material, vendor, color, weights, temperatures); other tags fall back to the database id only. Two exceptions: NFC-V/ISO15693 tags let you choose between the three formats below, set in "NFC-V / ISO15693 tag format" further down; NTAG213/215/216 tags let you choose between OpenSpool and Extended, set in "NTAG213/215/216 tag format" further down.') }}
                             </small>
                         </span>
@@ -1066,6 +1081,8 @@ FPE;	2.16
                                         <li>{{ _('Finish') }}</li>
                                         <li>{{ _('Display name') }}</li>
                                         <li>{{ _('First / last use date') }}</li>
+                                        <li class="muted">{{ _('Drying temp / time - not written') }}</li>
+                                        <li class="muted">{{ _('TD - not written') }}</li>
                                     </ul>
                                 </div>
                                 <div class="span4">
@@ -1083,6 +1100,8 @@ FPE;	2.16
                                         <li class="muted">{{ _('Spool / used weight - not written') }}</li>
                                         <li class="muted">{{ _('Nozzle / bed target temp - not written') }}</li>
                                         <li class="muted">{{ _('Enclosure temp - not written') }}</li>
+                                        <li class="muted">{{ _('Drying temp / time - not written') }}</li>
+                                        <li class="muted">{{ _('TD - not written') }}</li>
                                     </ul>
                                     <small class="help-block" style="margin-top: 4px; border-left: 2px solid #ddd; padding-left: 8px;">
                                         {{ _('These fields have no equivalent in the OpenSpool specification - true for every OpenSpool tag regardless of size, not just small ones.') }}
@@ -1100,6 +1119,8 @@ FPE;	2.16
                                         <li>{{ _('Full / empty weight') }}</li>
                                         <li>{{ _('Print temp (min/max + preheat)') }}</li>
                                         <li>{{ _('Bed temp (min/max)') }}</li>
+                                        <li>{{ _('Drying temp / time') }}</li>
+                                        <li>{{ _('TD (transmission distance)') }}</li>
                                         <li class="muted">{{ _('Database ID - not written') }}</li>
                                         <li class="muted">{{ _('Color name - not written') }}</li>
                                         <li class="muted">{{ _('Used weight - not written') }}</li>
@@ -1143,6 +1164,99 @@ FPE;	2.16
                                 <strong>{{ _('OpenSpool') }}</strong> {{ _('writes a standard NDEF/JSON record readable by generic phone NFC apps.') }}
                             </small>
                         </span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.octoScaleTagReadingEnabled, enable: pluginSettings.octoScaleEnabled"> {{ _('Read vendor RFID tags') }}
+                        </label>
+                        <span class="help-block">
+                            <small>
+                                {{ _('Reads manufacturer tags on spools you own and offers to create a spool from them. Reading only - existing tags are never modified, and no manufacturer format is ever written.') }}<br>
+                                {{ _('Independent of this setting, SpoolManager always warns before overwriting a tag that looks like a manufacturer tag.') }}
+                            </small>
+                        </span>
+                        <a href="#" data-bind="click: function () { vendorTagFormatsExpanded(!vendorTagFormatsExpanded()); return false; }" style="font-size: 12px;">
+                            <i class="fas" data-bind="css: vendorTagFormatsExpanded() ? 'fa-caret-down' : 'fa-caret-right'"></i>
+                            {{ _('Which tags can be read, and what is read from them') }}
+                        </a>
+                        <div data-bind="visible: vendorTagFormatsExpanded" style="display: none; margin-top: 8px; padding-top: 10px; border-top: 1px solid #eee;">
+                            <table class="table table-condensed" style="margin-bottom: 6px;">
+                                <thead>
+                                    <tr>
+                                        <th>{{ _('Vendor format') }}</th>
+                                        <th>{{ _('Tag type') }}</th>
+                                        <th>{{ _('Status') }}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>{{ _('OpenSpool') }}</td>
+                                        <td>NTAG</td>
+                                        <td>{{ _('supported') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>{{ _('SpoolEase') }}</td>
+                                        <td>NTAG</td>
+                                        <td>{{ _('supported') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>{{ _('Anycubic') }}</td>
+                                        <td>NTAG</td>
+                                        <td>{{ _('supported') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>{{ _('Elegoo') }}</td>
+                                        <td>NTAG</td>
+                                        <td>{{ _('supported') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="muted">{{ _('Bambu, Creality, Snapmaker') }}</td>
+                                        <td class="muted">{{ _('Mifare Classic') }}</td>
+                                        <td class="muted">{{ _('not yet - encrypted') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="muted">{{ _('Qidi') }}</td>
+                                        <td class="muted">{{ _('Mifare Classic') }}</td>
+                                        <td class="muted">{{ _('not yet') }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <small class="help-block" style="margin-bottom: 8px; border-left: 2px solid #ddd; padding-left: 8px;">
+                                {{ _('The supported formats above are all unencrypted, so nothing has to be configured - place the tag on the reader and read it.') }}<br>
+                                {{ _('Bambu, Creality and Snapmaker protect their tags with keys that are not published. Reading those would need a key entered here, and no key material ships with this plugin; support for them is not built yet. Qidi uses the factory default key and needs no key either, but its tags are Mifare Classic, which this feature does not read yet.') }}
+                            </small>
+                            <div class="row-fluid">
+                                <div class="span6">
+                                    <strong style="font-size: 12px;">{{ _('Read from the tag') }}</strong>
+                                    <ul style="padding-left: 16px; margin: 6px 0 0; font-size: 12px;">
+                                        <li>{{ _('Vendor') }}</li>
+                                        <li>{{ _('Material (+ variant, e.g. Silk, Matte)') }}</li>
+                                        <li>{{ _('Color') }}</li>
+                                        <li>{{ _('Diameter') }}</li>
+                                        <li>{{ _('Nominal weight') }}</li>
+                                        <li>{{ _('Nozzle temp (min/max)') }}</li>
+                                        <li>{{ _('Bed temp (min/max)') }}</li>
+                                    </ul>
+                                </div>
+                                <div class="span6">
+                                    <strong style="font-size: 12px;">{{ _('Not on any vendor tag') }}</strong>
+                                    <ul style="padding-left: 16px; margin: 6px 0 0; font-size: 12px;">
+                                        <li class="muted">{{ _('Empty spool weight - needed for the scale, comes from a template') }}</li>
+                                        <li class="muted">{{ _('Remaining filament - a tag says nothing about use') }}</li>
+                                        <li class="muted">{{ _('Display name - suggested from vendor + material') }}</li>
+                                        <li class="muted">{{ _('Density - looked up from the material name') }}</li>
+                                        <li class="muted">{{ _('Drying temp / time - see note below') }}</li>
+                                        <li class="muted">{{ _('Cost, purchase date, batch number') }}</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            <small class="help-block" style="margin-top: 8px; border-left: 2px solid #ddd; padding-left: 8px;">
+                                {{ _('Values are a suggestion: they prefill the dialog and never overwrite something you already entered. Nothing is saved until you confirm.') }}<br>
+                                {{ _('None of the supported formats stores drying values on the tag itself. OpenSpool and SpoolEase tags get a typical value derived from the material name - treat it as a starting point, not as a manufacturer specification.') }}
+                            </small>
+                        </div>
                     </div>
                 </div>
             </div>
