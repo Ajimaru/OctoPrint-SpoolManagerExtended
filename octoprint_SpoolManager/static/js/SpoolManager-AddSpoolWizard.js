@@ -199,13 +199,16 @@ function SpoolManagerAddSpoolWizard() {
     // still change programmatically - the tag's per-spool values must never lose to
     // generic catalog data in that case either.
     self._applySpoolmanTemperatures = function (product) {
-        if (!product || product.ambiguous || self.isU1RfidFlow()) {
+        if (!product || product.ambiguous || self.isTagDrivenFlow()) {
             return;
         }
         self._spoolmanApplyingTemperatures = true;
         if (!self._spoolmanTemperatureEdited.tool && product.extruder_temp != null) {
             self.spoolItemForCreation.temperature(product.extruder_temp);
-            if (Array.isArray(product.extruder_temp_range) && product.extruder_temp_range.length === 2) {
+            if (
+                Array.isArray(product.extruder_temp_range) &&
+                product.extruder_temp_range.length === 2
+            ) {
                 self.spoolItemForCreation.minTemperature(product.extruder_temp_range[0]);
                 self.spoolItemForCreation.maxTemperature(product.extruder_temp_range[1]);
             } else {
@@ -215,7 +218,10 @@ function SpoolManagerAddSpoolWizard() {
         }
         if (!self._spoolmanTemperatureEdited.bed && product.bed_temp != null) {
             self.spoolItemForCreation.bedTemperature(product.bed_temp);
-            if (Array.isArray(product.bed_temp_range) && product.bed_temp_range.length === 2) {
+            if (
+                Array.isArray(product.bed_temp_range) &&
+                product.bed_temp_range.length === 2
+            ) {
                 self.spoolItemForCreation.minBedTemperature(product.bed_temp_range[0]);
                 self.spoolItemForCreation.maxBedTemperature(product.bed_temp_range[1]);
             } else {
@@ -227,7 +233,7 @@ function SpoolManagerAddSpoolWizard() {
     };
 
     self._applySpoolmanColor = function (product) {
-        if (!product || self._spoolmanColorEdited || self.isU1RfidFlow()) {
+        if (!product || self._spoolmanColorEdited || self.isTagDrivenFlow()) {
             return;
         }
         var isTransparentProduct = product.is_transparent === true;
@@ -269,7 +275,12 @@ function SpoolManagerAddSpoolWizard() {
     };
 
     self._applySpoolmanFinish = function (product) {
-        if (!product || !product.finish || self._spoolmanFinishEdited || self.isU1RfidFlow()) {
+        if (
+            !product ||
+            !product.finish ||
+            self._spoolmanFinishEdited ||
+            self.isTagDrivenFlow()
+        ) {
             return;
         }
         self._spoolmanApplyingFinish = true;
@@ -372,6 +383,18 @@ function SpoolManagerAddSpoolWizard() {
     // never has to care about a step appearing or disappearing mid-flow.
     var ALL_STEPS = [
         {
+            id: "readTag",
+            title: "Read a vendor tag",
+            isVisible: function () {
+                // First step rather than somewhere in the middle: everything read off the
+                // tag prefills the steps that follow, so it has to happen before the user
+                // starts typing. Skippable - it is an offer, not a required stage.
+                // Deliberately separate from the "nfc" step at the end: that one *writes* a
+                // tag for a spool that already exists, this one *reads* one to create it.
+                return self.isOctoScaleEnabled() && self.isTagReadingEnabled();
+            }
+        },
+        {
             id: "mode",
             title: "How much detail?",
             isVisible: function () {
@@ -443,7 +466,7 @@ function SpoolManagerAddSpoolWizard() {
                 return (
                     self.isOctoScaleEnabled() &&
                     self.createdDatabaseId() != null &&
-                    !self.isU1RfidFlow()
+                    !self.isTagDrivenFlow()
                 );
             }
         }
@@ -454,6 +477,16 @@ function SpoolManagerAddSpoolWizard() {
             return false;
         }
         return self.pluginSettings.octoScaleEnabled() == true;
+    });
+
+    self.isTagReadingEnabled = ko.pureComputed(function () {
+        if (
+            self.pluginSettings == null ||
+            self.pluginSettings.octoScaleTagReadingEnabled == null
+        ) {
+            return false;
+        }
+        return self.pluginSettings.octoScaleTagReadingEnabled() == true;
     });
 
     // Display unit for every weight shown in the wizard. pluginSettings is only assigned in
@@ -528,6 +561,19 @@ function SpoolManagerAddSpoolWizard() {
 
     self.isU1RfidFlow = ko.pureComputed(function () {
         return self.u1RfidContext() != null;
+    });
+
+    // Set once values read off a vendor tag have been applied in the "readTag" step.
+    // Deliberately not folded into isU1RfidFlow: that one also relaxes the weight
+    // requirement, which is only right for the U1 (it reads a tag when the filament is
+    // already loaded, so weighing would mean unthreading the spool). A tag read on the
+    // OctoScale sits on the scale, so weighing stays mandatory here.
+    self.vendorTagApplied = ko.observable(false);
+
+    // True when the values in the form came off a tag - the physical spool in front of the
+    // user, which must win over a catalog guess.
+    self.isTagDrivenFlow = ko.pureComputed(function () {
+        return self.isU1RfidFlow() || self.vendorTagApplied();
     });
 
     // "Weigh later" only exists in the RFID flow: the U1 reads a tag once the filament
@@ -624,6 +670,7 @@ function SpoolManagerAddSpoolWizard() {
         if (self.currentStepIndex() < self.visibleSteps().length - 1) {
             self.currentStepIndex(self.currentStepIndex() + 1);
         }
+        self._enterCurrentStep();
     };
 
     self.goBack = function () {
@@ -632,6 +679,7 @@ function SpoolManagerAddSpoolWizard() {
         }
         self._leaveCurrentStep();
         self.currentStepIndex(self.currentStepIndex() - 1);
+        self._enterCurrentStep();
     };
 
     // Stop any device polling that belongs to the step being left, so a wizard left open on
@@ -640,8 +688,23 @@ function SpoolManagerAddSpoolWizard() {
         if (self.currentStepId() === "weight" && self.octoScaleWeighing != null) {
             self.octoScaleWeighing.stop();
         }
-        if (self.currentStepId() === "nfc" && self.octoScaleTagWriter != null) {
+        if (
+            (self.currentStepId() === "nfc" || self.currentStepId() === "readTag") &&
+            self.octoScaleTagWriter != null
+        ) {
             self.octoScaleTagWriter.stop();
+        }
+    };
+
+    // The read step needs the tag poller running to notice a tag at all. It is started here
+    // rather than in showDialog() so it only runs while that step is actually on screen -
+    // same reasoning as the weighing step's polling.
+    self._enterCurrentStep = function () {
+        if (self.currentStepId() === "readTag" && self.octoScaleTagWriter != null) {
+            // No target spool: nothing exists yet at this point in the wizard. The writer
+            // view model tolerates that - only its write path needs a database id, and
+            // canWrite() already refuses without one.
+            self.octoScaleTagWriter.start(null, null);
         }
     };
 
@@ -698,6 +761,9 @@ function SpoolManagerAddSpoolWizard() {
             "temperature",
             "bedTemperature",
             "enclosureTemperature",
+            "dryingTemperature",
+            "dryingTime",
+            "td",
             "offsetTemperature",
             "offsetBedTemperature",
             "offsetEnclosureTemperature",
@@ -805,6 +871,79 @@ function SpoolManagerAddSpoolWizard() {
         );
 
         self._syncFilamentWeight();
+    };
+
+    ///////////////////////////////////////////////////////////////////////////////// VENDOR TAG
+
+    // Copies the values read off a vendor tag into the wizard, then moves on. Only ever on
+    // an explicit click - the read result is a suggestion.
+    self.applyReadTagValues = function () {
+        if (self.octoScaleTagWriter == null) {
+            return;
+        }
+        var result = self.octoScaleTagWriter.readTagResult();
+        if (result == null || result.parsed !== true) {
+            return;
+        }
+        var fields = result.fields || {};
+
+        // The tag describes the spool physically on the scale, so it must win over a
+        // catalog guess for the rest of this wizard run.
+        self.vendorTagApplied(true);
+
+        // showDialog()'s reset already named the color from the red placeholder default;
+        // clear it so applyTagFieldsToSpoolItem's "only fill colorName when empty" check
+        // is not fooled into skipping the tag's actual color.
+        if (typeof self.spoolItemForCreation.colorName === "function") {
+            self.spoolItemForCreation.colorName("");
+        }
+
+        // Order matters, same as in _applyU1RfidPrefill: the template goes first and the
+        // tag overwrites it. What survives from the template is above all spoolWeight - the
+        // empty spool weight, which no vendor tag carries and the scale step needs.
+        var templateSpool = self._findMatchingTemplateSpool(
+            fields["vendor"],
+            fields["material"]
+        );
+        if (templateSpool != null) {
+            self.applyTemplateSpool(templateSpool);
+            self.spoolItemForCreation.displayName("");
+        }
+
+        SPOOLMANAGER_U1RFID.applyTagFieldsToSpoolItem(
+            self.spoolItemForCreation,
+            fields,
+            result.uid,
+            result.rfidTagKey,
+            {
+                applyColor: function (colorValue) {
+                    self._applyColorValue(colorValue);
+                    self._composeColor();
+                    self._applySuggestedColorName(self.spoolItemForCreation.color());
+                }
+            }
+        );
+
+        self._syncFilamentWeight();
+
+        // A vendor tag carries no display name, but the mandatory-name step is right after
+        // this one - so offer something sensible instead of an empty field.
+        if (
+            typeof self.spoolItemForCreation.displayName === "function" &&
+            (self.spoolItemForCreation.displayName() || "").trim() === ""
+        ) {
+            var suggestedName = [fields["vendor"], fields["material"]]
+                .filter(function (part) {
+                    return part;
+                })
+                .join(" ");
+            if (suggestedName) {
+                self.spoolItemForCreation.displayName(suggestedName);
+            }
+        }
+
+        self.octoScaleTagWriter.clearReadTagResult();
+        self.goNext();
     };
 
     /////////////////////////////////////////////////////////////////////////////////////// COLOR
@@ -1032,10 +1171,32 @@ function SpoolManagerAddSpoolWizard() {
                 reviewEntry(
                     "Bed temperature range",
                     item.minBedTemperature() != null && item.maxBedTemperature() != null
-                        ? item.minBedTemperature() + " - " + item.maxBedTemperature() + " °C"
+                        ? item.minBedTemperature() +
+                              " - " +
+                              item.maxBedTemperature() +
+                              " °C"
                         : null
                 ),
                 reviewEntry("Enclosure temperature", item.enclosureTemperature()),
+                reviewEntry(
+                    "Drying",
+                    item.dryingTemperature() != null || item.dryingTime() != null
+                        ? [
+                              item.dryingTemperature() != null
+                                  ? item.dryingTemperature() + " °C"
+                                  : null,
+                              item.dryingTime() != null ? item.dryingTime() + " h" : null
+                          ]
+                              .filter(function (part) {
+                                  return part != null;
+                              })
+                              .join(", ")
+                        : null
+                ),
+                reviewEntry(
+                    "TD",
+                    item.td() != null && item.td() !== "" ? item.td() + " mm" : null
+                ),
                 reviewEntry("Flow rate compensation", item.flowRateCompensation()),
                 reviewEntry("Serial number", item.code()),
                 reviewEntry("Batch number", item.batchNumber()),
@@ -1086,7 +1247,9 @@ function SpoolManagerAddSpoolWizard() {
             if (!Array.isArray(currentLabels)) {
                 currentLabels = [];
             }
-            if (currentLabels.indexOf(SPOOLMANAGER_CONSTANTS.LABEL_WEIGHT_ESTIMATED) < 0) {
+            if (
+                currentLabels.indexOf(SPOOLMANAGER_CONSTANTS.LABEL_WEIGHT_ESTIMATED) < 0
+            ) {
                 self.spoolItemForCreation.labels(
                     currentLabels.concat([SPOOLMANAGER_CONSTANTS.LABEL_WEIGHT_ESTIMATED])
                 );
@@ -1249,7 +1412,10 @@ function SpoolManagerAddSpoolWizard() {
             apiClient,
             pluginSettings
         );
-        self.octoScaleTagWriter = new SpoolManagerOctoScaleTagWriter(apiClient);
+        self.octoScaleTagWriter = new SpoolManagerOctoScaleTagWriter(
+            apiClient,
+            pluginSettings
+        );
 
         // a dialog closed with Esc or the backdrop must not leave pollers running
         self.wizardDialog.on("hidden", function () {
@@ -1289,6 +1455,7 @@ function SpoolManagerAddSpoolWizard() {
         self.closeDialogHandler = closeDialogHandler;
         self.u1RfidContext(u1RfidContext || null);
         self.weighingSkipped(false);
+        self.vendorTagApplied(false);
 
         // The integration can be enabled from the settings dialog after the page's initial
         // bindings ran. Reload vendor suggestions here so the first wizard opened afterward
@@ -1329,6 +1496,9 @@ function SpoolManagerAddSpoolWizard() {
         self.selectedTemplateSpool(null);
         self.currentStepIndex(0);
         self.useFullFieldSet(self.pluginSettings.defaultViewModeSimple() != true);
+        // The first step may be the tag read, which needs its poller running to see a tag
+        // at all - goNext()/goBack() do this for every later step.
+        self._enterCurrentStep();
 
         // prospective id for the {id} display name preview (issue #49)
         self.apiClient.callLoadNextSpoolId(function (responseData) {

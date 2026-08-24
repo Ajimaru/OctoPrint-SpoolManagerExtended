@@ -70,6 +70,21 @@ class SettingsKeys:
     # per write. NTAG213 has no Extended option - the firmware rejects it outright (too
     # small), so the UI must warn rather than silently offer a write that always fails.
     SETTINGS_KEY_OCTOSCALE_NTAG_FORMAT = "octoScaleNtagFormat"
+    # Reading vendor RFID tags (Bambu, Anycubic, Creality, ...) off a spool and offering to
+    # create a spool from them. Off by default and deliberately opt-in: it reads formats
+    # this project does not own, and a user who only ever writes their own tags should not
+    # have it running. Note that the foreign-tag *write protection* is NOT gated on this -
+    # that one is a safeguard against destroying a manufacturer tag and has to apply
+    # whether or not reading is enabled.
+    SETTINGS_KEY_OCTOSCALE_TAG_READING_ENABLED = "octoScaleTagReadingEnabled"
+
+    ## Optional spool fields
+    # Shows the TD (transmission distance) field in the spool dialog. Off by default: it is
+    # a niche value used by HueForge and OrcaSlicer's full-spectrum mode, most users have no
+    # way to measure it, and an always-visible field would just be one more empty box. The
+    # value is still read from vendor tags and stored either way - this only controls
+    # whether the field is offered for manual editing.
+    SETTINGS_KEY_TD_FIELD_ENABLED = "tdFieldEnabled"
 
     ## SpoolmanDB-Community (optional remote temperature suggestions)
     SETTINGS_KEY_SPOOLMANDB_ENABLED = "spoolmanDbEnabled"

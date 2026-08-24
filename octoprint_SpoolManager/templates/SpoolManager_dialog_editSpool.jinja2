@@ -407,7 +407,6 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                 <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('enclosureTemperature') !== -1">Please enter a valid number</span>
                             </div>
                         </div>
-
                         <div class="control-group no-bottom-gap" data-bind="visible: !spoolDialog.simpleMode()">
                             <label class="control-label">Offset Tool/Bed<sup>5</sup></label>
                             <div class="row controls">
@@ -435,6 +434,38 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                     <span class="add-on">°C</span>
                                 </div>
                                 <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('offsetEnclosureTemperature') !== -1">Please enter a valid number</span>
+                            </div>
+                        </div>
+                        <div class="control-group " data-bind="visible: !spoolDialog.simpleMode()">
+                            <label class="control-label">Drying</label>
+                            <div class="controls">
+                                <div class="input-append">
+                                    <input type="number" step="1" min="0" class="input-mini text-right" data-bind="value: spoolDialog.spoolItemForEditing.dryingTemperature,
+                                                              numberField: {invalidFields: spoolDialog.invalidNumberFields, key: 'dryingTemperature', trackOnly: true}" />
+                                    <span class="add-on">°C</span>
+                                </div>
+                                <div class="input-append">
+                                    <input type="number" step="1" min="0" class="input-mini text-right" data-bind="value: spoolDialog.spoolItemForEditing.dryingTime,
+                                                              numberField: {invalidFields: spoolDialog.invalidNumberFields, key: 'dryingTime', trackOnly: true}" />
+                                    <span class="add-on">h</span>
+                                </div>
+                                <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('dryingTemperature') !== -1 || spoolDialog.invalidNumberFields().indexOf('dryingTime') !== -1">Please enter a valid number</span>
+                                <span class="help-block"><small>Optional. Most vendor RFID tags carry these values.</small></span>
+                            </div>
+                        </div>
+                        {# TD is off by default: it is a niche value (only HueForge and OrcaSlicer's
+                           full-spectrum mode use it) and most users have no way to measure it, so it
+                           would just be one more empty field. Opt in via the plugin settings. #}
+                        <div class="control-group " data-bind="visible: !spoolDialog.simpleMode() && pluginSettings.tdFieldEnabled()">
+                            <label class="control-label">TD</label>
+                            <div class="controls">
+                                <div class="input-append">
+                                    <input type="number" step="0.1" min="0.1" max="100" class="input-mini text-right" data-bind="value: spoolDialog.spoolItemForEditing.td,
+                                                              numberField: {invalidFields: spoolDialog.invalidNumberFields, key: 'td', trackOnly: true}" />
+                                    <span class="add-on">TD</span>
+                                </div>
+                                <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('td') !== -1">Please enter a valid number</span>
+                                <span class="help-block"><small>Optional. Transmission Distance, used by HueForge and OrcaSlicer: 0.1 (most opaque) to 100 (most transparent).</small></span>
                             </div>
                         </div>
 
@@ -467,13 +498,9 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                             </div>
                         </div>
                         <!-- /ko -->
-                        <div class="control-group" data-bind="visible: !spoolDialog.simpleMode()">
-                            <!-- "Serialnumber" -> "Serial number" label fix by @mdziekon, adopted via PR #44 (commit 642bea0). -->
-                            <label class="control-label">Serial number</label>
-                            <div class="controls">
-                                <input data-bind="textInput: spoolDialog.spoolItemForEditing.code"  type="text" class="input-large"  />
-                            </div>
-                        </div>
+                        {# Serial number and Batchnumber now live in the right column, below Cost -
+                           see there. The U1 tag picker stays here because it writes rfidTagKey, not
+                           the Serial number field. #}
                         <div class="control-group" data-bind="visible: !spoolDialog.simpleMode() && spoolDialog.hasU1RfidUnknownTags()">
                             <label class="control-label">{{ _('Snapmaker U1') }}</label>
                             <div class="controls">
@@ -491,12 +518,6 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                     <i class="fas fa-id-card"></i> <span data-bind="text: label"></span>
                                 </button>
                                 <!-- /ko -->
-                            </div>
-                        </div>
-                        <div class="control-group" data-bind="visible: !spoolDialog.simpleMode()">
-                            <label class="control-label">Batchnumber</label>
-                            <div class="controls">
-                                <input title="Manufacturer batch/lot number, shared by spools of the same production batch" data-bind="textInput: spoolDialog.spoolItemForEditing.batchNumber"  type="text" class="input-large"  />
                             </div>
                         </div>
 
@@ -580,6 +601,23 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                             <span class="add-on" data-bind="text: pluginSettings.currencySymbol" >€</span>
                                         </div>
                                         <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('cost') !== -1">Please enter a valid number</span>
+                                    </div>
+                                </div>
+                                {# Serial number and Batchnumber: both identify the physical spool
+                                   rather than the filament, so they sit apart from the fields above.
+                                   Moved here from the left column, which the new drying fields had
+                                   made too long. #}
+                                <div class="control-group" style="margin-top: 24px;" data-bind="visible: !spoolDialog.simpleMode()">
+                                    <!-- "Serialnumber" -> "Serial number" label fix by @mdziekon, adopted via PR #44 (commit 642bea0). -->
+                                    <label class="control-label">Serial number</label>
+                                    <div class="controls">
+                                        <input data-bind="textInput: spoolDialog.spoolItemForEditing.code" type="text" class="input-large" />
+                                    </div>
+                                </div>
+                                <div class="control-group" data-bind="visible: !spoolDialog.simpleMode()">
+                                    <label class="control-label">Batchnumber</label>
+                                    <div class="controls">
+                                        <input title="Manufacturer batch/lot number, shared by spools of the same production batch" data-bind="textInput: spoolDialog.spoolItemForEditing.batchNumber" type="text" class="input-large" />
                                     </div>
                                 </div>
                             </div>
@@ -828,9 +866,63 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                                     <button type="button" class="btn btn-mini btn-warning" style="margin-left: 6px;"
                                                             data-bind="click: spoolDialog.octoScaleTagWriter.confirmOverwrite">Overwrite anyway</button>
                                                 </span>
+                                                <!-- A manufacturer tag carries no spool id, so the id-based warning above never
+                                                     fires for it - without this it would look exactly like a blank tag. -->
+                                                <span class="help-block" style="margin-bottom: 0;"
+                                                      data-bind="visible: spoolDialog.octoScaleTagWriter.isPossiblyForeignTag() && !spoolDialog.octoScaleTagWriter.foreignTagConfirmed()">
+                                                    <small class="text-error"><i class="fas fa-exclamation-triangle"></i> <span data-bind="text: spoolDialog.octoScaleTagWriter.foreignTagWarningText"></span></small>
+                                                    <button type="button" class="btn btn-mini btn-danger" style="margin-left: 6px;"
+                                                            data-bind="click: spoolDialog.octoScaleTagWriter.confirmForeignTagOverwrite">Overwrite anyway</button>
+                                                </span>
+                                                <!-- Outside the foreign-tag warning above: reading works for any tag, including
+                                                     one SpoolManager wrote itself. Nesting it in the warning made "show me what is
+                                                     on this tag" impossible for our own tags. -->
+                                                <span class="help-block" style="margin-bottom: 0;"
+                                                      data-bind="visible: spoolDialog.octoScaleTagWriter.shouldOfferTagRead">
+                                                    <button type="button" class="btn btn-mini"
+                                                            data-bind="click: spoolDialog.octoScaleTagWriter.readTag, enable: spoolDialog.octoScaleTagWriter.canReadTag">
+                                                        <i class="fas fa-spinner fa-spin" data-bind="visible: spoolDialog.octoScaleTagWriter.isReadingTag"></i>
+                                                        Read tag
+                                                    </button>
+                                                </span>
+                                                <!-- Reading takes a moment on the device, so say so rather than leaving the
+                                                     user wondering whether the tag has to stay put. It does. -->
+                                                <span class="help-block" style="margin-bottom: 0;" data-bind="visible: spoolDialog.octoScaleTagWriter.isReadingTag">
+                                                    <small><i class="fas fa-spinner fa-spin"></i> Reading the tag - please leave it on the reader...</small>
+                                                </span>
+                                                <span class="help-block" style="margin-bottom: 0;" data-bind="visible: spoolDialog.octoScaleTagWriter.readTagError">
+                                                    <small class="text-warning"><i class="fas fa-info-circle"></i> <span data-bind="text: spoolDialog.octoScaleTagWriter.readTagError"></span></small>
+                                                </span>
+                                                <!-- ko if: spoolDialog.octoScaleTagWriter.readTagResult() != null && spoolDialog.octoScaleTagWriter.readTagResult().parsed === true -->
+                                                <span class="help-block" style="margin-bottom: 0;">
+                                                    <small class="text-success"><i class="fas fa-check"></i>
+                                                        Recognized as <strong data-bind="text: spoolDialog.octoScaleTagWriter.readTagResult().parserLabel"></strong>.
+                                                        These values can be copied into the form:
+                                                    </small>
+                                                    <table class="table table-condensed" style="margin: 4px 0 0 0;">
+                                                        <tbody data-bind="foreach: spoolDialog.octoScaleTagWriter.readTagValues">
+                                                            <tr>
+                                                                <td style="padding: 2px 8px 2px 0; border: none;"><small data-bind="text: label"></small></td>
+                                                                <td style="padding: 2px 0; border: none;"><small data-bind="text: valueText"></small></td>
+                                                            </tr>
+                                                        </tbody>
+                                                    </table>
+                                                    <button type="button" class="btn btn-mini btn-primary"
+                                                            data-bind="click: spoolDialog.applyReadTagValues">Use these values</button>
+                                                    <button type="button" class="btn btn-mini" style="margin-left: 6px;"
+                                                            data-bind="click: spoolDialog.octoScaleTagWriter.clearReadTagResult">Discard</button>
+                                                </span>
+                                                <!-- /ko -->
                                                 <span class="help-block text-success" style="margin-bottom: 0;" data-bind="visible: spoolDialog.octoScaleTagWriter.writeSucceeded">
                                                     <small><i class="fas fa-check"></i> Tag written and verified<!--
                                                     --><span data-bind="visible: spoolDialog.octoScaleTagWriter.writeFormatUsed"> (<span data-bind="text: spoolDialog.octoScaleTagWriter.writeFormatUsed"></span>)</span>.</small>
+                                                    <!-- ko if: spoolDialog.octoScaleTagWriter.writeUnsupportedFields().length > 0 -->
+                                                    <br><small class="text-warning"><i class="fas fa-info-circle"></i>
+                                                        The <span data-bind="text: spoolDialog.octoScaleTagWriter.writeFormatUsed"></span> format cannot store these values:
+                                                        <span data-bind="text: spoolDialog.octoScaleTagWriter.writeUnsupportedFieldLabels().join(', ')"></span>.
+                                                        They stay in SpoolManager - a bigger tag would not help, only a different format would.
+                                                    </small>
+                                                    <!-- /ko -->
                                                     <!-- ko if: spoolDialog.octoScaleTagWriter.writeDroppedFields().length > 0 -->
                                                     <br><small class="text-warning"><i class="fas fa-exclamation-triangle"></i> Some fields did not fit on the tag and were left out: <span data-bind="text: spoolDialog.octoScaleTagWriter.writeDroppedFields().join(', ')"></span></small>
                                                     <!-- /ko -->

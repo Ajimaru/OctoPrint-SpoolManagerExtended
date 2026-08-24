@@ -68,9 +68,22 @@ class SpoolStub(object):
             "minBedTemperature": None,
             "maxBedTemperature": None,
             "enclosureTemperature": None,
+            # V12 fields, default unset so the existing golden vectors stay valid
+            "dryingTemperature": None,
+            "dryingTime": None,
+            "td": None,
             "code": "SN-1",
             "batchNumber": "B-7",
             "purchasedOn": datetime.date(2026, 1, 15),
+            # Only read by TagFormats._buildFullSpoolPayload(), not by the OpenPrintTag
+            # mapper - present so both can be exercised from the same stub.
+            "totalLength": None,
+            "usedLength": None,
+            "purchasedFrom": None,
+            "finish": None,
+            "firstUse": None,
+            "lastUse": None,
+            "cost": None,
         }
         defaults.update(attributes)
         for key, value in defaults.items():
@@ -307,6 +320,51 @@ class TestSpoolMapping(unittest.TestCase):
         self.assertEqual(main["preheat_temperature"], 210)
 
 
+class TestDryingAndTransmissionDistance(unittest.TestCase):
+    """Spec keys 57/58/27, added with database scheme V12."""
+
+    def test_absent_values_are_not_written(self):
+        # An unset field must stay off the tag entirely - writing 0 would claim "dry at 0 C"
+        main = OpenPrintTag.spoolModelToFields(SpoolStub())["main"]
+        for name in ("drying_temperature", "drying_time", "transmission_distance"):
+            self.assertNotIn(name, main)
+
+    def test_drying_time_is_converted_from_hours_to_minutes(self):
+        # The spec stores minutes (key 58, example 480 = 8 h), SpoolManager stores hours.
+        # Without the conversion 8 hours would land on the tag as 8 minutes.
+        main = OpenPrintTag.spoolModelToFields(SpoolStub(dryingTime=8))["main"]
+        self.assertEqual(480, main["drying_time"])
+
+    def test_drying_temperature_is_written_as_is(self):
+        main = OpenPrintTag.spoolModelToFields(SpoolStub(dryingTemperature=45))["main"]
+        self.assertEqual(45, main["drying_temperature"])
+
+    def test_transmission_distance_keeps_its_fraction(self):
+        # TD is a dimensionless opacity number (0.1-100), not an integer - 6.6 must not
+        # become 6 or 7. Encoded as float32 like the other spec "number" fields.
+        main = OpenPrintTag.spoolModelToFields(SpoolStub(td=6.6))["main"]
+        value = main["transmission_distance"]
+        self.assertIsInstance(value, OpenPrintTag.Float32)
+        self.assertAlmostEqual(6.6, value.value, places=5)
+
+    def test_zero_drying_time_stays_zero_rather_than_vanishing(self):
+        # 0 is a legitimate stored value; only None means "not set".
+        main = OpenPrintTag.spoolModelToFields(SpoolStub(dryingTime=0))["main"]
+        self.assertEqual(0, main["drying_time"])
+
+    def test_all_three_keys_are_registered(self):
+        keys = OpenPrintTag.FIELD_KEY_MAP[OpenPrintTag.SECTION_MAIN]
+        # Transcribed from the specification's main_fields.yaml, never guessed: a wrong key
+        # would silently overwrite a different field on the tag.
+        self.assertEqual(57, keys["drying_temperature"])
+        self.assertEqual(58, keys["drying_time"])
+        self.assertEqual(27, keys["transmission_distance"])
+
+    def test_they_are_no_longer_listed_as_unmapped(self):
+        for name in ("dryingTemperature", "dryingTime", "td"):
+            self.assertNotIn(name, OpenPrintTag.UNMAPPED_FIELD_NAMES)
+
+
 class TestUnmappedFields(unittest.TestCase):
 
     def test_unresolved_field_names_is_empty_for_a_normal_spool(self):
@@ -421,6 +479,47 @@ class TestEncoding(unittest.TestCase):
         expectedHex = "d21c7d6170706c69636174696f6e2f766e642e6f70656e7072696e74746167a400181801184502185d0318200000000000000000000000ae080009000a63504c410b664e6f4e616d6510fa447a000012fa4316000013430000ff181dfa3f9eb852181efa3fe00000182218be182318e6182418d2182518281826183ca000000000000000000000000000000000000000000000000000000000000000"
         self.assertEqual(payload.hex(), expectedHex)
         self.assertEqual(len(payload), 156)
+
+
+class TestWritePayloadDryingUnits(unittest.TestCase):
+    """The payload sent to /nfcwritespool must speak the tag's units, not ours.
+
+    The firmware writes what it is given without converting, and every tag format that
+    carries drying time stores minutes (OpenPrintTag spec key 58). SpoolManager stores
+    hours - so 8 hours would reach the tag as 8 minutes without this conversion.
+    """
+
+    def buildPayload(self, **overrides):
+        return TagFormats.getTagFormat(TagFormats.TAG_FORMAT_OCTOSCALE_EXTENDED)[
+            "buildPayload"
+        ](SpoolStub(**overrides))
+
+    def test_drying_time_is_sent_in_minutes(self):
+        self.assertEqual(480, self.buildPayload(dryingTime=8)["dryingTime"])
+
+    def test_unset_drying_time_stays_none(self):
+        # Must not become 0 - "never entered" and "do not dry" are different statements.
+        self.assertIsNone(self.buildPayload(dryingTime=None)["dryingTime"])
+
+    def test_zero_hours_is_sent_as_zero_minutes(self):
+        self.assertEqual(0, self.buildPayload(dryingTime=0)["dryingTime"])
+
+    def test_drying_temperature_is_sent_unchanged(self):
+        # Celsius on both sides, no conversion involved.
+        self.assertEqual(45, self.buildPayload(dryingTemperature=45)["dryingTemperature"])
+
+    def test_transmission_distance_is_sent_unchanged(self):
+        self.assertEqual(6.6, self.buildPayload(td=6.6)["td"])
+
+    def test_write_payload_and_openprinttag_preview_agree(self):
+        # Two independent code paths convert the same field; if they ever disagree the
+        # preview endpoint would show something the write does not produce.
+        spool = SpoolStub(dryingTime=8)
+        payloadMinutes = TagFormats.getTagFormat(
+            TagFormats.TAG_FORMAT_OCTOSCALE_EXTENDED
+        )["buildPayload"](spool)["dryingTime"]
+        previewMinutes = OpenPrintTag.spoolModelToFields(spool)["main"]["drying_time"]
+        self.assertEqual(payloadMinutes, previewMinutes)
 
 
 class TestTagFormats(unittest.TestCase):

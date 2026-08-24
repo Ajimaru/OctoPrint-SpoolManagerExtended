@@ -102,6 +102,29 @@ def normalizeCardUid(cardUid):
 
 RFID_TAG_KEY_LENGTH = 4
 
+# Byte lengths a real tag UID can have: 4 or 7 for NFC-A (one or two anticollision cascade
+# levels), 8 for NFC-V. Nothing else is a valid UID.
+_PLAUSIBLE_UID_BYTE_COUNTS = (4, 7, 8)
+
+
+def isPlausibleTagUid(normalizedUid):
+    """
+    True when a normalized hex UID has a length a real tag can actually have.
+
+    This exists because a reader can report success on a *partial* UID: the OctoScale
+    firmware's NFC-A anticollision runs in two cascade levels, and an abort in the second
+    one leaves a 3-byte fragment of a 7-byte UID that is still reported as a good read.
+    Such a fragment is not merely cosmetic - it derives a DIFFERENT rfidTagKey than the
+    same tag's full UID ("04AC6F" -> "AC6F" instead of "2A81"), so storing it would bind
+    the spool to a key the tag will never present again, and the tag would never be found.
+
+    deriveRfidTagKey() alone cannot catch this: it only requires 4 hex characters, which a
+    truncated UID has. Callers that persist a derived key must check this first.
+    """
+    if not normalizedUid:
+        return False
+    return (len(normalizedUid) // 2) in _PLAUSIBLE_UID_BYTE_COUNTS
+
 
 def deriveRfidTagKey(normalizedUid):
     """
