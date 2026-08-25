@@ -343,7 +343,15 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
     self.tagType = ko.observable(null);
     self.tagTypeName = ko.observable(null); // coarse protocol class, e.g. "NFC-A"/"NFC-V"
     self.writeFormat = ko.observable(null);
-    self.formatLabel = ko.observable(null); // human label, e.g. "Mifare Classic 1K"
+    // NOT a chip label despite reading like one for NTAG/NFC-V ("NTAG215", ...): for Mifare
+    // Classic specifically this is always "Extended" - the only write format that chip
+    // supports - regardless of what is actually on the tag (blank, ours, or a foreign
+    // vendor tag alike). Use product (below) to show/identify the physical chip.
+    self.formatLabel = ko.observable(null);
+    // The actual chip identification, e.g. "Mifare Classic 1K" - unlike formatLabel, this
+    // does not collapse every Mifare Classic tag to the same string. May be null on older
+    // firmware; UI falls back to formatLabel/tagTypeName in that case (see chipLabel below).
+    self.product = ko.observable(null);
     self.hasExtendedData = ko.observable(false); // tag already carries an extended payload
 
     // What the firmware makes of the data already on the tag: "empty", "foreign" or ""
@@ -431,6 +439,28 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
     // instead of the hedged "may be one" the heuristic can only justify.
     self.isConfirmedForeignTag = ko.pureComputed(function () {
         return self.tagPresent() == true && self.tagOccupancy() === "foreign";
+    });
+
+    // What the "Tag detected: ..." UI actually wants: the physical chip, not the write
+    // format. product is the accurate source; for Mifare Classic, formatLabel would always
+    // read "Extended" here regardless of the chip's actual contents (see the notes on
+    // formatLabel above), which is exactly the confusion this computed exists to avoid.
+    // formatLabel remains a reasonable fallback for NTAG/NFC-V on firmware too old to send
+    // product, since there it does describe the chip (e.g. "NTAG215").
+    //
+    // A vendor tag (Bambu, Snapmaker, ...) sits on the exact same chips SpoolManager itself
+    // writes to - "Mifare Classic 1K" alone tells the user nothing about whose data is
+    // actually on it, which is a more useful thing to know than the chip when it's a vendor
+    // tag. isConfirmedForeignTag (the firmware's own verdict) is preferred over the
+    // isPossiblyForeignTag heuristic here: this is a label, not a write-blocking safeguard,
+    // so it should only claim "Vendor tag" when actually sure - a hedged guess belongs in
+    // foreignTagWarningText, not stated as fact in the tag-detected line.
+    self.chipLabel = ko.pureComputed(function () {
+        var chip = self.product() || self.formatLabel() || self.tagTypeName() || null;
+        if (self.isConfirmedForeignTag() !== true) {
+            return chip;
+        }
+        return chip ? chip + " · Vendor tag" : "Vendor tag";
     });
 
     // The firmware names the fields as they appear in the write payload
@@ -561,6 +591,18 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
         );
     });
 
+    // Reflects the settings toggle, mirroring tagReadingEnabled below. Read live rather than
+    // captured once, same reasoning: the setting can change while a dialog is open, and the
+    // backend enforces it independently anyway (see writeOctoScaleTag).
+    self.vendorTagWriteEnabled = ko.pureComputed(function () {
+        var settings = self.pluginSettings;
+        if (settings == null || settings.octoScaleVendorTagWriteEnabled == null) {
+            return false;
+        }
+        var value = settings.octoScaleVendorTagWriteEnabled;
+        return (typeof value === "function" ? value() : value) === true;
+    });
+
     self.canWrite = ko.pureComputed(function () {
         if (self.isWriting() || self.targetDatabaseId() == null) {
             return false;
@@ -573,10 +615,31 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
         }
         // Independent of the id-based confirmation above: a manufacturer tag carries no id
         // at all, so needsOverwriteConfirmation() never fires for it.
-        if (self.isPossiblyForeignTag() && self.foreignTagConfirmed() != true) {
-            return false;
+        if (self.isPossiblyForeignTag()) {
+            // The setting is a hard "never", stronger than the per-tag confirmation below:
+            // even a stale foreignTagConfirmed(true) from before the tag was recognized as
+            // foreign must not let a write through once this is off.
+            if (self.vendorTagWriteEnabled() != true) {
+                return false;
+            }
+            if (self.foreignTagConfirmed() != true) {
+                return false;
+            }
         }
         return true;
+    });
+
+    // Same hard blockers as canWrite(), but without the two confirmation flags - those are
+    // exactly what a "Write tag" click still has to resolve (see writeTagWithConfirmation()
+    // in SpoolManager-EditSpoolDialog.js), so the button must stay enabled while they're
+    // still unconfirmed rather than being disabled until a confirmation nothing yet asked
+    // for.
+    self.canAttemptWrite = ko.pureComputed(function () {
+        return (
+            self.isWriting() != true &&
+            self.targetDatabaseId() != null &&
+            self.tagPresent() === true
+        );
     });
 
     var consecutiveFailures = 0;
@@ -607,6 +670,9 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
                 );
                 self.formatLabel(
                     responseData.present === true ? responseData.formatLabel : null
+                );
+                self.product(
+                    responseData.present === true ? responseData.product : null
                 );
                 self.hasExtendedData(
                     responseData.present === true && responseData.hasExtendedData === true
@@ -692,6 +758,7 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
         self.tagTypeName(null);
         self.writeFormat(null);
         self.formatLabel(null);
+        self.product(null);
         self.hasExtendedData(false);
         self.tagValues(null);
         self.targetSpoolItem(null);
@@ -711,6 +778,12 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
     };
 
     self.confirmForeignTagOverwrite = function () {
+        // Defence in depth alongside the vendorTagWriteEnabled check in canWrite() above:
+        // even if some caller reaches this directly, the flag it would set must never
+        // become true while the setting says vendor tags are never to be written.
+        if (self.vendorTagWriteEnabled() != true) {
+            return;
+        }
         self.foreignTagConfirmed(true);
     };
 
@@ -805,6 +878,78 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
             }
         });
     };
+
+    // Per-field tag-vs-database comparison for the "which values do you want to import"
+    // checkbox dialog on an existing spool (see showReadTagImportDialog in
+    // SpoolManager-EditSpoolDialog.js). Unlike tagValueDiff above (which diffs a tag
+    // against the spool a *write* would target), this diffs an imported *read* against
+    // targetSpoolItem - same underlying data, opposite direction of travel, hence separate
+    // fields (tagValueText/dbValueText, not old/new - a checked-in tag isn't "old").
+    //
+    // Only fields the tag's read result actually carries appear as rows: several
+    // OCTOSCALE_TAG_DIFF_FIELDS entries (spoolWeight, usedWeight, remainingWeight, code,
+    // ...) are pure SpoolManager bookkeeping no vendor tag stores, so genericFilamentToSpoolFields()
+    // (the backend function behind /octoscale/readTag) never emits them - nothing to import,
+    // so no row.
+    self.readTagCompareRows = ko.pureComputed(function () {
+        var result = self.readTagResult();
+        var spoolItem = self.targetSpoolItem();
+        if (result == null || result.parsed !== true || result.fields == null) {
+            return [];
+        }
+        var fields = result.fields;
+
+        var rows = [];
+        OCTOSCALE_TAG_DIFF_FIELDS.forEach(function (field) {
+            if (!Object.prototype.hasOwnProperty.call(fields, field.key)) {
+                return;
+            }
+            // No tagValueDivisor here, mirroring readTagValues above: /octoscale/readTag
+            // already converts into SpoolManager's own units (e.g. drying time in hours),
+            // unlike the live NFC poll behind tagValueDiff which sends the tag's raw units.
+            var tagValue = octoScaleNormalizeTagValue(fields[field.key]);
+            var currentValue =
+                spoolItem != null && typeof spoolItem[field.key] === "function"
+                    ? spoolItem[field.key]()
+                    : null;
+            rows.push({
+                key: field.key,
+                label: field.label,
+                tagValueText: octoScaleFormatDiffValue(tagValue, field.unit),
+                dbValueText: octoScaleFormatDiffValue(currentValue, field.unit),
+                differs: octoScaleValuesDiffer(
+                    tagValue,
+                    currentValue,
+                    field.caseInsensitive
+                )
+            });
+        });
+
+        // density is not a tag field (see applySelectedTagFieldsToSpoolItem's comment) -
+        // it is looked up from the material name, so it only makes sense as a row (and only
+        // as an actionable one) when the tag actually carries a material.
+        if (fields["material"] != null) {
+            var suggestedDensity =
+                SPOOLMANAGER_CONSTANTS.MATERIALS_DENSITY_MAPPING[
+                    SPOOLMANAGER_UTILS.normalizeMaterialKey(fields["material"])
+                ];
+            if (suggestedDensity) {
+                var currentDensity =
+                    spoolItem != null && typeof spoolItem.density === "function"
+                        ? spoolItem.density()
+                        : null;
+                rows.push({
+                    key: "density",
+                    label: "Density (from material)",
+                    tagValueText: octoScaleFormatDiffValue(suggestedDensity, "g/cm³"),
+                    dbValueText: octoScaleFormatDiffValue(currentDensity, "g/cm³"),
+                    differs: octoScaleValuesDiffer(suggestedDensity, currentDensity, false)
+                });
+            }
+        }
+
+        return rows;
+    });
 
     self.clearReadTagResult = function () {
         self.readTagResult(null);

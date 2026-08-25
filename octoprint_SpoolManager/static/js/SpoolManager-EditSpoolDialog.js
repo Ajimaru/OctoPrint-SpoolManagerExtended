@@ -841,6 +841,17 @@ function SpoolManagerEditSpoolDialog() {
         );
     };
 
+    // A new, unsaved spool has no database id to write, but reading a vendor tag to prefill
+    // the form is still useful (previously only offered inside the Add Spool wizard). Starts
+    // the same writer with no target id - canWrite() already requires targetDatabaseId() to
+    // be set, so this session can only ever read, never write.
+    this.startTagReading = function () {
+        if (self.octoScaleTagWriter == null || self.isExistingSpool() === true) {
+            return;
+        }
+        self.octoScaleTagWriter.start(null, self.spoolItemForEditing);
+    };
+
     this.stopTagWriting = function () {
         if (self.octoScaleTagWriter != null) {
             self.octoScaleTagWriter.stop();
@@ -850,7 +861,12 @@ function SpoolManagerEditSpoolDialog() {
     // Copies the values just read off a vendor tag into the form. Only ever on an explicit
     // click: the read result is a suggestion, and the user may well have opened the dialog
     // to change something else entirely.
-    this.applyReadTagValues = function () {
+    //
+    // Used for a brand-new, unsaved spool (see startTagReading()) - there is no meaningful
+    // "database value" to compare against yet, so the field-by-field checkbox review below
+    // (showReadTagImportDialog) would just show every row as "(not set) -> tag value" and
+    // add a click for nothing. An existing spool goes through that dialog instead.
+    this._applyAllReadTagValues = function () {
         if (self.octoScaleTagWriter == null) {
             return;
         }
@@ -881,7 +897,169 @@ function SpoolManagerEditSpoolDialog() {
                 }
             }
         );
+        // applyTagFieldsToSpoolItem() only ever writes totalCombinedWeight - see the same
+        // note on the u1RfidContext prefill in showDialog(). drivenScope defaults to
+        // COMBINED, so without this the "Initial" (totalWeight) field a simple-mode user
+        // actually looks at stays empty even though a weight was read off the tag.
+        self.updateFilamentInitialWithScopes();
         self.octoScaleTagWriter.clearReadTagResult();
+    };
+
+    // Entry point bound in the template's "Use these values" button - routes to the
+    // no-comparison-needed path for a new spool, or opens the field-by-field review dialog
+    // for an existing one, where the target spool's current database values are known and
+    // worth showing side by side.
+    this.applyReadTagValues = function () {
+        if (self.isExistingSpool() === true) {
+            self.showReadTagImportDialog();
+        } else {
+            self._applyAllReadTagValues();
+        }
+    };
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////////// READ TAG IMPORT DIALOG (existing spool)
+
+    // The compare rows, each carrying its own ko.observable(boolean) "selected" property
+    // (attached in showReadTagImportDialog below) so the dialog's checkboxes can bind
+    // "checked: selected" directly on the foreach's $data.
+    //
+    // Deliberately NOT "checked: someFn($data.key)" (a function call reading a selection
+    // map keyed elsewhere) - tested against this exact Knockout version (3.5.1) inside a
+    // <table>/<tbody data-bind="foreach">/<tr> structure: a data-bind expression that calls
+    // a function with an argument in a table-based foreach loses its surrounding binding
+    // context entirely once the row template is cloned for a non-empty array, throwing
+    // "X is not defined" for the function name. A bound property access (no call, no
+    // parens) on $data works fine in the same structure - so the selection state has to
+    // live *on* each row object, not be looked up via one.
+    //
+    // Snapshotted at dialog-open time (see showReadTagImportDialog), NOT a live computed
+    // over octoScaleTagWriter.readTagCompareRows(): that would drop the per-row
+    // observables out from under the open dialog the instant anything caused it to
+    // re-evaluate (e.g. a stray NFC poll tick), which is a live re-render of the whole
+    // table for a dialog whose backing tag reading is already finished and frozen.
+    this.readTagImportRows = ko.observableArray([]);
+    // The read result the rows above were built from, frozen the same way - if a different
+    // tag ends up on the reader while this dialog is open (background polling keeps
+    // running), applySelectedReadTagValues must still apply values from the tag the user is
+    // actually looking at, not whatever is on the reader by the time they click Import.
+    this._readTagImportResult = null;
+
+    // True once every visible row is checked - drives the "select all" checkbox's own
+    // checked state (three-way: all/none/mixed collapses to a boolean, mixed reads as
+    // unchecked so clicking it always means "select everything").
+    this.readTagImportAllSelected = ko.pureComputed(function () {
+        var rows = self.readTagImportRows();
+        if (rows.length === 0) {
+            return false;
+        }
+        return rows.every(function (row) {
+            return row.selected() === true;
+        });
+    });
+
+    this.selectAllReadTagFields = function () {
+        self.readTagImportRows().forEach(function (row) {
+            row.selected(true);
+        });
+    };
+
+    this.deselectAllReadTagFields = function () {
+        self.readTagImportRows().forEach(function (row) {
+            row.selected(false);
+        });
+    };
+
+    this.toggleAllReadTagFields = function () {
+        if (self.readTagImportAllSelected()) {
+            self.deselectAllReadTagFields();
+        } else {
+            self.selectAllReadTagFields();
+        }
+    };
+
+    // Opened from the "Use these values" click on an existing spool (see applyReadTagValues
+    // above). Defaults the selection to exactly the rows that differ from the spool's
+    // current values - matching a tag to a spool that's already correct should not require
+    // unchecking a screenful of identical fields first.
+    this.showReadTagImportDialog = function () {
+        var sourceRows =
+            self.octoScaleTagWriter != null
+                ? self.octoScaleTagWriter.readTagCompareRows()
+                : [];
+        self._readTagImportResult =
+            self.octoScaleTagWriter != null
+                ? self.octoScaleTagWriter.readTagResult()
+                : null;
+        var rows = sourceRows.map(function (row) {
+            return {
+                key: row.key,
+                label: row.label,
+                tagValueText: row.tagValueText,
+                dbValueText: row.dbValueText,
+                differs: row.differs,
+                selected: ko.observable(row.differs === true)
+            };
+        });
+        self.readTagImportRows(rows);
+        $("#dialog_read_tag_import").modal("show");
+    };
+
+    this.closeReadTagImportDialog = function () {
+        $("#dialog_read_tag_import").modal("hide");
+    };
+
+    // Writes only the checked rows into the form, then closes the dialog and discards the
+    // read result the same way the direct-apply path does.
+    this.applySelectedReadTagValues = function () {
+        if (self.octoScaleTagWriter == null) {
+            return;
+        }
+        // The tag the dialog's rows were built from, not whatever is on the reader now -
+        // see the note on _readTagImportResult above.
+        var result = self._readTagImportResult;
+        if (result == null || result.parsed !== true) {
+            self.closeReadTagImportDialog();
+            return;
+        }
+        // Collapse the rows' individual selected() observables into the plain
+        // {fieldKey: boolean} shape applySelectedTagFieldsToSpoolItem expects.
+        var selection = {};
+        self.readTagImportRows().forEach(function (row) {
+            selection[row.key] = row.selected() === true;
+        });
+        // Nothing checked - closing without touching the form is a legitimate outcome
+        // ("actually, I don't want any of this"), not an error.
+        var hasSelection = Object.keys(selection).some(function (key) {
+            return selection[key] === true;
+        });
+        if (hasSelection) {
+            self.isU1RfidFlow(true);
+            if (
+                selection["color"] === true &&
+                typeof self.spoolItemForEditing.colorName === "function"
+            ) {
+                self.spoolItemForEditing.colorName("");
+            }
+            SPOOLMANAGER_U1RFID.applySelectedTagFieldsToSpoolItem(
+                self.spoolItemForEditing,
+                result.fields || {},
+                selection,
+                result.uid,
+                result.rfidTagKey,
+                {
+                    applyColor: function (colorValue) {
+                        self.spoolItemForEditing.applyColorToEditor(colorValue);
+                        self.spoolItemForEditing.color(colorValue);
+                        self._reColorFilamentIcon(colorValue);
+                    }
+                }
+            );
+            if (selection["totalWeight"] === true) {
+                self.updateFilamentInitialWithScopes();
+            }
+        }
+        self.octoScaleTagWriter.clearReadTagResult();
+        self.closeReadTagImportDialog();
     };
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////// HELPER
@@ -1112,8 +1290,134 @@ function SpoolManagerEditSpoolDialog() {
             pluginSettings
         );
 
+        // The "this tag belongs to someone else / looks like a manufacturer tag" warnings
+        // used to sit inline in the form, easy to miss next to the Write tag button and
+        // visually indistinguishable from the "Read tag" affordance right below them. A
+        // confirmation modal (OctoPrint's own showConfirmationDialog, same one used
+        // elsewhere in this dialog) makes the choice explicit instead.
+        //
+        // Only ever triggered from the "Write tag" click (see writeTagWithConfirmation
+        // below) - reading/comparing a tag must never pop up a modal on its own. An earlier
+        // version showed it as soon as a foreign/occupied tag was merely detected, which
+        // fired even while the user only wanted to read the tag or look at the diff (it
+        // can never actually write anyway, canWrite() blocks that until confirmed) - a false
+        // "destroy this?" alarm for a purely read-only look.
+        var overwriteConfirmDialog = null;
+        var overwriteConfirmDialogUid = null;
+        var closeOverwriteConfirmDialog = function () {
+            if (overwriteConfirmDialog != null) {
+                overwriteConfirmDialog.modal("hide");
+                overwriteConfirmDialog = null;
+                overwriteConfirmDialogUid = null;
+            }
+        };
+        // Safety net for the narrow window between opening the modal and the user acting on
+        // it: if a different tag ends up on the reader in the meantime, "Overwrite anyway"
+        // must not silently apply to a tag the user never saw the question for.
+        self.octoScaleTagWriter.tagUid.subscribe(function (newUid) {
+            if (
+                overwriteConfirmDialog != null &&
+                overwriteConfirmDialogUid !== newUid
+            ) {
+                closeOverwriteConfirmDialog();
+            }
+        });
+        // Resolves the pending overwrite question (if any) before writing, then writes.
+        // Returns without writing if a modal had to be shown - writeTag() is called from
+        // its onproceed instead, once the user actually confirms.
+        self.writeTagWithConfirmation = function () {
+            var writer = self.octoScaleTagWriter;
+            // The hard blockers only (no tag, no target spool, already writing) - the two
+            // confirmation flags are exactly what this function still has to resolve, so
+            // canWrite() itself (which requires them already set) would refuse right here.
+            if (writer.canAttemptWrite() != true) {
+                return;
+            }
+            if (
+                writer.needsOverwriteConfirmation() &&
+                writer.overwriteConfirmed() != true
+            ) {
+                overwriteConfirmDialogUid = writer.tagUid();
+                overwriteConfirmDialog = showConfirmationDialog({
+                    title: "Overwrite this tag?",
+                    message: writer.overwriteWarningText(),
+                    question: "Overwrite it with this spool's data anyway?",
+                    cancel: "Cancel",
+                    proceed: "Overwrite anyway",
+                    proceedClass: "warning",
+                    onproceed: function () {
+                        writer.confirmOverwrite();
+                        writer.writeTag();
+                    },
+                    onclose: function () {
+                        overwriteConfirmDialog = null;
+                        overwriteConfirmDialogUid = null;
+                    },
+                    nofade: true
+                });
+                return;
+            }
+            if (
+                writer.isPossiblyForeignTag() &&
+                writer.foreignTagConfirmed() != true
+            ) {
+                overwriteConfirmDialogUid = writer.tagUid();
+                if (writer.vendorTagWriteEnabled() != true) {
+                    // The setting is a hard "never" - no "Overwrite anyway" escape hatch
+                    // here, just an explanation of why the button did nothing.
+                    overwriteConfirmDialog = showConfirmationDialog({
+                        title: "Cannot write this tag",
+                        message: writer.foreignTagWarningText(),
+                        question:
+                            "Writing over vendor tags is disabled in the SpoolManager settings.",
+                        cancel: "OK",
+                        proceed: [],
+                        onclose: function () {
+                            overwriteConfirmDialog = null;
+                            overwriteConfirmDialogUid = null;
+                        },
+                        nofade: true
+                    });
+                    return;
+                }
+                overwriteConfirmDialog = showConfirmationDialog({
+                    title: "Overwrite this tag?",
+                    message: writer.foreignTagWarningText(),
+                    question: "Overwrite it with this spool's data anyway?",
+                    cancel: "Cancel",
+                    proceed: "Overwrite anyway",
+                    proceedClass: "danger",
+                    onproceed: function () {
+                        writer.confirmForeignTagOverwrite();
+                        writer.writeTag();
+                    },
+                    onclose: function () {
+                        overwriteConfirmDialog = null;
+                        overwriteConfirmDialogUid = null;
+                    },
+                    nofade: true
+                });
+                return;
+            }
+            writer.writeTag();
+        };
+
+        // On an existing spool, a successful tag read jumps straight to the field-by-field
+        // review dialog instead of leaving the inline "Use these values" summary sitting in
+        // the form waiting for a second click - the inline table only exists for the
+        // no-comparison-possible new-spool case now (see applyReadTagValues/
+        // _applyAllReadTagValues), so requiring the same extra click for an existing spool
+        // just added a redundant step in front of a dialog the user always wants here.
+        self.octoScaleTagWriter.readTagResult.subscribe(function (result) {
+            if (result != null && result.parsed === true && self.isExistingSpool() === true) {
+                self.showReadTagImportDialog();
+            }
+        });
+
         // closing the dialog (Save, Close, Esc) must not leave the device pollers running
         self.spoolDialog.on("hidden", function () {
+            closeOverwriteConfirmDialog();
+            self.closeReadTagImportDialog();
             self.octoScaleWeighing.stop();
             self.octoScaleTagWriter.stop();
         });
@@ -1782,6 +2086,13 @@ function SpoolManagerEditSpoolDialog() {
                     }
                 }
             );
+            // applyToSpoolItem() only ever writes totalCombinedWeight (see its own comment
+            // on why), and the drivenScope-driven subscribers only derive totalWeight from
+            // it while drivenScope is FILAMENT - but the dialog just above set it to
+            // COMBINED. Without this, the prefilled weight only shows up in "Initial total"
+            // and the plain "Initial" (totalWeight) field a simple-mode user actually looks
+            // at stays empty.
+            self.updateFilamentInitialWithScopes();
         }
 
         self.refreshU1RfidUnknownTags();

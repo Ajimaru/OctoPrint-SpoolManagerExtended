@@ -646,6 +646,122 @@ SPOOLMANAGER_U1RFID = {
         }
     },
 
+    // Field-by-field variant of applyTagFieldsToSpoolItem above, for the "which values do
+    // you want to import" checkbox dialog on an existing spool: only keys present in
+    // selectedKeys (a plain object/array-like of {key: true}, or an array of key strings)
+    // are written, everything else on the tag is left alone even though it was read.
+    //
+    // Deliberately a separate function rather than a selectedKeys parameter bolted onto
+    // applyTagFieldsToSpoolItem: that one's "suggestion, not a takeover" semantics
+    // (dropping null/empty tag values silently) is exactly right for the no-selection wizard
+    // flow, but would make an unchecked box indistinguishable from a tag that simply didn't
+    // carry that field - the selection has to be checked *before* falling back to "tag
+    // didn't have it", not folded into the same condition.
+    applySelectedTagFieldsToSpoolItem: function (
+        spoolItem,
+        fields,
+        selectedKeys,
+        uid,
+        rfidTagKey,
+        options
+    ) {
+        if (spoolItem == null || fields == null || selectedKeys == null) {
+            return;
+        }
+        options = options || {};
+
+        var isSelected;
+        if (Array.isArray(selectedKeys)) {
+            isSelected = function (key) {
+                return selectedKeys.indexOf(key) !== -1;
+            };
+        } else {
+            isSelected = function (key) {
+                return selectedKeys[key] === true;
+            };
+        }
+
+        var setIfSelected = function (fieldName, value) {
+            if (!isSelected(fieldName) || value == null || value === "") {
+                return;
+            }
+            var observable = spoolItem[fieldName];
+            if (typeof observable === "function") {
+                observable(value);
+            }
+        };
+
+        var directFields = [
+            "vendor",
+            "material",
+            "materialCharacteristic",
+            "diameter",
+            "temperature",
+            "minTemperature",
+            "maxTemperature",
+            "bedTemperature",
+            "minBedTemperature",
+            "maxBedTemperature",
+            "dryingTemperature",
+            "dryingTime",
+            "td"
+        ];
+        directFields.forEach(function (fieldName) {
+            setIfSelected(fieldName, fields[fieldName]);
+        });
+
+        // "density" is its own checkbox row (see the compare-table builder in
+        // SpoolManager-OctoScale.js) rather than an implicit side effect of selecting
+        // material, unlike applyTagFieldsToSpoolItem's "suggestion" behaviour - a user
+        // reviewing a list of checkboxes expects each row to control exactly itself.
+        if (isSelected("density") && fields["material"] != null) {
+            var suggestedDensity =
+                SPOOLMANAGER_CONSTANTS.MATERIALS_DENSITY_MAPPING[
+                    SPOOLMANAGER_UTILS.normalizeMaterialKey(fields["material"])
+                ];
+            if (suggestedDensity && typeof spoolItem.density === "function") {
+                spoolItem.density(suggestedDensity);
+            }
+        }
+
+        // Same totalWeight -> totalCombinedWeight indirection as applyTagFieldsToSpoolItem -
+        // see its comment for why. "totalWeight" is the checkbox row's key (it's what the
+        // compare table shows and what the tag actually carries); the derived form field is
+        // totalCombinedWeight, and updateFilamentInitialWithScopes() (called by the caller
+        // right after, same as elsewhere in this dialog) fills the visible "Initial" field.
+        if (isSelected("totalWeight")) {
+            var nominalWeight = parseFloat(fields["totalWeight"]);
+            if (
+                !isNaN(nominalWeight) &&
+                nominalWeight > 0 &&
+                typeof spoolItem.totalCombinedWeight === "function"
+            ) {
+                var existingSpoolWeight = parseFloat(spoolItem.spoolWeight());
+                if (isNaN(existingSpoolWeight)) {
+                    existingSpoolWeight = 0;
+                }
+                spoolItem.totalCombinedWeight(nominalWeight + existingSpoolWeight);
+            }
+        }
+
+        if (isSelected("rfidTagKey")) {
+            setIfSelected("rfidTagKey", rfidTagKey);
+        }
+
+        var colorValue = fields["color"];
+        if (isSelected("color") && colorValue != null) {
+            if (typeof options.applyColor === "function") {
+                options.applyColor(colorValue);
+            }
+            if (typeof spoolItem.colorName === "function") {
+                var nameAfterSuggestion = (spoolItem.colorName() || "").trim();
+                if (nameAfterSuggestion === "") {
+                    spoolItem.colorName(SPOOLMANAGER_U1RFID.buildColorName(colorValue));
+                }
+            }
+        }
+    },
+
     // Best-effort color name for a composed color code. Prefers the exact CSS name,
     // otherwise falls back to the nearest basic hue so the mandatory field is never left
     // empty (and never keeps a stale name from a previous wizard run).
