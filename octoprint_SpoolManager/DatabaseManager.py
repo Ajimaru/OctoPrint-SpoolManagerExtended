@@ -30,7 +30,7 @@ from octoprint_SpoolManager.WrappedLoggingHandler import WrappedLoggingHandler
 
 FORCE_CREATE_TABLES = False
 
-CURRENT_DATABASE_SCHEME_VERSION = 11
+CURRENT_DATABASE_SCHEME_VERSION = 12
 
 # List all Models
 MODELS = [PluginMetaDataModel, SpoolModel]
@@ -217,6 +217,7 @@ class DatabaseManager(object):
             self._upgradeFrom8To9,
             self._upgradeFrom9To10,
             self._upgradeFrom10To11,
+            self._upgradeFrom11To12,
         ]
 
         for migrationMethodIndex in range(
@@ -232,6 +233,45 @@ class DatabaseManager(object):
             migrationFunctions[migrationMethodIndex]()
             pass
         pass
+
+    def _upgradeFrom11To12(self):
+        self._logger.info(" Starting 11 -> 12")
+        # What is changed:
+        # - dryingTemperature = IntegerField(null=True) # since V12
+        # - dryingTime = IntegerField(null=True)        # since V12, hours
+        # - td = FloatField(null=True)                  # since V12, mm
+        # Added for the vendor RFID tag reading: most tags carry drying values (and some a
+        # TD value) that previously had nowhere to go.
+        # Same shape as the 10 -> 11 migration: database-agnostic (local SQLite and external
+        # MySQL/PostgreSQL) and made idempotent by the column check, since several OctoPrint
+        # instances may share one external database and run this migration in turn.
+        columnNames = [
+            column.name for column in self._database.get_columns("spo_spoolmodel")
+        ]
+        # td is a REAL: unlike the two drying values it is a measured optical property, not
+        # a whole-number setpoint.
+        for columnName, columnType in (
+            ("dryingTemperature", "INTEGER"),
+            ("dryingTime", "INTEGER"),
+            ("td", "REAL"),
+        ):
+            if columnName in columnNames:
+                self._logger.info(
+                    "  column '" + columnName + "' already present, skipping ALTER TABLE"
+                )
+            else:
+                self._database.execute_sql(
+                    "ALTER TABLE spo_spoolmodel ADD COLUMN "
+                    + columnName
+                    + " "
+                    + columnType
+                )
+
+        PluginMetaDataModel.update(value="12").where(
+            PluginMetaDataModel.key == PluginMetaDataModel.KEY_DATABASE_SCHEME_VERSION
+        ).execute()
+
+        self._logger.info(" Successfully 11 -> 12")
 
     def _upgradeFrom10To11(self):
         self._logger.info(" Starting 10 -> 11")

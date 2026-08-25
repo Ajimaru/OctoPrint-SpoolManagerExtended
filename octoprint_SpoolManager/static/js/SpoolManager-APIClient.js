@@ -475,6 +475,28 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
         );
     };
 
+    this.getOctoScaleTagKeyStatus = function (responseHandler) {
+        // Returns only a status per key ("missing"/"invalid"/"ok"), never the key itself -
+        // the values are admin-restricted and the dialog has no reason to hold them.
+        _callApi(
+            _buildPluginUrl("octoscale/tagKeyStatus"),
+            {method: "GET"},
+            function (data) {
+                responseHandler(
+                    data || {success: false, error: "No answer from the plugin backend."}
+                );
+            },
+            function (body, rawText) {
+                responseHandler(
+                    body || {
+                        success: false,
+                        error: rawText || "Could not read the vendor key status."
+                    }
+                );
+            }
+        );
+    };
+
     this.getOctoScaleNfcStatus = function (responseHandler) {
         _callApi(
             _buildPluginUrl("octoscale/nfc"),
@@ -498,8 +520,14 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
     // No tagFormat parameter anymore: the firmware picks the format from the tag actually
     // on the reader and reports which one it used via getOctoScaleWriteStatus below. This
     // call only starts the write (device answers 202) - it does not wait for the result.
-    this.writeOctoScaleTag = function (databaseId, responseHandler) {
+    // `force` overrides the firmware's refusal to overwrite a tag it recognized as a
+    // foreign vendor tag (it answers 409 otherwise). Only ever set after the user
+    // explicitly confirmed - see foreignTagConfirmed in SpoolManager-OctoScale.js.
+    this.writeOctoScaleTag = function (databaseId, responseHandler, force) {
         var payload = {databaseId: databaseId};
+        if (force === true) {
+            payload.force = true;
+        }
 
         _callApi(
             _buildPluginUrl("octoscale/writeTag"),
@@ -512,6 +540,30 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
             function (body, rawText) {
                 responseHandler(
                     body || {success: false, error: rawText || "Could not write the tag."}
+                );
+            }
+        );
+    };
+
+    // Reads a vendor tag (Bambu, Anycubic, Elegoo, ...) currently on the reader and returns
+    // the spool fields it describes:
+    //   {success, parsed, parserId, parserLabel, fields, uid, rfidTagKey,
+    //    matchedSpoolId, matchedSpoolDisplayName, diagnostics}
+    // Nothing is stored - the answer is a suggestion the user confirms in a dialog.
+    // Synchronous from the caller's point of view but slow (the device may need a couple of
+    // seconds), so only ever call this on an explicit user action, never from a poll.
+    this.readOctoScaleTag = function (responseHandler) {
+        _callApi(
+            _buildPluginUrl("octoscale/readTag"),
+            {method: "POST", body: JSON.stringify({})},
+            function (data) {
+                responseHandler(
+                    data || {success: false, error: "No answer from the plugin backend."}
+                );
+            },
+            function (body, rawText) {
+                responseHandler(
+                    body || {success: false, error: rawText || "Could not read the tag."}
                 );
             }
         );

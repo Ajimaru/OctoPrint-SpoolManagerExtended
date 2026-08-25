@@ -70,6 +70,35 @@ class SettingsKeys:
     # per write. NTAG213 has no Extended option - the firmware rejects it outright (too
     # small), so the UI must warn rather than silently offer a write that always fails.
     SETTINGS_KEY_OCTOSCALE_NTAG_FORMAT = "octoScaleNtagFormat"
+    # Reading vendor RFID tags (Bambu, Anycubic, Creality, ...) off a spool and offering to
+    # create a spool from them. Off by default and deliberately opt-in: it reads formats
+    # this project does not own, and a user who only ever writes their own tags should not
+    # have it running. Note that the foreign-tag *write protection* is NOT gated on this -
+    # that one is a safeguard against destroying a manufacturer tag and has to apply
+    # whether or not reading is enabled.
+    SETTINGS_KEY_OCTOSCALE_TAG_READING_ENABLED = "octoScaleTagReadingEnabled"
+    # Vendor keys the user supplies for tag formats whose sectors are protected by a
+    # manufacturer secret (Bambu, Creality). A dict of {keyName: value}, empty by default -
+    # NO KEY MATERIAL IS SHIPPED WITH THIS PLUGIN, and the parsers that need one stay
+    # disabled until the user enters it. One dict rather than one setting per parser, the
+    # same way the U1 integration deliberately has no per-device settings: whether a parser
+    # runs follows from whether its key validates, not from a separate switch.
+    #
+    # Snapmaker is deliberately NOT here: its keys are derived from each tag's own UID with
+    # salts that are published literals, so there is no secret to enter (see
+    # common/FilamentTagKeys.py). Adding a field for it would be a field that does nothing.
+    #
+    # Listed in get_settings_restricted_paths() so it is not handed to unauthenticated
+    # clients - see __init__.py.
+    SETTINGS_KEY_OCTOSCALE_TAG_KEYS = "octoScaleTagKeys"
+
+    ## Optional spool fields
+    # Shows the TD (transmission distance) field in the spool dialog. Off by default: it is
+    # a niche value used by HueForge and OrcaSlicer's full-spectrum mode, most users have no
+    # way to measure it, and an always-visible field would just be one more empty box. The
+    # value is still read from vendor tags and stored either way - this only controls
+    # whether the field is offered for manual editing.
+    SETTINGS_KEY_TD_FIELD_ENABLED = "tdFieldEnabled"
 
     ## SpoolmanDB-Community (optional remote temperature suggestions)
     SETTINGS_KEY_SPOOLMANDB_ENABLED = "spoolmanDbEnabled"

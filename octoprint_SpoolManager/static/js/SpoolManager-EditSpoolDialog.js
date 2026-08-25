@@ -151,6 +151,9 @@ function SpoolManagerEditSpoolDialog() {
         minBedTemperature: "Bed temperature (min)",
         maxBedTemperature: "Bed temperature (max)",
         enclosureTemperature: "Enclosure temperature",
+        dryingTemperature: "Drying temperature",
+        dryingTime: "Drying time",
+        td: "Transmission distance",
         offsetTemperature: "Offset tool temperature",
         offsetBedTemperature: "Offset bed temperature",
         offsetEnclosureTemperature: "Offset enclosure temperature",
@@ -418,7 +421,12 @@ function SpoolManagerEditSpoolDialog() {
         }
     };
     self._applySpoolmanFinish = function (product) {
-        if (!product || !product.finish || self._spoolmanFinishEdited || self.isU1RfidFlow()) {
+        if (
+            !product ||
+            !product.finish ||
+            self._spoolmanFinishEdited ||
+            self.isU1RfidFlow()
+        ) {
             return;
         }
         self._spoolmanApplyingFinish = true;
@@ -488,6 +496,9 @@ function SpoolManagerEditSpoolDialog() {
         {field: "temperature", label: "Tool temperature"},
         {field: "bedTemperature", label: "Bed temperature"},
         {field: "enclosureTemperature", label: "Enclosure temperature"},
+        {field: "dryingTemperature", label: "Drying temperature"},
+        {field: "dryingTime", label: "Drying time"},
+        {field: "td", label: "Transmission distance"},
         {field: "offsetTemperature", label: "Tool temperature offset"},
         {field: "offsetBedTemperature", label: "Bed temperature offset"},
         {field: "offsetEnclosureTemperature", label: "Enclosure temperature offset"},
@@ -836,6 +847,43 @@ function SpoolManagerEditSpoolDialog() {
         }
     };
 
+    // Copies the values just read off a vendor tag into the form. Only ever on an explicit
+    // click: the read result is a suggestion, and the user may well have opened the dialog
+    // to change something else entirely.
+    this.applyReadTagValues = function () {
+        if (self.octoScaleTagWriter == null) {
+            return;
+        }
+        var result = self.octoScaleTagWriter.readTagResult();
+        if (result == null || result.parsed !== true) {
+            return;
+        }
+        // The tag describes the physical spool in front of the user, so it must win over a
+        // catalog guess - same reasoning as the U1 flow, which disables the SpoolmanDB
+        // dropdown for the lifetime of the dialog.
+        self.isU1RfidFlow(true);
+        // Clear the placeholder-derived color name first, otherwise the "only fill when
+        // empty" check below sees a leftover ("red" from the #ff0000 default) and skips the
+        // tag's actual color.
+        if (typeof self.spoolItemForEditing.colorName === "function") {
+            self.spoolItemForEditing.colorName("");
+        }
+        SPOOLMANAGER_U1RFID.applyTagFieldsToSpoolItem(
+            self.spoolItemForEditing,
+            result.fields || {},
+            result.uid,
+            result.rfidTagKey,
+            {
+                applyColor: function (colorValue) {
+                    self.spoolItemForEditing.applyColorToEditor(colorValue);
+                    self.spoolItemForEditing.color(colorValue);
+                    self._reColorFilamentIcon(colorValue);
+                }
+            }
+        );
+        self.octoScaleTagWriter.clearReadTagResult();
+    };
+
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////// HELPER
 
     // Validation shape adopted from mdziekon/OctoPrint-SpoolManager PR #11 (GH-10);
@@ -1059,7 +1107,10 @@ function SpoolManagerEditSpoolDialog() {
             apiClient,
             pluginSettings
         );
-        self.octoScaleTagWriter = new SpoolManagerOctoScaleTagWriter(apiClient);
+        self.octoScaleTagWriter = new SpoolManagerOctoScaleTagWriter(
+            apiClient,
+            pluginSettings
+        );
 
         // closing the dialog (Save, Close, Esc) must not leave the device pollers running
         self.spoolDialog.on("hidden", function () {

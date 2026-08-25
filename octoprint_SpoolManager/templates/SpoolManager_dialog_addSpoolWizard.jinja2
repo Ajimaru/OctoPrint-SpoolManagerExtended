@@ -19,6 +19,72 @@
     <div class="modal-body spm-wizard-body">
         <form class="form-horizontal" id="spool-wizard-form">
 
+            <!-- STEP: READ VENDOR TAG -->
+            <!-- First step on purpose: what is read here prefills every step that follows.
+                 Entirely skippable - "Skip" is the plain Next button below. -->
+            <div data-bind="visible: currentStepId() === 'readTag'">
+                <p>{{ _('Does this spool have a manufacturer RFID tag? Place it on the OctoScale reader and read it - the values below then prefill the rest of the wizard.') }}</p>
+
+                <div data-bind="visible: !octoScaleTagWriter.tagPresent()">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <small>{{ _('Waiting for a tag on the reader...') }}</small>
+                </div>
+
+                <div data-bind="visible: octoScaleTagWriter.tagPresent">
+                    <i class="fas fa-check text-success"></i>
+                    <small>{{ _('Tag detected') }}<span data-bind="visible: octoScaleTagWriter.formatLabel">
+                        (<span data-bind="text: octoScaleTagWriter.formatLabel"></span>)</span></small>
+                </div>
+
+                <div style="margin-top: 10px;" data-bind="visible: octoScaleTagWriter.tagPresent() && octoScaleTagWriter.readTagResult() == null">
+                    <button type="button" class="btn btn-primary"
+                            data-bind="click: octoScaleTagWriter.readTag, enable: octoScaleTagWriter.canReadTag">
+                        <i class="fas fa-spinner fa-spin" data-bind="visible: octoScaleTagWriter.isReadingTag"></i>
+                        {{ _('Read tag') }}
+                    </button>
+                    <span style="margin-left: 8px;" data-bind="visible: octoScaleTagWriter.isReadingTag">
+                        <small>{{ _('Reading - please leave the tag on the reader...') }}</small>
+                    </span>
+                </div>
+
+                <div class="text-warning" style="margin-top: 10px;" data-bind="visible: octoScaleTagWriter.readTagError">
+                    <i class="fas fa-info-circle"></i>
+                    <span data-bind="text: octoScaleTagWriter.readTagError"></span>
+                </div>
+
+                <!-- ko if: octoScaleTagWriter.readTagResult() != null && octoScaleTagWriter.readTagResult().parsed === true -->
+                <div class="alert alert-info" style="margin-top: 12px;">
+                    <i class="fas fa-check"></i>
+                    {{ _('Recognized as') }} <strong data-bind="text: octoScaleTagWriter.readTagResult().parserLabel"></strong>.
+                    <!-- ko if: octoScaleTagWriter.readTagResult().matchedSpoolId != null -->
+                    <div class="text-warning" style="margin-top: 6px;">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        {{ _('This tag already belongs to') }}
+                        <strong data-bind="text: octoScaleTagWriter.readTagResult().matchedSpoolDisplayName"></strong>
+                        ({{ _('id') }} <span data-bind="text: octoScaleTagWriter.readTagResult().matchedSpoolId"></span>).
+                        {{ _('Creating a new spool from it would give you a duplicate.') }}
+                    </div>
+                    <!-- /ko -->
+                    <table class="table table-condensed" style="margin: 8px 0 0 0;">
+                        <tbody data-bind="foreach: octoScaleTagWriter.readTagValues">
+                            <tr>
+                                <td style="padding: 2px 8px 2px 0; border: none;"><small data-bind="text: label"></small></td>
+                                <td style="padding: 2px 0; border: none;"><small data-bind="text: valueText"></small></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <button type="button" class="btn btn-primary" style="margin-top: 6px;"
+                            data-bind="click: applyReadTagValues">{{ _('Use these values') }}</button>
+                    <button type="button" class="btn" style="margin-left: 8px; margin-top: 6px;"
+                            data-bind="click: octoScaleTagWriter.clearReadTagResult">{{ _('Discard') }}</button>
+                </div>
+                <!-- /ko -->
+
+                <p class="help-block" style="margin-top: 14px;">
+                    <small>{{ _('No tag, or you would rather enter everything by hand? Just continue with Next.') }}</small>
+                </p>
+            </div>
+
             <!-- STEP: MODE -->
             <div data-bind="visible: currentStepId() === 'mode'">
                 <p>{{ _('How much do you want to fill in for this spool?') }}</p>
@@ -102,6 +168,15 @@
                             <option data-bind="attr: { value: $data }"></option>
                         </datalist>
                         <span class="help-block"><small>{{ _('Choosing a known material fills in a matching density.') }}</small></span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">{{ _('Variant') }}</label>
+                    <div class="controls">
+                        <input type="text" class="input-large" autocomplete="off"
+                               placeholder="{{ _('Silk, Matte, ...') }}"
+                               data-bind="textInput: spoolItemForCreation.materialCharacteristic">
+                        <span class="help-block"><small>{{ _('Filled in from a vendor tag when it carries one. Kept separate from Material so the density lookup keeps working.') }}</small></span>
                     </div>
                 </div>
                 <div class="control-group" data-bind="visible: spoolmanProducts().length || spoolmanLoading()">
@@ -344,6 +419,30 @@
                     </div>
                 </div>
                 <div class="control-group">
+                    <label class="control-label">{{ _('Drying') }}</label>
+                    <div class="controls">
+                        <div class="input-append">
+                            <input type="number" step="1" min="0" class="input-mini text-right" placeholder="temp" data-bind="value: spoolItemForCreation.dryingTemperature">
+                            <span class="add-on">°C</span>
+                            <input type="number" step="1" min="0" class="input-mini text-right" placeholder="hours" data-bind="value: spoolItemForCreation.dryingTime">
+                            <span class="add-on">h</span>
+                        </div>
+                        <span class="help-block"><small>{{ _('Optional. Most vendor RFID tags carry these values.') }}</small></span>
+                    </div>
+                </div>
+                {# TD is opt-in, same as in the edit dialog: a niche value most users cannot
+                   measure, so it stays hidden unless someone actually works with it. #}
+                <div class="control-group" data-bind="visible: pluginSettings.tdFieldEnabled()">
+                    <label class="control-label">{{ _('TD') }}</label>
+                    <div class="controls">
+                        <div class="input-append">
+                            <input type="number" step="0.1" min="0.1" max="100" class="input-mini text-right" data-bind="value: spoolItemForCreation.td">
+                            <span class="add-on">TD</span>
+                        </div>
+                        <span class="help-block"><small>{{ _('Optional. Transmission Distance, used by HueForge and OrcaSlicer: 0.1 (most opaque) to 100 (most transparent).') }}</small></span>
+                    </div>
+                </div>
+                <div class="control-group">
                     <label class="control-label">{{ _('Flow rate compensation') }}</label>
                     <div class="controls">
                         <div class="input-append">
@@ -467,6 +566,58 @@
                                 data-bind="click: octoScaleTagWriter.confirmOverwrite">{{ _('Overwrite anyway') }}</button>
                     </div>
 
+                    <!-- A manufacturer tag carries no spool id, so the id-based warning above never
+                         fires for it - without this it would look exactly like a blank tag. -->
+                    <div class="alert alert-error" style="margin-top: 8px;"
+                         data-bind="visible: octoScaleTagWriter.isPossiblyForeignTag() && !octoScaleTagWriter.foreignTagConfirmed()">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <span data-bind="text: octoScaleTagWriter.foreignTagWarningText"></span>
+                        <button type="button" class="btn btn-small btn-danger" style="margin-left: 8px;"
+                                data-bind="click: octoScaleTagWriter.confirmForeignTagOverwrite">{{ _('Overwrite anyway') }}</button>
+                    </div>
+
+                    <!-- Outside the warning above: reading works for any tag, including one
+                         SpoolManager wrote itself. -->
+                    <div style="margin-top: 8px;" data-bind="visible: octoScaleTagWriter.shouldOfferTagRead">
+                        <button type="button" class="btn btn-small"
+                                data-bind="click: octoScaleTagWriter.readTag, enable: octoScaleTagWriter.canReadTag">
+                            <i class="fas fa-spinner fa-spin" data-bind="visible: octoScaleTagWriter.isReadingTag"></i>
+                            {{ _('Read tag') }}
+                        </button>
+                    </div>
+
+                    <!-- Reading takes a moment on the device, so say so rather than leaving the
+                         user wondering whether the tag has to stay put. It does. -->
+                    <div style="margin-top: 8px;" data-bind="visible: octoScaleTagWriter.isReadingTag">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <small>{{ _('Reading the tag - please leave it on the reader...') }}</small>
+                    </div>
+                    <div class="text-warning" style="margin-top: 8px;" data-bind="visible: octoScaleTagWriter.readTagError">
+                        <i class="fas fa-info-circle"></i>
+                        <span data-bind="text: octoScaleTagWriter.readTagError"></span>
+                    </div>
+                    <!-- ko if: octoScaleTagWriter.readTagResult() != null && octoScaleTagWriter.readTagResult().parsed === true -->
+                    <!-- Read-only here on purpose: this step runs AFTER the spool has been
+                         created, so there is no form left to copy the values into. It tells
+                         the user what the tag holds so they can decide whether to overwrite
+                         it; creating a spool from a vendor tag happens in the edit dialog. -->
+                    <div class="alert alert-info" style="margin-top: 8px;">
+                        <i class="fas fa-check"></i>
+                        {{ _('Recognized as') }} <strong data-bind="text: octoScaleTagWriter.readTagResult().parserLabel"></strong>.
+                        {{ _('This tag holds:') }}
+                        <table class="table table-condensed" style="margin: 6px 0 0 0;">
+                            <tbody data-bind="foreach: octoScaleTagWriter.readTagValues">
+                                <tr>
+                                    <td style="padding: 2px 8px 2px 0; border: none;"><small data-bind="text: label"></small></td>
+                                    <td style="padding: 2px 0; border: none;"><small data-bind="text: valueText"></small></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <button type="button" class="btn btn-small" style="margin-top: 6px;"
+                                data-bind="click: octoScaleTagWriter.clearReadTagResult">{{ _('Dismiss') }}</button>
+                    </div>
+                    <!-- /ko -->
+
                     <div style="margin-top: 10px;">
                         <button type="button" class="btn btn-primary"
                                 data-bind="click: octoScaleTagWriter.writeTag, enable: octoScaleTagWriter.canWrite">
@@ -477,6 +628,13 @@
 
                     <div class="text-success" style="margin-top: 8px;" data-bind="visible: octoScaleTagWriter.writeSucceeded">
                         <i class="fas fa-check"></i> {{ _('Tag written and verified') }}<span data-bind="visible: octoScaleTagWriter.writeFormatUsed"> (<span data-bind="text: octoScaleTagWriter.writeFormatUsed"></span>)</span>.
+                        <!-- ko if: octoScaleTagWriter.writeUnsupportedFields().length > 0 -->
+                        <br><small class="text-warning"><i class="fas fa-info-circle"></i>
+                            {{ _('This format cannot store these values') }}:
+                            <span data-bind="text: octoScaleTagWriter.writeUnsupportedFieldLabels().join(', ')"></span>.
+                            {{ _('They stay in SpoolManager - a bigger tag would not help, only a different format would.') }}
+                        </small>
+                        <!-- /ko -->
                         <!-- ko if: octoScaleTagWriter.writeDroppedFields().length > 0 -->
                         <br><small class="text-warning"><i class="fas fa-exclamation-triangle"></i> {{ _('Some fields did not fit on the tag and were left out') }}: <span data-bind="text: octoScaleTagWriter.writeDroppedFields().join(', ')"></span></small>
                         <!-- /ko -->

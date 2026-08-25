@@ -66,6 +66,12 @@ FIELD_KEY_MAP = {
         "preheat_temperature": 36,
         "min_bed_temperature": 37,
         "max_bed_temperature": 38,
+        # Key 27 sits inside the range OctoScale already writes; 57/58 are above it. All
+        # three transcribed from the specification's main_fields.yaml, not guessed - a wrong
+        # key would silently overwrite a different field.
+        "transmission_distance": 27,
+        "drying_temperature": 57,
+        "drying_time": 58,
     },
     # Aux carries none of our fields today (see UNMAPPED_FIELD_NAMES) - present so
     # encodeSection(SECTION_AUX, {}) encodes an empty map instead of raising, keeping the
@@ -82,6 +88,8 @@ FIELD_KEY_MAP = {
 #   manufacturer-assigned, not our database's serial - using it would misrepresent the value.
 # batchNumber: no lot/batch field in the spec.
 # purchasedOn: spec has manufactured_date/expiration_date, neither means "date we bought it".
+# (dryingTemperature/dryingTime/td are NOT in this list: the spec does define them - keys 57,
+#  58 and 27 - so they are mapped in FIELD_KEY_MAP above rather than dropped.)
 UNMAPPED_FIELD_NAMES = (
     "colorName",
     "remainingWeight",
@@ -317,6 +325,14 @@ def materialTypeIndex(material):
     return MATERIAL_TYPE_BY_ABBREVIATION.get(text)
 
 
+def _dryingTimeMinutes(spoolModel):
+    # SpoolManager stores drying time in hours, the OpenPrintTag spec in minutes.
+    hours = _toInt(getattr(spoolModel, "dryingTime", None))
+    if hours is None:
+        return None
+    return hours * 60
+
+
 def spoolModelToFields(spoolModel):
     # Named-field view of a spool in OpenPrintTag spec terms. Values the spool does not carry
     # are dropped instead of written as null, so an unconfigured field never claims "0 grams".
@@ -350,6 +366,16 @@ def spoolModelToFields(spoolModel):
         "preheat_temperature": _toInt(getattr(spoolModel, "temperature", None)),
         "min_bed_temperature": _toInt(temperatureRange["minBedTemperature"]),
         "max_bed_temperature": _toInt(temperatureRange["maxBedTemperature"]),
+        # Only what the user actually entered goes on the tag. The material-table defaults a
+        # vendor tag read fills in (PLA -> 50 C / 8 h) stay out of here: after a write/read
+        # round trip a guessed value would be indistinguishable from a manufacturer's own,
+        # and a wrong drying temperature is worse than none.
+        "drying_temperature": _toInt(getattr(spoolModel, "dryingTemperature", None)),
+        # The spec stores this in MINUTES (main_fields.yaml key 58, example 480 = 8 h) while
+        # SpoolManager stores hours - without this conversion 8 hours would land on the tag
+        # as 8 minutes.
+        "drying_time": _dryingTimeMinutes(spoolModel),
+        "transmission_distance": _toFloat32(getattr(spoolModel, "td", None)),
     }
 
     fields = {
@@ -358,6 +384,37 @@ def spoolModelToFields(spoolModel):
         )
     }
     return fields
+
+
+def _jsonSafeValue(value):
+    if isinstance(value, Float32):
+        # A marker for the CBOR encoder (emit binary32); meaningless outside encoding.
+        return value.value
+    if isinstance(value, (bytes, bytearray)):
+        # Byte strings in this map are raw values the spec defines as byte arrays, e.g.
+        # primary_color. They are not text - decoding them as UTF-8 raises on the first
+        # non-ASCII byte (#fd7412 fails immediately) - so show them as hex.
+        return bytes(value).hex()
+    return value
+
+
+def fieldsForJson(fields):
+    """The field map rendered so it can be serialized as JSON.
+
+    Two kinds of value in this map cannot go into JSON as they are: Float32 markers, and the
+    raw byte strings the spec uses for colours. Only the preview endpoint needs this - the
+    encoder itself must keep receiving the original values, or the payload silently changes.
+    """
+    plain = {}
+    for sectionName, sectionFields in fields.items():
+        if not isinstance(sectionFields, dict):
+            plain[sectionName] = _jsonSafeValue(sectionFields)
+            continue
+        plain[sectionName] = {
+            fieldName: _jsonSafeValue(value)
+            for fieldName, value in sectionFields.items()
+        }
+    return plain
 
 
 def getUnresolvedFieldNames(fields):
