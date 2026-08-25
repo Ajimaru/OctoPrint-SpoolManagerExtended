@@ -143,7 +143,10 @@ function SpoolManagerOctoScaleWeighing(apiClient, pluginSettings) {
 var OCTOSCALE_TAG_DIFF_FIELDS = [
     {key: "material", label: "Material"},
     {key: "vendor", label: "Vendor"},
-    {key: "color", label: "Color"},
+    // Hex colours are the same colour whatever the case: the firmware echoes "#FD7412"
+    // where the spool holds "#fd7412", which would otherwise show up as a change on every
+    // single write of an unmodified spool.
+    {key: "color", label: "Color", caseInsensitive: true},
     {key: "colorName", label: "Color name"},
     {key: "diameter", label: "Diameter", unit: "mm"},
     {key: "density", label: "Density", unit: "g/cm³"},
@@ -180,16 +183,20 @@ var OCTOSCALE_TAG_DIFF_FIELDS = [
 var OCTOSCALE_TAG_DIFF_DATE_FIELDS = [
     {
         key: "firstUse",
+        // Optional companion field carrying the time of day (see octoScaleTagDateText).
+        minuteOfDayKey: "firstUseMinuteOfDay",
         label: "First use",
         format: SPOOLMANAGER_CONSTANTS.DATES.PARSE_FORMATS.DATETIME
     },
     {
         key: "lastUse",
+        minuteOfDayKey: "lastUseMinuteOfDay",
         label: "Last use",
         format: SPOOLMANAGER_CONSTANTS.DATES.PARSE_FORMATS.DATETIME
     },
     {
         key: "purchasedOn",
+        minuteOfDayKey: "purchasedOnMinuteOfDay",
         label: "Purchased on",
         format: SPOOLMANAGER_CONSTANTS.DATES.PARSE_FORMATS.DATE
     }
@@ -207,6 +214,35 @@ function octoScaleEpochDaysToText(epochDays, format) {
     return moment(OCTOSCALE_EPOCH_DATE_MS + epochDays * 86400000)
         .utc()
         .format(format);
+}
+
+// The day and the time of day are two separate fields on the tag: the day has always been
+// there, the minute-of-day is optional and may be absent (older firmware, older tag, or a
+// value that never had a time). Missing or sentinel means midnight, which is exactly the
+// behaviour that existed before the field was introduced.
+function octoScaleTagDateText(tagValues, field) {
+    var epochDays = tagValues[field.key];
+    if (epochDays == null || epochDays === -1) {
+        return null;
+    }
+
+    var offsetMs = 0;
+    if (field.minuteOfDayKey) {
+        var minuteOfDay = tagValues[field.minuteOfDayKey];
+        // 0xFFFF is the firmware's uint16 "not set" sentinel; anything outside a real day
+        // is treated the same way rather than shifting the date into the next one.
+        if (
+            typeof minuteOfDay === "number" &&
+            minuteOfDay >= 0 &&
+            minuteOfDay < 1440
+        ) {
+            offsetMs = minuteOfDay * 60000;
+        }
+    }
+
+    return moment(OCTOSCALE_EPOCH_DATE_MS + epochDays * 86400000 + offsetMs)
+        .utc()
+        .format(field.format);
 }
 
 // The firmware's "extended" payload uses -1 (numbers) / "" (strings) as its "field not
@@ -237,7 +273,7 @@ function octoScaleNormalizeTagValue(rawValue, divisor) {
 // Loosely-typed equality: the tag sends JSON numbers/strings, SpoolItem may hold either
 // depending on the field - normalize both sides before comparing so e.g. 195 vs "195" or
 // 0.2 vs "0.2" don't show up as spurious diffs.
-function octoScaleValuesDiffer(tagValue, currentValue) {
+function octoScaleValuesDiffer(tagValue, currentValue, caseInsensitive) {
     var tagEmpty = tagValue == null || tagValue === "";
     var currentEmpty = currentValue == null || currentValue === "";
     if (tagEmpty && currentEmpty) {
@@ -253,7 +289,15 @@ function octoScaleValuesDiffer(tagValue, currentValue) {
             return Math.abs(tagNum - currentNum) > 1e-9;
         }
     }
-    return String(tagValue) !== String(currentValue);
+    var tagText = String(tagValue);
+    var currentText = String(currentValue);
+    if (caseInsensitive) {
+        // Only for fields where case carries no meaning (hex colours). Vendor and colour
+        // *name* are deliberately left case-sensitive: there a changed capitalization is a
+        // real edit the user should see.
+        return tagText.toLowerCase() !== currentText.toLowerCase();
+    }
+    return tagText !== currentText;
 }
 
 // Plain-text rendering for a diff row's value: appends the unit if given and the value
@@ -452,7 +496,13 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
                 typeof spoolItem[field.key] === "function"
                     ? spoolItem[field.key]()
                     : null;
-            if (!octoScaleValuesDiffer(tagValue, currentValue)) {
+            if (
+                !octoScaleValuesDiffer(
+                    tagValue,
+                    currentValue,
+                    field.caseInsensitive
+                )
+            ) {
                 return;
             }
             diffs.push({
@@ -463,11 +513,15 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
         });
 
         OCTOSCALE_TAG_DIFF_DATE_FIELDS.forEach(function (field) {
-            if (!Object.prototype.hasOwnProperty.call(tagValues, field.key)) {
+            var hasDayField = Object.prototype.hasOwnProperty.call(
+                tagValues,
+                field.key
+            );
+            if (!hasDayField) {
+                // The minute-of-day field is meaningless without its day field.
                 return;
             }
-            var tagEpochDays = tagValues[field.key];
-            var tagValueText = octoScaleEpochDaysToText(tagEpochDays, field.format);
+            var tagValueText = octoScaleTagDateText(tagValues, field);
             var currentValueText =
                 typeof spoolItem[field.key] === "function"
                     ? spoolItem[field.key]()

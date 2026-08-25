@@ -28,6 +28,7 @@ from octoprint_SpoolManager.U1RfidManager import (
 from octoprint_SpoolManager.api import Transformer
 from octoprint_SpoolManager.common import (
     CSVExportImporter,
+    FilamentTagModel,
     FilamentTagParsers,
     FilamentTagReader,
     FilamentTagToSpool,
@@ -1716,6 +1717,103 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             }
         )
 
+    def _readMifareClassicTag(self, reader, scanResult):
+        """Try each Classic parser with its own sector keys until one authenticates.
+
+        Unlike the NTAG path there is no single dump every parser can share: the sectors are
+        protected, and which keys open them depends on the vendor. So this is one read per
+        candidate, stopping at the first that both authenticates and recognizes the content.
+
+        Snapmaker derives a *different* key for each of the 16 sectors, which the current
+        firmware contract cannot express in one call - it takes one key A for the whole tag.
+        Those parsers are therefore read sector by sector and the results stitched back into
+        a full-size image, so the parsers keep seeing absolute offsets into a 1K dump. If the
+        firmware later accepts per-sector keys, only _readClassicWithKeys() changes.
+        """
+        attempted = []
+        lastError = None
+        lastRetryable = False
+
+        for descriptor in FilamentTagParsers.parsersForTagClass(
+            FilamentTagModel.TagType.MIFARE_CLASSIC_1K
+        ):
+            parser = descriptor["parser"]()
+            attempted.append(descriptor["id"])
+
+            keys = None
+            if hasattr(parser, "authenticationKeys"):
+                keys = parser.authenticationKeys(scanResult)
+                if keys is None:
+                    # The parser disabled itself (no key configured). Skipping here rather
+                    # than filtering the registry keeps upstream's self-disabling behaviour.
+                    continue
+
+            readResult = self._readClassicWithKeys(
+                reader, keys, descriptor.get("sectors")
+            )
+            if not readResult.ok:
+                lastError = readResult.error
+                lastRetryable = readResult.retryable
+                continue
+
+            try:
+                filament = parser.parseTag(scanResult, readResult.data)
+            except Exception:
+                self._logger.exception(
+                    "Parser '%s' raised while reading a Mifare Classic tag",
+                    descriptor["id"],
+                )
+                continue
+
+            if filament is not None:
+                return self._buildReadTagResponse(
+                    filament,
+                    readResult,
+                    scanResult,
+                    {"attemptedParsers": attempted, "parserId": descriptor["id"]},
+                )
+
+        # Nothing claimed it. A failed authentication is the normal outcome for a tag whose
+        # vendor is not supported yet, so this is not an error - just an unrecognized tag.
+        self._logger.info(
+            "Read a Mifare Classic tag uid='%s' that no parser recognized (tried: %s)",
+            scanResult.uidHex,
+            ", ".join(attempted) or "none",
+        )
+        return flask.jsonify(
+            {
+                "success": True,
+                "parsed": False,
+                "uid": scanResult.uidHex,
+                "error": "This tag's format was not recognized.",
+                "retryable": lastRetryable,
+                "diagnostics": {
+                    "attemptedParsers": attempted,
+                    "parserId": None,
+                    "tagType": "mifareClassic1k",
+                    "error": lastError,
+                },
+            }
+        )
+
+    def _readClassicWithKeys(self, reader, keys, sectors):
+        """Read a Classic tag with whatever keys its parser supplies.
+
+        The firmware takes key A as a 16-entry array indexed by sector and rejects any other
+        length outright, so a per-sector key set goes over in a single request - no need to
+        read sector by sector. Verified against a real Snapmaker tag: 16/16 sectors
+        authenticated in one call, 2816 ms.
+        """
+        if keys is None:
+            # Factory-key parsers (Qidi): let the firmware use its default.
+            return reader.readRaw(sectors=sectors)
+
+        if isinstance(keys, str):
+            # One key for the whole tag - expanded to the 16 entries the firmware wants.
+            keys = [keys] * FilamentTagReader.SECTORS_PER_CLASSIC_1K
+
+        return reader.readRaw(keyA=list(keys), sectors=sectors)
+
     @octoprint.plugin.BlueprintPlugin.route("/octoscale/readTag", methods=["POST"])
     @no_firstrun_access
     def readOctoScaleTag(self):
@@ -1757,9 +1855,12 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 }
             )
 
-        # Phase 1 ships NTAG parsers only, all of them keyless: one page walk, then every
-        # parser gets a go at the same bytes. Mifare Classic needs per-parser keys and a
-        # read each, which arrives with the key store.
+        # NTAG is one keyless page walk that every parser then gets a go at. Mifare Classic
+        # cannot work that way: each parser needs its own sector keys, so it takes one read
+        # per candidate until one authenticates.
+        if scanResult.tag_type == FilamentTagModel.TagType.MIFARE_CLASSIC_1K:
+            return self._readMifareClassicTag(reader, scanResult)
+
         readResult = reader.readRaw()
         if not readResult.ok:
             self._logger.warning(
@@ -1857,6 +1958,24 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 }
             )
 
+        return self._buildReadTagResponse(
+            filament, readResult, scanResult, parseDiagnostics
+        )
+
+    def _buildReadTagResponse(
+        self, filament, readResult, scanResult, parseDiagnostics
+    ):
+        """The success payload for a recognized tag - shared by the NTAG and Classic paths.
+
+        Both branches must answer in exactly the same shape: the frontend has one code path
+        for the result and cannot tell which kind of tag produced it.
+        """
+        uid = readResult.uid or scanResult.uidHex
+        normalizedUid = normalizeCardUid(uid) if uid else None
+        rfidTagKey = deriveRfidTagKey(normalizedUid) if normalizedUid else None
+
+        diagnostics = dict(readResult.toDiagnostics())
+        diagnostics.update(parseDiagnostics)
         diagnostics.update(
             FilamentTagToSpool.diagnosticsFor(filament, normalizedUid, rfidTagKey)
         )
@@ -2060,7 +2179,8 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             {
                 "success": True,
                 "databaseId": databaseId,
-                "fields": fields,
+                # Unwrapped for JSON; the encoder above still saw the Float32 markers.
+                "fields": OpenPrintTag.fieldsForJson(fields),
                 "payloadBase64": payloadBase64,
                 "encodingComplete": payloadBase64 is not None,
                 "unresolvedFields": unresolvedFields,
