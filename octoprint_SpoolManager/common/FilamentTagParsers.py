@@ -6,9 +6,22 @@
 #   OpenSpoolTagParser   <- src/tag/openspool/processor.py  (itself adapted from
 #                           https://github.com/paxx12/SnapmakerU1-Extended-Firmware)
 #   SpoolEaseTagParser   <- src/tag/spoolease/processor.py
+#   AnycubicTagParser    <- src/tag/anycubic/processor.py   (itself adapted from
+#                           https://github.com/DnG-Crafts/ACE-RFID)
+#   ElegooTagParser      <- src/tag/elegoo/processor.py
+#   QidiTagParser        <- src/tag/qidi/processor.py       (itself adapted from
+#                           https://github.com/TinkerBarn/BoxRFID)
 #   readFilamentFromTag  <- src/runtime.py's process_mifare_* dispatch
-# Combined into this AGPLv3 work; see THIRD_PARTY_NOTICES.md and
-# 3rdPartySoftware/OpenRFID/LICENSE.
+#
+# Derived from spool-link-apps (https://github.com/paxx12-snapmaker-u1/spool-link-apps),
+# GPL-3.0, by paxx12-snapmaker-u1 / paxx12:
+#   SnapmakerTagParser   <- android-app/app/src/main/java/dev/pages/paxx12/spoollink/
+#                           formats/SnapmakerFormat.kt  (repository state 2026-07-30)
+#   The byte offsets and the material/sub-type tables are that project's reverse
+#   engineering result, not independent findings.
+#
+# Combined into this AGPLv3 work; see THIRD_PARTY_NOTICES.md,
+# 3rdPartySoftware/OpenRFID/LICENSE and 3rdPartySoftware/spool-link-apps/LICENSE.
 #
 # Divergences from upstream:
 #  - parsers are plain classes with a parseTag() method instead of the ConfigurableEntity
@@ -32,6 +45,7 @@ except ImportError:  # pragma: no cover - Python 2 never applies here
 
 from . import FilamentTagBinary as Binary
 from . import FilamentTagConstants as Constants
+from . import FilamentTagKeys as Keys
 from . import FilamentTagNdef as Ndef
 from .FilamentTagModel import GenericFilament, TagType
 
@@ -446,6 +460,251 @@ class ElegooTagParser(object):
 #               across 16 sectors, 2547 ms with key B added - 3.3x, not 2x. Sending key B
 #               "just in case" triples the cost of every rejection for nothing. Bambu, for
 #               one, has key B all zeros and never needs it.
+class QidiTagParser(object):
+    """Qidi's Mifare Classic layout, read from sector 1.
+
+    Ported from src/tag/qidi/processor.py, itself adapted from
+    https://github.com/TinkerBarn/BoxRFID.
+
+    Unlike every other parser here this one runs on tags protected by the *factory* key
+    (FFFFFFFFFFFF), which is not a secret and which every blank Classic tag also carries.
+    Authentication therefore proves nothing, and recognition has to come entirely from the
+    content being plausible. That is why the checks below are stricter than the upstream
+    parser's and why this parser is registered last: a genuinely blank tag is all zeroes
+    and must be rejected, not read as "PLA, black, 0 g".
+    """
+
+    id = "qidi"
+    label = "Qidi"
+    tagClass = TagType.MIFARE_CLASSIC_1K
+    requiresKey = False
+
+    # Sector 1 starts at byte 64; block 4 holds the descriptor, block 5 the colour.
+    SECTOR_1_OFFSET = 0x40
+    MATERIAL_OFFSET = 0x40
+    COLOR_OFFSET = 0x44
+    TEMP_OFFSET = 0x48
+
+    def parseTag(self, scanResult, data):
+        if scanResult.tag_type != TagType.MIFARE_CLASSIC_1K:
+            return None
+        # Sector 1 has to be present; a partial dump that stopped earlier cannot be judged.
+        if data is None or len(data) < 0x50:
+            return None
+
+        materialId = Binary.extract_byte(data, self.MATERIAL_OFFSET)
+        if materialId is None:
+            return None
+        typeName = Constants.QIDI_MATERIALS.get(materialId)
+        if typeName is None:
+            # An unknown code is the main line of defence against blank tags: 0x00 is not a
+            # material, so an all-zero sector never gets this far.
+            return None
+
+        red = Binary.extract_byte(data, self.COLOR_OFFSET)
+        green = Binary.extract_byte(data, self.COLOR_OFFSET + 1)
+        blue = Binary.extract_byte(data, self.COLOR_OFFSET + 2)
+        if None in (red, green, blue):
+            return None
+        argb = (0xFF << 24) | (red << 16) | (green << 8) | blue
+
+        minTemp = Binary.extract_byte(data, self.TEMP_OFFSET)
+        maxTemp = Binary.extract_byte(data, self.TEMP_OFFSET + 1)
+        bedTemp = Binary.extract_byte(data, self.TEMP_OFFSET + 2)
+        if None in (minTemp, maxTemp):
+            return None
+
+        # Plausibility, not decoration: these ranges are what separates a real Qidi tag
+        # from arbitrary bytes that happen to start with a valid material code. A hotend
+        # below 150 C or above 450 C, or a range running backwards, is not filament data.
+        if minTemp < 150 or maxTemp > 450 or maxTemp < minTemp:
+            return None
+        if bedTemp is not None and bedTemp > 200:
+            return None
+
+        return GenericFilament(
+            source_processor=self.id,
+            unique_id=GenericFilament.generate_unique_id(
+                "Qidi", typeName, argb, minTemp, maxTemp
+            ),
+            manufacturer="Qidi",
+            type=typeName,
+            modifiers=[],
+            colors=[argb],
+            diameter_mm=1.75,
+            weight_grams=Constants.QIDI_DEFAULT_WEIGHT_G,
+            hotend_min_temp_c=minTemp,
+            hotend_max_temp_c=maxTemp,
+            bed_temp_c=bedTemp if bedTemp is not None else 0,
+            drying_temp_c=0,
+            drying_time_hours=0,
+            manufacturing_date=Constants.NO_MANUFACTURING_DATE,
+        )
+
+
+class KeyedClassicTagParser(object):
+    """Shared base for Mifare Classic parsers whose sectors are not on the factory key.
+
+    Each subclass names the settings entry holding its key. Without a valid entry the
+    parser disables itself and authenticationKeys() returns None, which the dispatch reads
+    as "skip me" - the same self-disabling behaviour OpenRFID has, kept deliberately so the
+    registry needs no filtering and the dispatch no special case.
+
+    NO KEY MATERIAL IS SHIPPED. See FilamentTagKeys for the reasoning.
+    """
+
+    tagClass = TagType.MIFARE_CLASSIC_1K
+    requiresKey = True
+    keyName = None
+
+    def __init__(self, keyStore=None):
+        self._keyStore = keyStore
+        self.enabled = bool(keyStore is not None and keyStore.has(self.keyName))
+        if not self.enabled:
+            _logger.info(
+                "%s: no valid key configured, parser stays disabled", self.label
+            )
+
+    def authenticationKeys(self, scanResult):
+        """Per-sector key A values (16 x 12 hex chars), or None when unavailable."""
+        raise NotImplementedError
+
+
+class SnapmakerTagParser(object):
+    """Snapmaker's Mifare Classic layout.
+
+    Ported from paxx12-snapmaker-u1/spool-link-apps (GPL-3.0), file
+    android-app/app/src/main/java/dev/pages/paxx12/spoollink/formats/SnapmakerFormat.kt
+    (repository state 2026-07-30). Combined into this AGPLv3 work; see
+    THIRD_PARTY_NOTICES.md and 3rdPartySoftware/spool-link-apps/LICENSE.
+
+    The sector keys are derived from the tag's own UID (see
+    FilamentTagKeys.deriveSnapmakerKeys) - there is no shared secret, so this parser needs
+    no configuration and is always available.
+
+    Offsets below are absolute into the full 1K image with sector trailers left in place,
+    which is what the reader returns.
+    """
+
+    id = "snapmaker"
+    label = "Snapmaker"
+    tagClass = TagType.MIFARE_CLASSIC_1K
+    requiresKey = False
+
+    VENDOR_OFFSET = 16
+    MANUFACTURER_OFFSET = 32
+    VERSION_OFFSET = 64
+    MAIN_TYPE_OFFSET = 66
+    SUB_TYPE_OFFSET = 68
+    COLOR_NUMS_OFFSET = 72
+    ALPHA_OFFSET = 73
+    COLOR_BASE_OFFSET = 80
+    DIAMETER_OFFSET = 128
+    WEIGHT_OFFSET = 130
+    DRY_TEMP_OFFSET = 144
+    DRY_TIME_OFFSET = 146
+    HOTEND_MAX_OFFSET = 148
+    HOTEND_MIN_OFFSET = 150
+    BED_TEMP_OFFSET = 154
+    MFG_DATE_OFFSET = 160
+
+    def authenticationKeys(self, scanResult):
+        """Per-sector key A values for this tag, as 16 hex strings."""
+        return Keys.deriveSnapmakerKeys(scanResult.uid, "a")
+
+    def parseTag(self, scanResult, data):
+        if scanResult.tag_type != TagType.MIFARE_CLASSIC_1K:
+            return None
+        # Everything through the bed temperature has to be present.
+        if data is None or len(data) < self.BED_TEMP_OFFSET + 2:
+            return None
+
+        mainTypeId = Binary.extract_uint16_le(data, self.MAIN_TYPE_OFFSET)
+        if mainTypeId is None:
+            return None
+        typeName = Constants.SNAPMAKER_MAIN_TYPES.get(mainTypeId)
+        if typeName is None:
+            # Also the blank-tag guard: 0 is not a material id.
+            return None
+
+        subTypeId = Binary.extract_uint16_le(data, self.SUB_TYPE_OFFSET)
+        subTypeName = Constants.SNAPMAKER_SUB_TYPES.get(subTypeId)
+
+        # Snapmaker sells rebadged filament, so the tag names both: "Snapmaker" as the
+        # vendor and the actual producer separately (verified on a real tag: Snapmaker /
+        # Polymaker). The vendor is what belongs on the spool; the producer is kept as a
+        # modifier so the information is not silently dropped.
+        vendor = Binary.extract_string(data, self.VENDOR_OFFSET, 16) or "Snapmaker"
+        producer = Binary.extract_string(data, self.MANUFACTURER_OFFSET, 16)
+
+        colorNums = Binary.extract_byte(data, self.COLOR_NUMS_OFFSET)
+        alphaByte = Binary.extract_byte(data, self.ALPHA_OFFSET)
+        if colorNums is None or alphaByte is None:
+            return None
+        # The tag stores transparency, not opacity - upstream inverts it.
+        alpha = 0xFF - alphaByte
+
+        colors = []
+        for index in range(max(1, min(colorNums or 1, 5))):
+            offset = self.COLOR_BASE_OFFSET + index * 3
+            red = Binary.extract_byte(data, offset)
+            green = Binary.extract_byte(data, offset + 1)
+            blue = Binary.extract_byte(data, offset + 2)
+            if None in (red, green, blue):
+                break
+            colors.append((alpha << 24) | (red << 16) | (green << 8) | blue)
+        if not colors:
+            return None
+
+        rawDiameter = Binary.extract_uint16_le(data, self.DIAMETER_OFFSET)
+        weightGrams = Binary.extract_uint16_le(data, self.WEIGHT_OFFSET)
+        hotendMax = Binary.extract_uint16_le(data, self.HOTEND_MAX_OFFSET)
+        hotendMin = Binary.extract_uint16_le(data, self.HOTEND_MIN_OFFSET)
+        bedTemp = Binary.extract_uint16_le(data, self.BED_TEMP_OFFSET)
+        dryTemp = Binary.extract_uint16_le(data, self.DRY_TEMP_OFFSET)
+        # Already hours on the tag, which is also what GenericFilament expects - no
+        # conversion, unlike the minute-based fields elsewhere in this plugin.
+        dryTimeHours = Binary.extract_uint16_le(data, self.DRY_TIME_OFFSET)
+
+        if None in (hotendMin, hotendMax):
+            return None
+        if hotendMin < 150 or hotendMax > 450 or hotendMax < hotendMin:
+            return None
+
+        # Both names go into the vendor, because SpoolManager has one vendor field and
+        # materialCharacteristic means the variant (Silk, Matte) - a producer name there
+        # would read as if the filament were a "SnapSpeed Polymaker" type.
+        vendorName = vendor
+        if producer and producer != vendor:
+            vendorName = "%s (%s)" % (vendor, producer)
+
+        return GenericFilament(
+            source_processor=self.id,
+            unique_id=GenericFilament.generate_unique_id(
+                "Snapmaker", typeName, subTypeName or "", colors[0], weightGrams
+            ),
+            manufacturer=vendorName,
+            type=typeName,
+            modifiers=[subTypeName] if subTypeName else [],
+            colors=colors,
+            diameter_mm=(rawDiameter / 100.0) if rawDiameter else 1.75,
+            weight_grams=weightGrams if weightGrams else 1000,
+            hotend_min_temp_c=hotendMin,
+            hotend_max_temp_c=hotendMax,
+            bed_temp_c=bedTemp if bedTemp is not None else 0,
+            drying_temp_c=dryTemp if dryTemp is not None else 0,
+            drying_time_hours=dryTimeHours if dryTimeHours is not None else 0,
+            manufacturing_date=self._manufacturingDate(data),
+        )
+
+    def _manufacturingDate(self, data):
+        """The tag's "YYYYMMDD" string as ISO 8601, or the sentinel when absent."""
+        raw = Binary.extract_string(data, self.MFG_DATE_OFFSET, 8)
+        if not raw or len(raw) != 8 or not raw.isdigit():
+            return Constants.NO_MANUFACTURING_DATE
+        return "%s-%s-%s" % (raw[0:4], raw[4:6], raw[6:8])
+
+
 FILAMENT_TAG_PARSERS = {
     OpenSpoolTagParser.id: {
         "id": OpenSpoolTagParser.id,
@@ -487,6 +746,35 @@ FILAMENT_TAG_PARSERS = {
         "parser": ElegooTagParser,
         "description": "Elegoo vendor tags (binary layout at a fixed 0x40 offset).",
     },
+    SnapmakerTagParser.id: {
+        "id": SnapmakerTagParser.id,
+        "label": SnapmakerTagParser.label,
+        "tagClass": SnapmakerTagParser.tagClass,
+        # No shared secret: the keys come from the tag's own UID, so nothing has to be
+        # configured and the parser is always available.
+        "requiresKey": False,
+        "sectors": None,
+        "needsKeyB": False,
+        "parser": SnapmakerTagParser,
+        "description": "Snapmaker vendor tags (Mifare Classic, keys derived from the UID).",
+    },
+    QidiTagParser.id: {
+        "id": QidiTagParser.id,
+        "label": QidiTagParser.label,
+        "tagClass": QidiTagParser.tagClass,
+        "requiresKey": False,
+        # Only sector 1 carries filament data. Reading just that sector instead of all
+        # sixteen is the single biggest saving on this path (~54 ms versus ~765 ms on a
+        # rejection), and block reads - not authentication - are the expensive part.
+        "sectors": [1],
+        "needsKeyB": False,
+        "parser": QidiTagParser,
+        # Listed last on purpose: it authenticates with the factory key, which every blank
+        # Classic tag also accepts, so keyed parsers must get their unambiguous rejection in
+        # first. See the class docstring.
+        "parser_order": 100,
+        "description": "Qidi vendor tags (Mifare Classic, factory key - no secret needed).",
+    },
 }
 
 
@@ -495,12 +783,19 @@ def getParser(parserId):
 
 
 def parsersForTagClass(tagClass):
-    """Parser descriptors for one protocol class, in the order they should be tried."""
-    return [
+    """Parser descriptors for one protocol class, in the order they should be tried.
+
+    Order is significant, not cosmetic: a parser whose recognition is only heuristic (Qidi,
+    which authenticates with the factory key every blank tag accepts) must run after the
+    ones that can reject a foreign format outright, or it would claim tags that are not
+    its own. Descriptors without an explicit parser_order keep their registry position.
+    """
+    matching = [
         descriptor
         for descriptor in FILAMENT_TAG_PARSERS.values()
         if descriptor["tagClass"] == tagClass
     ]
+    return sorted(matching, key=lambda descriptor: descriptor.get("parser_order", 0))
 
 
 def parseTagData(scanResult, data, parserIds=None):

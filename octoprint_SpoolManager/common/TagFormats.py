@@ -102,6 +102,25 @@ def _epochDaysOrNone(value):
     return None
 
 
+def _minuteOfDayOrNone(value):
+    # Minutes since midnight (0-1439), written *alongside* the day field above rather than
+    # replacing it. Together they describe the full timestamp; on their own each stays
+    # meaningful, which is what makes this safe across firmware versions: a reader that
+    # does not know this field behaves exactly as before (midnight), and a tag written by
+    # older firmware simply has no such field to read.
+    #
+    # Minutes since the *epoch* would have been the obvious encoding and is wrong here: the
+    # firmware carries these fields as uint16 on the wire, where ~29.8 million overflows and
+    # is written as the 0xFFFF "not set" sentinel - every timestamp would have come back as
+    # "no date at all". Minute-of-day maxes out at 1439, far below that.
+    if value is None:
+        return None
+    if isinstance(value, datetime.datetime):
+        return value.hour * 60 + value.minute
+    # A plain date has no time of day; the day field alone already says midnight.
+    return None
+
+
 def _dryingTimeMinutesOrNone(hours):
     # SpoolManager stores drying time in hours, every tag format that carries it expects
     # minutes. None stays None so an unset field is not written as "0 minutes".
@@ -157,6 +176,14 @@ def _buildFullSpoolPayload(spoolModel):
         "firstUse": _epochDaysOrNone(spoolModel.firstUse),
         "lastUse": _epochDaysOrNone(spoolModel.lastUse),
         "purchasedOn": _epochDaysOrNone(spoolModel.purchasedOn),
+        # Time of day for the three date fields above, which carry the day only. Without
+        # these, rewriting an unchanged spool always showed a spurious "23:14 -> 00:00"
+        # difference. Firmware that does not know these names ignores them
+        # (doc["name"] | default), and a tag written by such firmware has no such field to
+        # read back - in both directions the result is the previous day-only behaviour.
+        "firstUseMinuteOfDay": _minuteOfDayOrNone(spoolModel.firstUse),
+        "lastUseMinuteOfDay": _minuteOfDayOrNone(spoolModel.lastUse),
+        "purchasedOnMinuteOfDay": _minuteOfDayOrNone(spoolModel.purchasedOn),
         "cost": spoolModel.cost,
         # v12 fields. Sending them is safe on every firmware: /nfcwritespool reads only the
         # names it knows (doc["name"] | default) and ignores the rest - confirmed against

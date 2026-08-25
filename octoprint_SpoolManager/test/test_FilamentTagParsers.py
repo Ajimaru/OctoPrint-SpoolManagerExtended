@@ -571,12 +571,31 @@ class TestDispatch(unittest.TestCase):
             FilamentTagParsers.FILAMENT_TAG_PARSERS.clear()
             FilamentTagParsers.FILAMENT_TAG_PARSERS.update(original)
 
-    def test_classic_tag_finds_no_ultralight_parser(self):
+    def test_classic_tag_does_not_reach_ultralight_parsers(self):
+        # A blank Classic image must be rejected by every Classic parser, and the NTAG ones
+        # must not even be offered it. The Qidi parser is the reason this matters: it
+        # authenticates with the factory key that a blank tag also carries, so "all zeroes"
+        # is exactly the input it could wrongly claim.
         filament, diagnostics = FilamentTagParsers.parseTagData(
             ScanResult(TagType.MIFARE_CLASSIC_1K, b"\x01\x02\x03\x04"), bytes(1024)
         )
         self.assertIsNone(filament)
-        self.assertEqual([], diagnostics["attemptedParsers"])
+
+        attempted = diagnostics["attemptedParsers"]
+        for ultralightParser in ("openSpool", "spoolEase", "anycubic", "elegoo"):
+            self.assertNotIn(ultralightParser, attempted)
+
+    def test_qidi_runs_after_the_keyed_classic_parsers(self):
+        # Order is a correctness property here, not presentation: Qidi's recognition is only
+        # heuristic, so parsers that can reject a foreign tag outright have to go first.
+        order = [
+            descriptor["id"]
+            for descriptor in FilamentTagParsers.parsersForTagClass(
+                TagType.MIFARE_CLASSIC_1K
+            )
+        ]
+        self.assertIn("qidi", order)
+        self.assertEqual("qidi", order[-1])
 
 
 class TestParserRegistry(unittest.TestCase):
@@ -613,6 +632,175 @@ class TestParserRegistry(unittest.TestCase):
         for descriptor in FilamentTagParsers.FILAMENT_TAG_PARSERS.values():
             if descriptor["tagClass"] == TagType.MIFARE_ULTRALIGHT:
                 self.assertIsNone(descriptor["sectors"])
+
+
+def _snapmakerImage(
+    mainType=1, subType=3, alphaByte=0x00, colorNums=1, diameter=175,
+    weight=1000, dryTemp=55, dryHours=10, hotendMax=230, hotendMin=200, bedTemp=60,
+    vendor="Snapmaker", producer="Polymaker", mfgDate="20251214"
+):
+    """A synthetic Snapmaker 1K image, built from named offsets rather than a captured dump.
+
+    Layout per paxx12-snapmaker-u1/spool-link-apps, SnapmakerFormat.kt.
+    """
+    def le16(value):
+        return bytes([value & 0xFF, (value >> 8) & 0xFF])
+
+    image = bytearray(1024)
+    image[66:68] = le16(mainType)
+    image[68:70] = le16(subType)
+    image[72] = colorNums
+    image[73] = alphaByte
+    image[80:83] = bytes([0xF4, 0xC0, 0x32])
+    image[83:86] = bytes([0x11, 0x22, 0x33])
+    image[128:130] = le16(diameter)
+    image[130:132] = le16(weight)
+    image[144:146] = le16(dryTemp)
+    image[146:148] = le16(dryHours)
+    image[148:150] = le16(hotendMax)
+    image[150:152] = le16(hotendMin)
+    image[154:156] = le16(bedTemp)
+    if vendor:
+        image[16:16 + len(vendor)] = vendor.encode("ascii")
+    if producer:
+        image[32:32 + len(producer)] = producer.encode("ascii")
+    if mfgDate:
+        image[160:168] = mfgDate.encode("ascii")
+    return bytes(image)
+
+
+class TestSnapmakerTagParser(unittest.TestCase):
+    def setUp(self):
+        self.parser = FilamentTagParsers.SnapmakerTagParser()
+        self.scan = ScanResult(TagType.MIFARE_CLASSIC_1K, bytes.fromhex("30FB3002"))
+
+    def test_parses_a_valid_tag(self):
+        filament = self.parser.parseTag(self.scan, _snapmakerImage())
+        self.assertIsNotNone(filament)
+        self.assertEqual("Snapmaker (Polymaker)", filament.manufacturer)
+        self.assertEqual("PLA", filament.type)
+        self.assertEqual(["SnapSpeed"], filament.modifiers)
+        self.assertEqual(1.75, filament.diameter_mm)
+        self.assertEqual(1000, filament.weight_grams)
+        self.assertEqual(200, filament.hotend_min_temp_c)
+        self.assertEqual(230, filament.hotend_max_temp_c)
+        self.assertEqual(60, filament.bed_temp_c)
+
+    def test_drying_time_is_hours_not_minutes(self):
+        # The tag stores hours and GenericFilament expects hours, so this value must pass
+        # through untouched - the minute conversion elsewhere in this plugin does not apply.
+        filament = self.parser.parseTag(self.scan, _snapmakerImage(dryHours=10))
+        self.assertEqual(10, filament.drying_time_hours)
+        self.assertEqual(55, filament.drying_temp_c)
+
+    def test_alpha_is_inverted(self):
+        # The tag stores transparency, not opacity: 0x00 means fully opaque.
+        opaque = self.parser.parseTag(self.scan, _snapmakerImage(alphaByte=0x00))
+        self.assertEqual(0xFF, (opaque.colors[0] >> 24) & 0xFF)
+
+        clear = self.parser.parseTag(self.scan, _snapmakerImage(alphaByte=0xFF))
+        self.assertEqual(0x00, (clear.colors[0] >> 24) & 0xFF)
+
+    def test_reads_multiple_colours(self):
+        filament = self.parser.parseTag(self.scan, _snapmakerImage(colorNums=2))
+        self.assertEqual(2, len(filament.colors))
+        self.assertEqual(0xFFF4C032, filament.colors[0])
+        self.assertEqual(0xFF112233, filament.colors[1])
+
+    def test_rejects_blank_and_implausible_tags(self):
+        self.assertIsNone(self.parser.parseTag(self.scan, bytes(1024)))
+        self.assertIsNone(self.parser.parseTag(self.scan, _snapmakerImage(mainType=99)))
+        self.assertIsNone(
+            self.parser.parseTag(self.scan, _snapmakerImage(hotendMin=20, hotendMax=30))
+        )
+        self.assertIsNone(self.parser.parseTag(self.scan, bytes(100)))
+
+    def test_rejects_wrong_tag_class(self):
+        ntagScan = ScanResult(TagType.MIFARE_ULTRALIGHT, b"\x04\x11\x22\x33")
+        self.assertIsNone(self.parser.parseTag(ntagScan, _snapmakerImage()))
+
+    def test_derives_sixteen_distinct_per_sector_keys(self):
+        keys = self.parser.authenticationKeys(self.scan)
+        self.assertEqual(16, len(keys))
+        for key in keys:
+            self.assertEqual(12, len(key))
+        # Per-sector derivation: if these collapsed to one value the whole point is lost.
+        self.assertEqual(16, len(set(keys)))
+
+    def test_keys_depend_on_the_tag_uid(self):
+        other = ScanResult(TagType.MIFARE_CLASSIC_1K, bytes.fromhex("04AC6F56CB2A81"))
+        self.assertNotEqual(
+            self.parser.authenticationKeys(self.scan),
+            self.parser.authenticationKeys(other),
+        )
+
+
+def _qidiImage(material=0x01, rgb=(0xF4, 0xC0, 0x32), temps=(210, 230, 60)):
+    image = bytearray(1024)
+    image[0x40] = material
+    image[0x44], image[0x45], image[0x46] = rgb
+    image[0x48], image[0x49], image[0x4A] = temps
+    return bytes(image)
+
+
+class TestQidiTagParser(unittest.TestCase):
+    def setUp(self):
+        self.parser = FilamentTagParsers.QidiTagParser()
+        self.scan = ScanResult(TagType.MIFARE_CLASSIC_1K, b"\x01\x02\x03\x04")
+
+    def test_parses_a_valid_tag(self):
+        filament = self.parser.parseTag(self.scan, _qidiImage())
+        self.assertIsNotNone(filament)
+        self.assertEqual("Qidi", filament.manufacturer)
+        self.assertEqual("PLA", filament.type)
+        self.assertEqual(210, filament.hotend_min_temp_c)
+        self.assertEqual(230, filament.hotend_max_temp_c)
+
+    def test_rejects_a_blank_tag(self):
+        # The important one: Qidi authenticates with the factory key, so a blank Classic tag
+        # reaches this parser. Material id 0x00 is what keeps it from being read as filament.
+        self.assertIsNone(self.parser.parseTag(self.scan, bytes(1024)))
+
+    def test_rejects_implausible_temperatures(self):
+        self.assertIsNone(self.parser.parseTag(self.scan, _qidiImage(temps=(20, 30, 60))))
+        self.assertIsNone(self.parser.parseTag(self.scan, _qidiImage(temps=(250, 200, 60))))
+        self.assertIsNone(self.parser.parseTag(self.scan, _qidiImage(temps=(210, 230, 250))))
+
+    def test_rejects_truncated_input(self):
+        self.assertIsNone(self.parser.parseTag(self.scan, bytes(32)))
+
+
+class TestSnapmakerRealTagFields(unittest.TestCase):
+    """Fields verified against a physical Snapmaker spool (UID 30FB3002)."""
+
+    def setUp(self):
+        self.parser = FilamentTagParsers.SnapmakerTagParser()
+        self.scan = ScanResult(TagType.MIFARE_CLASSIC_1K, bytes.fromhex("30FB3002"))
+
+    def test_keeps_the_rebadged_producer(self):
+        # Snapmaker sells filament made by others and the tag names both. Dropping the
+        # producer would lose the only hint about what the material actually is.
+        filament = self.parser.parseTag(self.scan, _snapmakerImage())
+        self.assertEqual("Snapmaker (Polymaker)", filament.manufacturer)
+        # The variant field must stay the variant - a producer name there would read as if
+        # the material itself were called "SnapSpeed Polymaker".
+        self.assertEqual(["SnapSpeed"], filament.modifiers)
+
+    def test_producer_equal_to_vendor_is_not_duplicated(self):
+        filament = self.parser.parseTag(
+            self.scan, _snapmakerImage(producer="Snapmaker")
+        )
+        self.assertEqual("Snapmaker", filament.manufacturer)
+
+    def test_manufacturing_date_becomes_iso(self):
+        filament = self.parser.parseTag(self.scan, _snapmakerImage(mfgDate="20251214"))
+        self.assertEqual("2025-12-14", filament.manufacturing_date)
+
+    def test_missing_date_falls_back_to_the_sentinel(self):
+        filament = self.parser.parseTag(self.scan, _snapmakerImage(mfgDate=None))
+        self.assertEqual(
+            FilamentTagConstants.NO_MANUFACTURING_DATE, filament.manufacturing_date
+        )
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@
 
 import datetime
 import importlib.util
+import json
 import os
 import sys
 import types
@@ -618,6 +619,52 @@ class TestTagFormats(unittest.TestCase):
         self.assertEqual(result["maxTemperature"], 215)
         self.assertEqual(result["minBedTemperature"], 55)
         self.assertEqual(result["maxBedTemperature"], 55)
+
+
+class TestFieldsForJson(unittest.TestCase):
+    # The preview endpoint returns the field map as JSON, and Float32 - the marker that tells
+    # the CBOR encoder to emit binary32 - is not serializable. Before this existed, asking for
+    # a preview of any spool with a density or diameter set returned a 500.
+
+    def test_unwraps_float32_markers(self):
+        fields = {
+            "filament": {
+                "density": OpenPrintTag.Float32(1.21),
+                "filament_diameter": OpenPrintTag.Float32(1.75),
+                "material_name": "TPU",
+            }
+        }
+        plain = OpenPrintTag.fieldsForJson(fields)
+        self.assertEqual(1.21, plain["filament"]["density"])
+        self.assertEqual(1.75, plain["filament"]["filament_diameter"])
+        self.assertEqual("TPU", plain["filament"]["material_name"])
+        for value in plain["filament"].values():
+            self.assertNotIsInstance(value, OpenPrintTag.Float32)
+
+    def test_result_is_json_serializable(self):
+        plain = OpenPrintTag.fieldsForJson(
+            {"filament": {"density": OpenPrintTag.Float32(1.21)}}
+        )
+        json.dumps(plain)
+
+    def test_leaves_the_original_untouched(self):
+        # buildTagPayload() runs on the same dict and must still see the markers, or the
+        # encoded payload silently becomes float64.
+        original = {"filament": {"density": OpenPrintTag.Float32(1.21)}}
+        OpenPrintTag.fieldsForJson(original)
+        self.assertIsInstance(original["filament"]["density"], OpenPrintTag.Float32)
+
+    def test_renders_byte_values_as_hex(self):
+        # primary_color is a byte array per the spec. Decoding it as text raises on the
+        # first non-ASCII byte - "#fd7412" fails on byte 0 - so it is shown as hex instead.
+        plain = OpenPrintTag.fieldsForJson(
+            {"main": {"primary_color": b"\xfd\x74\x12"}}
+        )
+        self.assertEqual("fd7412", plain["main"]["primary_color"])
+        json.dumps(plain)
+
+    def test_tolerates_a_non_dict_section(self):
+        self.assertEqual({"note": "x"}, OpenPrintTag.fieldsForJson({"note": "x"}))
 
 
 if __name__ == "__main__":

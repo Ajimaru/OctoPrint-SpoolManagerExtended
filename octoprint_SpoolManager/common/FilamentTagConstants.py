@@ -141,3 +141,70 @@ def elegooMaterial(materialId, modifierId):
             typeName += digit
             resolved.remove(digit)
     return typeName, resolved
+
+
+# ---------------------------------------------------------------------------------------
+# Qidi
+#
+# Ported from OpenRFID src/tag/qidi/processor.py, itself adapted from
+# https://github.com/TinkerBarn/BoxRFID.
+#
+# Qidi tags are Mifare Classic 1K written with the *factory* key (FFFFFFFFFFFF), so any
+# blank Classic tag authenticates just as well. Recognition therefore rests entirely on
+# the content in sector 1 being plausible - see QidiTagParser for the checks.
+QIDI_MATERIALS = {
+    0x01: "PLA",
+    0x02: "ABS",
+    0x03: "PETG",
+    0x04: "TPU",
+    0x05: "PA",
+    0x06: "PC",
+    0x07: "ASA",
+    0x08: "PVA",
+    0x09: "HIPS",
+    0x0A: "PP",
+    0x0B: "PEEK",
+    0x0C: "PEI",
+}
+
+# The tag carries no nominal weight, so the standard spool size stands in for it.
+QIDI_DEFAULT_WEIGHT_G = 1000
+
+
+# ---------------------------------------------------------------------------------------
+# Snapmaker
+#
+# Ported from paxx12-snapmaker-u1/spool-link-apps (GPL-3.0), file
+# android-app/app/src/main/java/dev/pages/paxx12/spoollink/formats/SnapmakerFormat.kt
+# (repository state 2026-07-30). See THIRD_PARTY_NOTICES.md.
+SNAPMAKER_MAIN_TYPES = {
+    1: "PLA",
+    2: "PETG",
+    3: "ABS",
+    4: "TPU",
+    5: "PVA",
+    6: "ASA",
+    9: "PA",
+    10: "PA-CF",
+    11: "PA-GF",
+    12: "PC",
+    20: "PLA-CF",
+    22: "PEBA",
+    23: "TPE",
+}
+
+SNAPMAKER_SUB_TYPES = {
+    1: "Basic",
+    2: "Matte",
+    3: "SnapSpeed",
+    4: "Silk",
+    5: "Support",
+    6: "HF",
+    7: "95A",
+    8: "95A HF",
+    9: "90A",
+    10: "85A",
+    11: "Wood",
+    12: "Translucent",
+    13: "Full Spectrum",
+}

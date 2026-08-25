@@ -152,7 +152,7 @@ class GenericFilament(object):
         drying_temp_c,
         drying_time_hours,
         manufacturing_date,  # ISO 8601 date string
-        td=0.0,  # transmission distance in mm, for HueForge/OrcaSlicer
+        td=0.0,  # transmission distance, a unitless 0.1-100 opacity figure (HueForge)
     ):
         self.source_processor = source_processor
         self.unique_id = unique_id

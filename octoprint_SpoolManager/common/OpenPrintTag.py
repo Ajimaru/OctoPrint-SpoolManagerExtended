@@ -386,6 +386,37 @@ def spoolModelToFields(spoolModel):
     return fields
 
 
+def _jsonSafeValue(value):
+    if isinstance(value, Float32):
+        # A marker for the CBOR encoder (emit binary32); meaningless outside encoding.
+        return value.value
+    if isinstance(value, (bytes, bytearray)):
+        # Byte strings in this map are raw values the spec defines as byte arrays, e.g.
+        # primary_color. They are not text - decoding them as UTF-8 raises on the first
+        # non-ASCII byte (#fd7412 fails immediately) - so show them as hex.
+        return bytes(value).hex()
+    return value
+
+
+def fieldsForJson(fields):
+    """The field map rendered so it can be serialized as JSON.
+
+    Two kinds of value in this map cannot go into JSON as they are: Float32 markers, and the
+    raw byte strings the spec uses for colours. Only the preview endpoint needs this - the
+    encoder itself must keep receiving the original values, or the payload silently changes.
+    """
+    plain = {}
+    for sectionName, sectionFields in fields.items():
+        if not isinstance(sectionFields, dict):
+            plain[sectionName] = _jsonSafeValue(sectionFields)
+            continue
+        plain[sectionName] = {
+            fieldName: _jsonSafeValue(value)
+            for fieldName, value in sectionFields.items()
+        }
+    return plain
+
+
 def getUnresolvedFieldNames(fields):
     # Field names present in the data but lacking a confirmed integer key - now only fires on
     # a programming error (a field added to spoolModelToFields() without a FIELD_KEY_MAP

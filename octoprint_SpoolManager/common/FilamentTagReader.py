@@ -22,6 +22,13 @@ from .FilamentTagModel import ScanResult, tagTypeFromOctoScale
 READ_POLL_INTERVAL_SECONDS = 0.25
 READ_TIMEOUT_SECONDS = 15.0
 
+# Mifare Classic 1K geometry: 16 sectors of 4 blocks of 16 bytes. Parsers index absolute
+# offsets into the full image (sector trailers included), so these are what reassembling a
+# sector-by-sector read has to reproduce exactly.
+SECTORS_PER_CLASSIC_1K = 16
+BYTES_PER_CLASSIC_SECTOR = 64
+CLASSIC_1K_SIZE_BYTES = SECTORS_PER_CLASSIC_1K * BYTES_PER_CLASSIC_SECTOR
+
 
 class TagReadResult(object):
     """Outcome of one raw read.
@@ -129,6 +136,64 @@ class OctoScaleTagReader(object):
             )
 
         return self._pollUntilDone()
+
+    def readRawPerSector(self, keys, sectors=None):
+        """Read a Classic tag whose sectors each need a different key.
+
+        The firmware contract takes one key A per request, so a tag like Snapmaker - which
+        derives a separate key for every sector from the tag UID - has to be read one sector
+        at a time and reassembled here. The result is a full-size image with unread sectors
+        left as zeroes, so parsers keep indexing absolute offsets into a 1K dump and never
+        have to know how the bytes were obtained.
+
+        Costly by nature (one HTTP round-trip and one re-selection per sector), so it is
+        used only when the keys actually differ - see the caller.
+        """
+        wanted = sectors if sectors is not None else list(range(SECTORS_PER_CLASSIC_1K))
+
+        image = bytearray(CLASSIC_1K_SIZE_BYTES)
+        readAny = False
+        lastResult = None
+        failedSectors = []
+
+        for sector in wanted:
+            if sector < 0 or sector >= len(keys):
+                continue
+            result = self.readRaw(keyA=keys[sector], sectors=[sector])
+            lastResult = result
+            if not result.ok or not result.data:
+                failedSectors.append(sector)
+                continue
+
+            # The firmware answers with a full-size image and zeroes what it could not read,
+            # so only this sector's own bytes may be copied out of it - taking the whole
+            # response would overwrite sectors already gathered.
+            start = sector * BYTES_PER_CLASSIC_SECTOR
+            end = start + BYTES_PER_CLASSIC_SECTOR
+            chunk = result.data[start:end]
+            if len(chunk) < BYTES_PER_CLASSIC_SECTOR:
+                failedSectors.append(sector)
+                continue
+            image[start:end] = chunk
+            readAny = True
+
+        if not readAny:
+            # Every sector refused the derived keys: this is not that vendor's tag.
+            return TagReadResult(
+                retryable=(lastResult.retryable if lastResult is not None else False),
+                error=(
+                    lastResult.error if lastResult is not None else "authentication failed"
+                ),
+                uid=(lastResult.uid if lastResult is not None else None),
+                tagType="mifareClassic1k",
+            )
+
+        return TagReadResult(
+            data=bytes(image),
+            uid=(lastResult.uid if lastResult is not None else None),
+            tagType="mifareClassic1k",
+            authFailedSectors=failedSectors or None,
+        )
 
     def _pollUntilDone(self):
         waited = 0.0
