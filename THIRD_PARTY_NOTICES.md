@@ -12,6 +12,19 @@ Snapmaker is the one case where nothing has to be supplied, and it is worth stat
 
 Reading is read-only — this plugin never writes a proprietary vendor tag format. Tags recognized as belonging to a manufacturer stay protected by the overwrite safeguard even though they can now be read: being readable does not make a tag safe to write.
 
+## Bambu Lab tag format (documentation reference only)
+
+The Bambu Lab vendor tag parser was written against the format description published by
+[Bambu-Research-Group/RFID-Tag-Guide](https://github.com/Bambu-Research-Group/RFID-Tag-Guide)
+(`BambuLabRfid.md`). **No code or data from that repository is included here** - it carries
+no licence, so it is used purely as a reference for byte offsets and field meanings, which
+are factual interoperability information about a third party's data format. The
+implementation in this plugin is independent.
+
+Reading a Bambu tag requires a salt value the user supplies; none ships with this plugin and
+the parser stays disabled until one is entered. As with every vendor format here, reading is
+read-only and no proprietary format is ever written.
+
 ## TigerTag SDK (TigerTag tag format)
 
 The TigerTag vendor tag parser and the id lookup tables under

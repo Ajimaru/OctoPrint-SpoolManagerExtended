@@ -13,7 +13,7 @@
 # ---------------------------------------------------------------------------------------
 # NO SECRET KEY MATERIAL IS SHIPPED WITH THIS PLUGIN, AND NONE EVER WILL BE.
 #
-# For the vendors that protect their tags with a confidential value (Bambu, Creality), what
+# For the vendors that protect their tags with a confidential value (currently Bambu), what
 # lives here are SHA256 *checksums* of the expected keys, which is what OpenRFID carries
 # too. A checksum cannot be reversed into a key: it only answers "is what the user typed
 # the right value?", it does not supply it. Without a key entered by the user the
@@ -44,21 +44,19 @@ import logging
 
 _logger = logging.getLogger("octoprint.plugins.SpoolManager.common.FilamentTagKeys")
 
-# SHA256 of the correct key bytes. Not secret, and useless for obtaining a key - they only
-# let a user check their own entry against a known-good value.
+# SHA256 of the correct key bytes. Not secret, and useless for obtaining a key - it only
+# lets a user check their own entry against a known-good value.
 #
-# DELIBERATELY EMPTY. These have to be copied from OpenRFID's parser sources, and no copy
-# of that repository is vendored here (only its LICENSE is), so they cannot be verified at
-# the time of writing. A checksum guessed or recalled from memory is worse than none: it
-# would reject the *correct* key the user obtained and present it as a typo, which is
-# undiagnosable from the UI.
+# DELIBERATELY EMPTY. The reference checksum would have to be copied from OpenRFID's parser
+# sources, and no copy of that repository is vendored here (only its LICENSE is), so it
+# cannot be verified at the time of writing. A checksum guessed or recalled from memory is
+# worse than none: it would reject the *correct* key the user obtained and present it as a
+# typo, which is undiagnosable from the UI.
 #
-# Until a value is filled in from the upstream source, the corresponding entry is accepted
-# on format alone (see keyStatus) - the parser still fails cleanly if the key is wrong,
-# because authentication against the tag simply will not succeed.
+# Until a value is filled in from the upstream source, the entry is accepted on format alone
+# (see keyStatus) - a wrong key then simply fails to authenticate against the tag, which is
+# a safe outcome that cannot corrupt anything.
 BAMBU_SALT_HASH = None
-CREALITY_SALT_HASH = None
-CREALITY_ENCRYPTION_KEY_HASH = None
 
 STATUS_MISSING = "missing"
 STATUS_INVALID = "invalid"
@@ -68,18 +66,14 @@ STATUS_OK = "ok"
 # for; they are not an instruction for how to obtain it, and no source is linked anywhere
 # in this plugin.
 KEY_BAMBU_SALT = "bambuSalt"
-KEY_CREALITY_SALT = "crealitySalt"
-KEY_CREALITY_ENCRYPTION = "crealityEncryptionKey"
 
 _EXPECTED_HASHES = {
     KEY_BAMBU_SALT: BAMBU_SALT_HASH,
-    KEY_CREALITY_SALT: CREALITY_SALT_HASH,
-    KEY_CREALITY_ENCRYPTION: CREALITY_ENCRYPTION_KEY_HASH,
 }
 
 # Which entries are hex-encoded bytes and which are plain text. Getting this wrong would
 # hash the wrong bytes and reject a correct key.
-_HEX_KEYS = (KEY_BAMBU_SALT, KEY_CREALITY_SALT)
+_HEX_KEYS = (KEY_BAMBU_SALT,)
 
 
 def _keyBytes(name, value):

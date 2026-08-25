@@ -1718,6 +1718,11 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             }
         )
 
+    def _buildTagKeyStore(self):
+        return FilamentTagKeys.FilamentTagKeyStore(
+            self._settings.get([SettingsKeys.SETTINGS_KEY_OCTOSCALE_TAG_KEYS])
+        )
+
     def _readMifareClassicTag(self, reader, scanResult):
         """Try each Classic parser with its own sector keys until one authenticates.
 
@@ -1734,11 +1739,12 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         attempted = []
         lastError = None
         lastRetryable = False
+        keyStore = self._buildTagKeyStore()
 
         for descriptor in FilamentTagParsers.parsersForTagClass(
             FilamentTagModel.TagType.MIFARE_CLASSIC_1K
         ):
-            parser = descriptor["parser"]()
+            parser = FilamentTagParsers.instantiateParser(descriptor, keyStore)
             attempted.append(descriptor["id"])
 
             keys = None
@@ -1962,7 +1968,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             )
 
         filament, parseDiagnostics = FilamentTagParsers.parseTagData(
-            scanResult, readResult.data
+            scanResult, readResult.data, keyStore=self._buildTagKeyStore()
         )
 
         rfidTagKey = None

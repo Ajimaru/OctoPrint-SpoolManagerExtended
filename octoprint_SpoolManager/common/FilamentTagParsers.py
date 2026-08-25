@@ -26,6 +26,10 @@
 #   the id tables under common/tagdata/  <- tigertag/database/*.json
 #   The specification grants an explicit, irrevocable permission to implement it.
 #
+# Written against, but containing no code from, Bambu-Research-Group/RFID-Tag-Guide
+# (BambuLabRfid.md), which carries no licence:
+#   BambuTagParser       <- byte offsets and field meanings only, implemented independently
+#
 # Combined into this AGPLv3 work; see THIRD_PARTY_NOTICES.md,
 # 3rdPartySoftware/OpenRFID/LICENSE, 3rdPartySoftware/spool-link-apps/LICENSE and
 # 3rdPartySoftware/TigerTag-SDK-Python/LICENSE.
@@ -708,6 +712,133 @@ class TigerTagTagParser(object):
         )
 
 
+class BambuTagParser(object):
+    """Bambu Lab's Mifare Classic layout.
+
+    Written against the format description in Bambu-Research-Group/RFID-Tag-Guide
+    (BambuLabRfid.md). That repository carries no licence, so nothing is copied from it -
+    this is an independent implementation from the documented field offsets, which are
+    factual interoperability information about someone else's data format.
+
+    Needs a salt the user supplies; none ships with this plugin, and without one the parser
+    disables itself and never claims a tag.
+
+    Little-endian throughout (unlike TigerTag). Two details bite otherwise: the diameter is
+    an 8-byte double, not a float, and the drying time is already in hours.
+    """
+
+    id = "bambu"
+    label = "Bambu Lab"
+    tagClass = TagType.MIFARE_CLASSIC_1K
+    requiresKey = True
+    keyName = Keys.KEY_BAMBU_SALT
+
+    # Block n starts at n * 16 in the full 1K image (trailers included).
+    TRAY_INFO_BLOCK = 1 * 16
+    FILAMENT_TYPE_BLOCK = 2 * 16
+    DETAILED_TYPE_BLOCK = 4 * 16
+    COLOR_BLOCK = 5 * 16
+    TEMPERATURE_BLOCK = 6 * 16
+
+    def __init__(self, keyStore=None):
+        self._keyStore = keyStore
+        self.enabled = bool(keyStore is not None and keyStore.has(self.keyName))
+        if not self.enabled:
+            _logger.info(
+                "%s: no valid key configured, parser stays disabled", self.label
+            )
+
+    def authenticationKeys(self, scanResult):
+        """Per-sector key A values, or None when no salt is configured.
+
+        Key B is not derived: on these tags it is all zeroes and carries nothing, so asking
+        for it would only cost a re-selection per sector after every key A failure.
+        """
+        if not self.enabled:
+            return None
+        return Keys.deriveBambuKeys(scanResult.uid, self._keyStore.get(self.keyName))
+
+    def parseTag(self, scanResult, data):
+        if not self.enabled:
+            return None
+        if scanResult.tag_type != TagType.MIFARE_CLASSIC_1K:
+            return None
+        if data is None or len(data) < self.TEMPERATURE_BLOCK + 12:
+            return None
+
+        # Authenticating with the derived key is itself the proof that this is a Bambu tag -
+        # no other tag would accept it. The material id check below is a plausibility guard
+        # against a successful read of something unexpected, not the primary criterion.
+        materialId = Binary.extract_string(data, self.TRAY_INFO_BLOCK + 8, 8)
+        filamentType = Binary.extract_string(data, self.FILAMENT_TYPE_BLOCK, 16)
+        detailedType = Binary.extract_string(data, self.DETAILED_TYPE_BLOCK, 16)
+        if not filamentType and not detailedType:
+            return None
+        if materialId and not materialId.startswith("GF"):
+            # Every material id seen so far starts with "GF"; anything else means the bytes
+            # are not what this parser thinks they are.
+            return None
+
+        red = Binary.extract_byte(data, self.COLOR_BLOCK)
+        green = Binary.extract_byte(data, self.COLOR_BLOCK + 1)
+        blue = Binary.extract_byte(data, self.COLOR_BLOCK + 2)
+        alpha = Binary.extract_byte(data, self.COLOR_BLOCK + 3)
+        if None in (red, green, blue):
+            return None
+        argb = ((alpha if alpha is not None else 0xFF) << 24) | (
+            (red << 16) | (green << 8) | blue
+        )
+
+        weightGrams = Binary.extract_uint16_le(data, self.COLOR_BLOCK + 4)
+        # 8 bytes: a double, not a float. The 4-byte helper would return a number here too,
+        # just not the right one.
+        diameterMm = Binary.extract_double_le(data, self.COLOR_BLOCK + 8)
+
+        dryTemp = Binary.extract_uint16_le(data, self.TEMPERATURE_BLOCK)
+        # Already hours on the tag, like Snapmaker and TigerTag - no conversion.
+        dryTimeHours = Binary.extract_uint16_le(data, self.TEMPERATURE_BLOCK + 2)
+        bedTemp = Binary.extract_uint16_le(data, self.TEMPERATURE_BLOCK + 6)
+        hotendMax = Binary.extract_uint16_le(data, self.TEMPERATURE_BLOCK + 8)
+        hotendMin = Binary.extract_uint16_le(data, self.TEMPERATURE_BLOCK + 10)
+        if None in (hotendMin, hotendMax):
+            return None
+        if hotendMin < 150 or hotendMax > 450 or hotendMax < hotendMin:
+            return None
+
+        # "PLA" plus "PLA Basic" - keep the base type and carry the variant separately,
+        # rather than letting "Basic" become part of the material name.
+        baseType = filamentType or detailedType
+        modifiers = []
+        if detailedType and detailedType != baseType:
+            variant = detailedType
+            if baseType and variant.startswith(baseType):
+                variant = variant[len(baseType) :].strip()
+            if variant:
+                modifiers.append(variant)
+
+        if diameterMm is None or not (0.5 <= diameterMm <= 5.0):
+            diameterMm = 1.75
+
+        return GenericFilament(
+            source_processor=self.id,
+            unique_id=GenericFilament.generate_unique_id(
+                "Bambu", materialId or "", baseType, detailedType or "", argb
+            ),
+            manufacturer="Bambu Lab",
+            type=baseType,
+            modifiers=modifiers,
+            colors=[argb],
+            diameter_mm=diameterMm,
+            weight_grams=weightGrams if weightGrams else 1000,
+            hotend_min_temp_c=hotendMin,
+            hotend_max_temp_c=hotendMax,
+            bed_temp_c=bedTemp if bedTemp is not None else 0,
+            drying_temp_c=dryTemp if dryTemp is not None else 0,
+            drying_time_hours=dryTimeHours if dryTimeHours is not None else 0,
+            manufacturing_date=Constants.NO_MANUFACTURING_DATE,
+        )
+
+
 class SnapmakerTagParser(object):
     """Snapmaker's Mifare Classic layout.
 
@@ -894,6 +1025,22 @@ FILAMENT_TAG_PARSERS = {
         "parser": TigerTagTagParser,
         "description": "TigerTag tags (raw NTAG page layout, big-endian, 4-byte magic).",
     },
+    BambuTagParser.id: {
+        "id": BambuTagParser.id,
+        "label": BambuTagParser.label,
+        "tagClass": BambuTagParser.tagClass,
+        # Needs a salt the user supplies; disabled until then.
+        "requiresKey": True,
+        "keyName": BambuTagParser.keyName,
+        # Blocks 1-6, so sectors 0 and 1 - the rest of the tag is signature and spool data
+        # this plugin has no use for.
+        "sectors": [0, 1],
+        # Key B is all zeroes on these tags: asking for it would only cost a re-selection
+        # per sector after each key A failure.
+        "needsKeyB": False,
+        "parser": BambuTagParser,
+        "description": "Bambu Lab vendor tags (Mifare Classic, needs a user-supplied salt).",
+    },
     SnapmakerTagParser.id: {
         "id": SnapmakerTagParser.id,
         "label": SnapmakerTagParser.label,
@@ -946,7 +1093,21 @@ def parsersForTagClass(tagClass):
     return sorted(matching, key=lambda descriptor: descriptor.get("parser_order", 0))
 
 
-def parseTagData(scanResult, data, parserIds=None):
+def instantiateParser(descriptor, keyStore=None):
+    """Build a parser from its registry entry.
+
+    Parsers that need a user-supplied key take the store in their constructor and disable
+    themselves when it holds nothing valid; the keyless ones take no arguments at all. This
+    keeps the "a parser switches itself off" behaviour in the parser rather than turning the
+    dispatch into a series of special cases.
+    """
+    parserClass = descriptor["parser"]
+    if descriptor.get("requiresKey"):
+        return parserClass(keyStore)
+    return parserClass()
+
+
+def parseTagData(scanResult, data, parserIds=None, keyStore=None):
     """First parser that recognizes the data wins. Returns (filament, diagnostics)."""
     attempted = []
     candidates = parsersForTagClass(scanResult.tag_type)
@@ -956,7 +1117,8 @@ def parseTagData(scanResult, data, parserIds=None):
     for descriptor in candidates:
         attempted.append(descriptor["id"])
         try:
-            filament = descriptor["parser"]().parseTag(scanResult, data)
+            parser = instantiateParser(descriptor, keyStore)
+            filament = parser.parseTag(scanResult, data)
         except Exception:
             # A malformed tag must not take down the request. Ported parser bodies index
             # fixed offsets in places; a guard here keeps one bad tag from becoming a 500.
