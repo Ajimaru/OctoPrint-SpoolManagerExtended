@@ -153,6 +153,8 @@ class GenericFilament(object):
         drying_time_hours,
         manufacturing_date,  # ISO 8601 date string
         td=0.0,  # transmission distance, a unitless 0.1-100 opacity figure (HueForge)
+        bed_min_temp_c=None,  # optional: only a few tag formats carry a bed range
+        bed_max_temp_c=None,  # (currently TigerTag - see FilamentTagParsers.TigerTagTagParser)
     ):
         self.source_processor = source_processor
         self.unique_id = unique_id
@@ -169,6 +171,10 @@ class GenericFilament(object):
         self.drying_time_hours = drying_time_hours
         self.manufacturing_date = manufacturing_date
         self.td = td
+        # None means "this tag format has no separate bed range" - FilamentTagToSpool
+        # falls back to mirroring bed_temp_c into min/max, same as before these existed.
+        self.bed_min_temp_c = bed_min_temp_c
+        self.bed_max_temp_c = bed_max_temp_c
 
         # Upstream folds these two into the type name; a "PLA" with a "CF" modifier is
         # really "PLA-CF" and that is how the material lists spell it.
@@ -202,6 +208,8 @@ class GenericFilament(object):
             "hotendMinTempC": self.hotend_min_temp_c,
             "hotendMaxTempC": self.hotend_max_temp_c,
             "bedTempC": self.bed_temp_c,
+            "bedMinTempC": self.bed_min_temp_c,
+            "bedMaxTempC": self.bed_max_temp_c,
             "dryingTempC": self.drying_temp_c,
             "dryingTimeHours": self.drying_time_hours,
             "manufacturingDate": self.manufacturing_date,

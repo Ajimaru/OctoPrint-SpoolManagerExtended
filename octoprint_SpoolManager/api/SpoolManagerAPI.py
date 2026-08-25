@@ -186,6 +186,20 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         )
         return flask.jsonify({"enabled": True, "cache": status, "available": cache is not None})
 
+    @octoprint.plugin.BlueprintPlugin.route("/tigerTagIdsStatus", methods=["GET"])
+    @no_firstrun_access
+    def tigerTagIdsStatus(self):
+        _data, status = self._tigerTagIdService.ensure_index()
+        return flask.jsonify({"status": status})
+
+    @octoprint.plugin.BlueprintPlugin.route("/tigerTagIdsRefresh", methods=["POST"])
+    @no_firstrun_access
+    def tigerTagIdsRefresh(self):
+        if not Permissions.SETTINGS.can():
+            return "Insufficient rights", 403
+        _data, status = self._tigerTagIdService.ensure_index(force=True)
+        return flask.jsonify({"status": status})
+
     def _updateSpoolModelFromJSONData(self, spoolModel, jsonData):
         # collects human readable validation errors; a non-empty list aborts the save with HTTP 400
         validationErrors = []
@@ -387,6 +401,23 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 validationErrors.append("Displayname must not be empty")
             if StringUtils.isEmpty(spoolModel.colorName):
                 validationErrors.append("Color must not be empty")
+            # Material/vendor/diameter mandatory since 2026-08-25: requested by the
+            # OctoScale firmware team after a live TigerTag write failed for a spool
+            # missing them - TigerTag's firmware only accepts a write when all of
+            # material/brand/type/diameter/measureUnit resolve (aspect is the one
+            # genuinely optional/cosmetic field, see TagFormats.py's TigerTag section).
+            # Enforcing these at spool-creation time, where the user is already filling
+            # in the form, was judged cleaner than piling up "what if X is missing"
+            # special cases on the firmware side for a value a spool barely means
+            # anything without anyway. Existing spools created before this change are
+            # untouched - this only gates new/edited saves, same as displayName/colorName
+            # above.
+            if StringUtils.isEmpty(spoolModel.material):
+                validationErrors.append("Material must not be empty")
+            if StringUtils.isEmpty(spoolModel.vendor):
+                validationErrors.append("Vendor must not be empty")
+            if spoolModel.diameter is None:
+                validationErrors.append("Diameter must not be empty")
 
         return validationErrors
 
@@ -1630,6 +1661,32 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 + "', falling back to 'openSpool'"
             )
             ntagFormatSetting = "openSpool"
+        elif not TagFormats.isSupported(
+            TagFormats.NTAG_FORMAT_SETTING_TO_TAG_FORMAT[ntagFormatSetting]
+        ):
+            # A recognized but not-yet-supported format (currently: "tigerTag" - OctoScale
+            # firmware has no encoder for it and would silently write OpenSpool if asked,
+            # see TagFormats' module comment). Falling back here, before the request ever
+            # reaches the firmware, turns that silent misbehavior into an explicit,
+            # logged fallback instead.
+            self._logger.warning(
+                SettingsKeys.SETTINGS_KEY_OCTOSCALE_NTAG_FORMAT
+                + " value '"
+                + str(ntagFormatSetting)
+                + "' is not supported by the firmware yet, falling back to 'openSpool'"
+            )
+            ntagFormatSetting = "openSpool"
+        else:
+            tagFormat = TagFormats.getTagFormat(
+                TagFormats.NTAG_FORMAT_SETTING_TO_TAG_FORMAT[ntagFormatSetting]
+            )
+            if tagFormat["buildPayload"] is not TagFormats.getTagFormat(
+                TagFormats.TAG_FORMAT_OCTOSCALE_EXTENDED
+            )["buildPayload"]:
+                # Merge in this format's extra fields (e.g. TigerTag's resolved numeric
+                # ids) onto the common payload already built above - additive only, never
+                # replaces the base fields every format shares.
+                payload.update(tagFormat["buildPayload"](spoolModel))
         payload["preferredNtagFormat"] = ntagFormatSetting
 
         # Set once the user confirmed overwriting a tag the firmware flagged as foreign.
@@ -2270,6 +2327,61 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                     if unresolvedFields
                     else None
                 ),
+            }
+        )
+
+    #####################################################################################################   TIGERTAG
+
+    # Required id fields per TagFormats.py's TigerTag section / the OctoScale firmware's
+    # write validation - aspect is the one genuinely optional/cosmetic field, everything
+    # else must resolve or the firmware refuses the whole write ("all required").
+    _TIGERTAG_REQUIRED_PAYLOAD_KEYS = {
+        "tigerTagMaterialId": ("material", "Material"),
+        "tigerTagBrandId": ("vendor", "Vendor"),
+        "tigerTagTypeId": (None, "Type"),  # always resolves - fixed to "Filament"
+        "tigerTagDiameterId": ("diameter", "Diameter"),
+        "tigerTagMeasureUnitId": (None, "Weight unit"),  # always resolves - fixed to "g"
+    }
+
+    @octoprint.plugin.BlueprintPlugin.route(
+        "/spool/<int:databaseId>/tigerTagResolution", methods=["GET"]
+    )
+    @no_firstrun_access
+    def getTigerTagResolution(self, databaseId):
+        # Read-only preview of whether this spool's fields would resolve against
+        # TigerTag's curated id tables - lets the edit dialog warn *before* a write is
+        # attempted, rather than the user only finding out from an error on the
+        # OctoScale device's own display (which this plugin cannot see or log at all;
+        # see the incident this endpoint addresses: a spool with vendor "Hobby King" -
+        # not in TigerTag's ~130-brand table - failed the firmware's "all required"
+        # check with no visible reason in SpoolManager itself).
+        spoolModel = self._databaseManager.loadSpool(databaseId)
+        if spoolModel is None:
+            abort(404)
+
+        payload = TagFormats.getTagFormat(TagFormats.TAG_FORMAT_NTAG_TIGERTAG)[
+            "buildPayload"
+        ](spoolModel)
+
+        unresolvedFields = []
+        for payloadKey, (spoolField, label) in self._TIGERTAG_REQUIRED_PAYLOAD_KEYS.items():
+            if payload.get(payloadKey) is None:
+                unresolvedFields.append(
+                    {
+                        "key": payloadKey,
+                        "label": label,
+                        "value": (
+                            getattr(spoolModel, spoolField) if spoolField else None
+                        ),
+                    }
+                )
+
+        return flask.jsonify(
+            {
+                "success": True,
+                "databaseId": databaseId,
+                "wouldSucceed": len(unresolvedFields) == 0,
+                "unresolvedFields": unresolvedFields,
             }
         )
 

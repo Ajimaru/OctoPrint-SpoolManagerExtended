@@ -114,6 +114,15 @@ class SettingsKeys:
     SETTINGS_KEY_SPOOLMANDB_ENABLED = "spoolmanDbEnabled"
     SETTINGS_KEY_SPOOLMANDB_CACHE_TTL_DAYS = "spoolmanDbCacheTtlDays"
 
+    ## TigerTag id lookup tables (material/brand/aspect/type/diameter/unit), auto-updated
+    ## from TigerTag-SDK-Python at runtime - same mechanism as SpoolmanDB-Community above.
+    ## Enabled by default: unlike SpoolmanDB (an opt-in convenience feature), these tables
+    ## are needed for TigerTag reading/writing to resolve anything beyond the sparse
+    ## offline fallback snapshot - see common/tagdata/tigertag_ids.json. No configurable
+    ## TTL setting (unlike SpoolmanDB): the id tables change far less often than a filament
+    ## price/spec database, so TigerTagIdService's fixed 7-day default is used throughout.
+    SETTINGS_KEY_TIGERTAG_IDS_AUTO_UPDATE_ENABLED = "tigerTagIdsAutoUpdateEnabled"
+
     ## Debugging
     SETTINGS_KEY_SQL_LOGGING_ENABLED = "sqlLoggingEnabled"
     SETTINGS_KEY_EXTRUSION_DEBUGGING_ENABLED = "extrusionDebuggingEnabled"

@@ -214,21 +214,38 @@ SNAPMAKER_SUB_TYPES = {
 # TigerTag
 #
 # Lookup tables from TigerTag-Project/TigerTag-SDK-Python (`tigertag/database/*.json`),
-# Apache-2.0, Copyright TigerTag Corp. 2025-2026. Shipped as data under common/tagdata/;
-# see THIRD_PARTY_NOTICES.md.
+# Apache-2.0, Copyright TigerTag Corp. 2025-2026. See THIRD_PARTY_NOTICES.md.
 #
 # The ids are not sequential and carry no structure, so they have to be looked up - there is
 # nothing to derive them from. Unknown ids degrade to None here and are surfaced as
-# "Unknown(<id>)" rather than failing the parse: a table that ages should cost a label, not
-# the whole tag.
+# "Unknown(<id>)" on read, or simply omitted from the write payload, rather than failing:
+# a table that ages should cost a label, not the whole tag.
+#
+# Two sources, in priority order:
+#  1. TigerTagIdService - fetches the live tables at runtime (mirrors
+#     FilamentDatabaseService's SpoolmanDB-Community mechanism), cached with a jittered
+#     TTL under the plugin's data folder. Wired in via setTigerTagIdService() from
+#     __init__.py once the service is constructed (it needs a data folder path that this
+#     module, imported before plugin startup, does not have).
+#  2. common/tagdata/tigertag_ids.json - the offline fallback snapshot, used until a
+#     service is registered (e.g. in tests) and whenever the service itself falls back to
+#     it (see TigerTagIdService._read_fallback).
 import json as _json
 import os as _os
 
 _TAG_DATA_DIR = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "tagdata")
 _tigerTagIds = None
+_tigerTagIdService = None
 
 
-def _loadTigerTagIds():
+def setTigerTagIdService(service):
+    """Registers the live TigerTagIdService so lookups prefer its auto-updated tables
+    over the static fallback snapshot. Called once from __init__.py after construction."""
+    global _tigerTagIdService
+    _tigerTagIdService = service
+
+
+def _loadTigerTagIdsFallback():
     global _tigerTagIds
     if _tigerTagIds is None:
         try:
@@ -244,11 +261,33 @@ def _loadTigerTagIds():
 
 
 def tigerTagLabel(sectionName, identifier):
-    """Label for a TigerTag id, or None when the id is not in the shipped table."""
+    """Label for a TigerTag id, or None when the id is not in the live/shipped table."""
     if identifier is None:
         return None
-    section = _loadTigerTagIds().get(sectionName) or {}
+    if _tigerTagIdService is not None:
+        return _tigerTagIdService.label(sectionName, identifier)
+    section = _loadTigerTagIdsFallback().get(sectionName) or {}
     return section.get(str(identifier))
+
+
+def tigerTagIdForLabel(sectionName, label):
+    """Reverse lookup for writing: label -> id, or None when no entry matches. Callers
+    must treat None as "omit this field from the payload", not as an error - TigerTag's
+    brand/material tables are curated and will not cover every vendor/material string a
+    user has typed into SpoolManager."""
+    if not isinstance(label, str) or not label.strip():
+        return None
+    if _tigerTagIdService is not None:
+        return _tigerTagIdService.id_for_label(sectionName, label)
+    needle = label.strip().casefold()
+    section = _loadTigerTagIdsFallback().get(sectionName) or {}
+    for identifier, candidate in section.items():
+        if isinstance(candidate, str) and candidate.casefold() == needle:
+            try:
+                return int(identifier)
+            except (TypeError, ValueError):
+                return None
+    return None
 
 
 def tigerTagDiameterMm(diameterId):

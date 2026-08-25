@@ -1112,11 +1112,14 @@ function SpoolManagerEditSpoolDialog() {
     });
 
     self._isEveryMandatoryFieldValid = function () {
-        // "Displayname", "color name", "total weight"
+        // "Displayname", "color name", "total weight", "material", "vendor", "diameter"
         return (
             self.isDisplayNamePresent() &&
             self.isColorNamePresent() &&
-            self.isTotalCombinedWeightPresent()
+            self.isTotalCombinedWeightPresent() &&
+            self.isMaterialPresent() &&
+            self.isVendorPresent() &&
+            self.isDiameterPresent()
         );
     };
 
@@ -1163,6 +1166,18 @@ function SpoolManagerEditSpoolDialog() {
 
     self.isTotalCombinedWeightPresent = function () {
         return SPOOLMANAGER_UTILS.isTotalCombinedWeightPresent(self.spoolItemForEditing);
+    };
+
+    self.isMaterialPresent = function () {
+        return SPOOLMANAGER_UTILS.isMaterialPresent(self.spoolItemForEditing);
+    };
+
+    self.isVendorPresent = function () {
+        return SPOOLMANAGER_UTILS.isVendorPresent(self.spoolItemForEditing);
+    };
+
+    self.isDiameterPresent = function () {
+        return SPOOLMANAGER_UTILS.isDiameterPresent(self.spoolItemForEditing);
     };
 
     // builds (or refreshes) an SVG checkerboard <pattern> in the filament svg's
@@ -2327,6 +2342,38 @@ function SpoolManagerEditSpoolDialog() {
                 type: "error"
             });
             return;
+        }
+        // Material/vendor/diameter mandatory since 2026-08-25 (server enforces this too,
+        // see SpoolManagerAPI.py's _updateSpoolModelFromJSONData - this check just avoids
+        // a round trip for the common case of forgetting one while filling in the form).
+        // Skipped for templates, same exemption the server applies. Reuses the same
+        // SPOOLMANAGER_UTILS rules isFormValidForSubmit()/_isEveryMandatoryFieldValid()
+        // already gate the Save button on, rather than duplicating the field logic here.
+        if (!self.spoolItemForEditing.isTemplate()) {
+            if (!self.isMaterialPresent()) {
+                SPOOLMANAGER_DIALOGS.notify({
+                    title: "Missing material",
+                    message: "Please enter a material before saving the spool.",
+                    type: "error"
+                });
+                return;
+            }
+            if (!self.isVendorPresent()) {
+                SPOOLMANAGER_DIALOGS.notify({
+                    title: "Missing vendor",
+                    message: "Please enter a vendor before saving the spool.",
+                    type: "error"
+                });
+                return;
+            }
+            if (!self.isDiameterPresent()) {
+                SPOOLMANAGER_DIALOGS.notify({
+                    title: "Missing diameter",
+                    message: "Please enter a diameter before saving the spool.",
+                    type: "error"
+                });
+                return;
+            }
         }
         // workaround
         self.spoolItemForEditing.costUnit(self.pluginSettings.currencySymbol());

@@ -125,8 +125,8 @@
                         </span>
                     </div>
                 </div>
-                <div class="control-group">
-                    <label class="control-label">{{ _('Vendor') }}</label>
+                <div class="control-group" data-bind="css: {error: !isVendorPresent()}">
+                    <label class="control-label">{{ _('Vendor') }} *</label>
                     <div class="controls">
                         <div class="input-append dropdown">
                             <input id="wizard-spool-vendor" type="text" class="input-large"
@@ -158,8 +158,8 @@
                         </div>
                     </div>
                 </div>
-                <div class="control-group">
-                    <label class="control-label">{{ _('Material') }}</label>
+                <div class="control-group" data-bind="css: {error: !isMaterialPresent()}">
+                    <label class="control-label">{{ _('Material') }} *</label>
                     <div class="controls">
                         <input id="wizard-spool-material" type="text" class="input-large" list="wizard-spool-material-list"
                                autocomplete="off" placeholder="{{ _('Choose or type...') }}"
@@ -266,8 +266,8 @@
                         <span class="help-block"><small>{{ _('Needed together with the diameter to predict filament usage.') }}</small></span>
                     </div>
                 </div>
-                <div class="control-group">
-                    <label class="control-label">{{ _('Diameter') }}</label>
+                <div class="control-group" data-bind="css: {error: !isDiameterPresent()}">
+                    <label class="control-label">{{ _('Diameter') }} *</label>
                     <div class="controls">
                         <div class="input-append">
                             <input type="number" step="0.001" min="0" class="input-mini text-right"
@@ -558,6 +558,12 @@
                     <div class="text-warning" data-bind="visible: octoScaleTagWriter.tagPresent() && octoScaleTagWriter.hasExtendedData">
                         <i class="fas fa-info-circle"></i> {{ _('This tag already carries extended data (material/color/weights) which will be overwritten.') }}
                     </div>
+                    {# Proactive TigerTag id-resolution check, see checkTigerTagResolution in
+                       SpoolManager-OctoScale.js and the identical block in the edit dialog. #}
+                    <div class="text-warning" data-bind="visible: octoScaleTagWriter.tigerTagResolutionWarning">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <span data-bind="text: octoScaleTagWriter.tigerTagResolutionWarning"></span>
+                    </div>
 
                     <div class="alert alert-warning" style="margin-top: 8px;"
                          data-bind="visible: octoScaleTagWriter.needsOverwriteConfirmation() && !octoScaleTagWriter.overwriteConfirmed()">
@@ -633,7 +639,7 @@
 
                     <div class="text-success" style="margin-top: 8px;" data-bind="visible: octoScaleTagWriter.writeSucceeded">
                         <i class="fas fa-check"></i> {{ _('Tag written and verified') }}<span data-bind="visible: octoScaleTagWriter.writeFormatUsed"> (<span data-bind="text: octoScaleTagWriter.writeFormatUsed"></span>)</span>.
-                        <!-- ko if: octoScaleTagWriter.writeUnsupportedFields().length > 0 -->
+                        <!-- ko if: octoScaleTagWriter.writeUnsupportedFieldLabels().length > 0 -->
                         <br><small class="text-warning"><i class="fas fa-info-circle"></i>
                             {{ _('This format cannot store these values') }}:
                             <span data-bind="text: octoScaleTagWriter.writeUnsupportedFieldLabels().join(', ')"></span>.

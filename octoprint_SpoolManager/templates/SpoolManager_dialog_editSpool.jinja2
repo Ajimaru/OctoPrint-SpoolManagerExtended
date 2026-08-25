@@ -223,8 +223,8 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                 </span>
                             </div>
                         </div>
-                        <div class="control-group">
-                            <label class="control-label">Vendor</label>
+                        <div class="control-group" data-bind="css: {error: !spoolDialog.isVendorPresent()}">
+                            <label class="control-label">Vendor *</label>
                             <div class="controls">
                                 {# Free text stays available; the grouped dropdown distinguishes local and
                                    SpoolmanDB suggestions without making group labels selectable. #}
@@ -258,8 +258,8 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                 </div>
                             </div>
                         </div>
-                        <div class="control-group no-bottom-gap">
-                            <label class="control-label">Material</label>
+                        <div class="control-group no-bottom-gap" data-bind="css: {error: !spoolDialog.isMaterialPresent()}">
+                            <label class="control-label">Material *</label>
                             <div class="controls">
                                 <input id="spool-material-select" type="text" class="input-large" list="spool-material-list"
                                        autocomplete="off" placeholder="Choose or type..."
@@ -300,8 +300,8 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                 <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('density') !== -1">Please enter a valid number</span>
                             </div>
                         </div>
-                        <div class="control-group ">
-                            <label class="control-label">Diameter <sup>2</sup></label>
+                        <div class="control-group " data-bind="css: {error: !spoolDialog.isDiameterPresent()}">
+                            <label class="control-label">Diameter * <sup>2</sup></label>
                             <div class="controls">
                                 <div class="input-append">
                                     <input type="number" step="0.001" min="0" class="input-mini text-right" data-bind="value: spoolDialog.spoolItemForEditing.diameter,
@@ -872,6 +872,17 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                                   data-bind="visible: spoolDialog.isExistingSpool() && spoolDialog.octoScaleTagWriter.tagPresent() && spoolDialog.octoScaleTagWriter.hasExtendedData() && !spoolDialog.octoScaleTagWriter.isOwnSpoolTag()">
                                                 <small class="text-warning"><i class="fas fa-info-circle"></i> This tag already carries extended data (material/color/weights) which will be overwritten.</small>
                                             </span>
+                                            {# Proactive check for TigerTag only (see checkTigerTagResolution in
+                                               SpoolManager-OctoScale.js) - lets the user know before writing that the
+                                               firmware will refuse the whole write, instead of finding out only from
+                                               an error on the OctoScale device's own display, which this plugin
+                                               cannot see. #}
+                                            <span class="help-block" style="margin-bottom: 0;"
+                                                  data-bind="visible: spoolDialog.octoScaleTagWriter.tigerTagResolutionWarning">
+                                                <small class="text-warning"><i class="fas fa-exclamation-triangle"></i>
+                                                    <span data-bind="text: spoolDialog.octoScaleTagWriter.tigerTagResolutionWarning"></span>
+                                                </small>
+                                            </span>
                                             <!-- ko if: spoolDialog.isExistingSpool() && spoolDialog.octoScaleTagWriter.tagPresent() && spoolDialog.octoScaleTagWriter.isOwnSpoolTag() -->
                                             <span class="help-block" style="margin-bottom: 0;"
                                                   data-bind="visible: spoolDialog.octoScaleTagWriter.tagValueDiff().length > 0">
@@ -903,7 +914,7 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                                 <span class="help-block" style="margin-bottom: 0;" data-bind="visible: spoolDialog.octoScaleTagWriter.isReadingTag">
                                                     <small><i class="fas fa-spinner fa-spin"></i> Reading the tag - please leave it on the reader...</small>
                                                 </span>
-                                                <span class="help-block" style="margin-bottom: 0;" data-bind="visible: spoolDialog.octoScaleTagWriter.readTagError">
+                                                <span class="help-block" style="margin-bottom: 0;" data-bind="visible: spoolDialog.octoScaleTagWriter.readTagError()">
                                                     <small class="text-warning"><i class="fas fa-info-circle"></i> <span data-bind="text: spoolDialog.octoScaleTagWriter.readTagError"></span></small>
                                                 </span>
                                                 {# On an existing spool, a successful parse jumps straight to the field-by-field
@@ -933,7 +944,7 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                                 <span class="help-block text-success" style="margin-bottom: 0;" data-bind="visible: spoolDialog.octoScaleTagWriter.writeSucceeded">
                                                     <small><i class="fas fa-check"></i> Tag written and verified<!--
                                                     --><span data-bind="visible: spoolDialog.octoScaleTagWriter.writeFormatUsed"> (<span data-bind="text: spoolDialog.octoScaleTagWriter.writeFormatUsed"></span>)</span>.</small>
-                                                    <!-- ko if: spoolDialog.octoScaleTagWriter.writeUnsupportedFields().length > 0 -->
+                                                    <!-- ko if: spoolDialog.octoScaleTagWriter.writeUnsupportedFieldLabels().length > 0 -->
                                                     <br><small class="text-warning"><i class="fas fa-info-circle"></i>
                                                         The <span data-bind="text: spoolDialog.octoScaleTagWriter.writeFormatUsed"></span> format cannot store these values:
                                                         <span data-bind="text: spoolDialog.octoScaleTagWriter.writeUnsupportedFieldLabels().join(', ')"></span>.
@@ -943,14 +954,15 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                                     <!-- ko if: spoolDialog.octoScaleTagWriter.writeDroppedFields().length > 0 -->
                                                     <br><small class="text-warning"><i class="fas fa-exclamation-triangle"></i> Some fields did not fit on the tag and were left out: <span data-bind="text: spoolDialog.octoScaleTagWriter.writeDroppedFields().join(', ')"></span></small>
                                                     <!-- /ko -->
-                                                    <!-- ko if: spoolDialog.octoScaleTagWriter.writeWarning -->
+                                                    <!-- ko if: spoolDialog.octoScaleTagWriter.writeWarning() -->
                                                     <br><small class="text-warning"><i class="fas fa-exclamation-triangle"></i> <span data-bind="text: spoolDialog.octoScaleTagWriter.writeWarning"></span></small>
                                                     <!-- /ko -->
-                                                    {# OpenPrintTag has no room for the database id, so a successful write auto-teaches
-                                                       this spool's rfidTagKey from the tag's UID (see teachRfidTagKeyIfNeeded() in
-                                                       SpoolManager-OctoScale.js) - this block surfaces that outcome right under the
-                                                       write result, since it's the only way the spool becomes findable again by scan. #}
-                                                    <!-- ko if: spoolDialog.octoScaleTagWriter.teachInResult -->
+                                                    {# OpenPrintTag and TigerTag have no room for the database id, so a successful
+                                                       write auto-teaches this spool's rfidTagKey from the tag's UID (see
+                                                       teachRfidTagKeyIfNeeded() in SpoolManager-OctoScale.js) - this block surfaces
+                                                       that outcome right under the write result, since it's the only way the spool
+                                                       becomes findable again by scan. #}
+                                                    <!-- ko if: spoolDialog.octoScaleTagWriter.teachInResult() -->
                                                     <!-- ko if: spoolDialog.octoScaleTagWriter.teachInResult().taught -->
                                                     <br><small><i class="fas fa-id-card"></i> Spool taught in for this tag (key <span data-bind="text: spoolDialog.octoScaleTagWriter.teachInResult().rfidTagKey"></span>).</small>
                                                     <!-- /ko -->

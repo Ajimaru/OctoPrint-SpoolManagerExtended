@@ -554,6 +554,23 @@ function SpoolManagerAddSpoolWizard() {
         return SPOOLMANAGER_UTILS.isTotalCombinedWeightPresent(self.spoolItemForCreation);
     });
 
+    // Mandatory since 2026-08-25 - see SPOOLMANAGER_UTILS.isMaterialPresent/isVendorPresent/
+    // isDiameterPresent in common/utils.js for why.
+    self.isMaterialPresent = ko.pureComputed(function () {
+        if (self.spoolItemForCreation == null) return false;
+        return SPOOLMANAGER_UTILS.isMaterialPresent(self.spoolItemForCreation);
+    });
+
+    self.isVendorPresent = ko.pureComputed(function () {
+        if (self.spoolItemForCreation == null) return false;
+        return SPOOLMANAGER_UTILS.isVendorPresent(self.spoolItemForCreation);
+    });
+
+    self.isDiameterPresent = ko.pureComputed(function () {
+        if (self.spoolItemForCreation == null) return false;
+        return SPOOLMANAGER_UTILS.isDiameterPresent(self.spoolItemForCreation);
+    });
+
     // Set when the wizard was opened from a detected U1 RFID tag: {uid, channel,
     // metadata}. Drives the tag prefill and relaxes the weight requirement.
     self.u1RfidContext = ko.observable(null);
@@ -602,7 +619,10 @@ function SpoolManagerAddSpoolWizard() {
         return (
             self.isDisplayNamePresent() &&
             self.isColorNamePresent() &&
-            self.isWeightRequirementMet()
+            self.isWeightRequirementMet() &&
+            self.isMaterialPresent() &&
+            self.isVendorPresent() &&
+            self.isDiameterPresent()
         );
     });
 
@@ -612,8 +632,17 @@ function SpoolManagerAddSpoolWizard() {
         if (stepId === "identity" && !self.isDisplayNamePresent()) {
             return "Please enter a display name.";
         }
+        if (stepId === "identity" && !self.isVendorPresent()) {
+            return "Please enter a vendor.";
+        }
+        if (stepId === "identity" && !self.isMaterialPresent()) {
+            return "Please enter a material.";
+        }
         if (stepId === "color" && !self.isColorNamePresent()) {
             return "Please enter a color name.";
+        }
+        if (stepId === "filament" && !self.isDiameterPresent()) {
+            return "Please enter a diameter.";
         }
         if (stepId === "weight" && !self.isWeightRequirementMet()) {
             return "Please enter the total weight (spool including filament).";

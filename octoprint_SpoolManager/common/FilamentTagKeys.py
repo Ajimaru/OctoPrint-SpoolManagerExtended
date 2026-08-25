@@ -27,6 +27,13 @@
 # These keys come from third-party reverse engineering. Reading tags on spools you own is
 # the intended use. Writing proprietary formats is not supported here and must not be
 # added: vendor tags carry signed blocks, and a failed write destroys the tag.
+#
+# TigerTag Standard (see TagFormats.py, TAG_FORMAT_NTAG_TIGERTAG) is a deliberate
+# exception, not a contradiction of this rule: it is unsigned, needs no key or checksum at
+# all (requiresKey=False on its read parser too), and is covered by an open CC-BY-4.0
+# licence with an explicit, irrevocable right to implement it - the opposite situation
+# from the reverse-engineered, signed vendor formats this file is about. TigerTag+ (the
+# signed variant) stays out of scope for exactly the reason above: no key is available.
 # ---------------------------------------------------------------------------------------
 #
 # Divergences from upstream:

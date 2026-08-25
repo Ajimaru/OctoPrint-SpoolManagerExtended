@@ -679,6 +679,11 @@ class TigerTagTagParser(object):
         # lookup shadowing a real value is exactly the silent error this project already hit
         # once with OpenSpool's bed temperature.
         bedTempC = bedMax if bedMax else bedMin
+        # TigerTag carries bedMin/bedMax as two separate bytes - unlike most other formats
+        # here, which only ever have one bed value. Passing both through (instead of only
+        # the single bed_temp_c collapse above) is what lets a round trip (write, then
+        # read back) preserve the original min/target/max instead of flattening all three
+        # SpoolModel fields to the same number - see FilamentTagToSpool.genericFilamentToSpoolFields.
 
         typeName = Constants.tigerTagLabel("id_material", materialId)
         diameterMm = Constants.tigerTagDiameterMm(diameterId)
@@ -706,6 +711,8 @@ class TigerTagTagParser(object):
             hotend_min_temp_c=nozzleMin,
             hotend_max_temp_c=nozzleMax,
             bed_temp_c=bedTempC if bedTempC is not None else 0,
+            bed_min_temp_c=bedMin if bedMin else None,
+            bed_max_temp_c=bedMax if bedMax else None,
             drying_temp_c=dryTemp if dryTemp is not None else 0,
             drying_time_hours=dryTime if dryTime is not None else 0,
             manufacturing_date=Constants.NO_MANUFACTURING_DATE,

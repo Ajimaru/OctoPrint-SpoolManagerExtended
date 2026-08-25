@@ -867,6 +867,27 @@ class TestTigerTagParser(unittest.TestCase):
         self.assertEqual(60, filament.bed_temp_c)
         self.assertEqual(0xFFE72F1D, filament.colors[0])
 
+    def test_bed_min_and_max_are_kept_separate_not_collapsed(self):
+        # Regression guard: TigerTag carries bedMin and bedMax as two distinct bytes on
+        # the tag (unlike most other formats, which only have one bed value). Before
+        # bed_min_temp_c/bed_max_temp_c existed on GenericFilament, both were collapsed
+        # into the single bed_temp_c, and a write-then-read round trip silently flattened
+        # a spool's minBedTemperature/maxBedTemperature/bedTemperature to the same number
+        # (reported by a user comparing dev271's write against the read-back diff).
+        filament = self.parser.parseTag(
+            self.scan, _tigerTagImage(bedMin=50, bedMax=70)
+        )
+        self.assertEqual(70, filament.bed_temp_c)  # unchanged: max wins as the "target"
+        self.assertEqual(50, filament.bed_min_temp_c)
+        self.assertEqual(70, filament.bed_max_temp_c)
+
+    def test_bed_min_equal_to_max_still_reports_both(self):
+        filament = self.parser.parseTag(
+            self.scan, _tigerTagImage(bedMin=55, bedMax=55)
+        )
+        self.assertEqual(55, filament.bed_min_temp_c)
+        self.assertEqual(55, filament.bed_max_temp_c)
+
     def test_offsets_are_relative_to_user_memory(self):
         # The reader returns the tag from page 0; the layout starts at page 4. Handing the
         # parser a dump without those 16 bytes must not accidentally parse - that is the
