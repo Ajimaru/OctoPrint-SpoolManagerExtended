@@ -1014,6 +1014,7 @@ FPE;	2.16
                                     <th>{{ _('Tag') }}</th>
                                     <th>{{ _('Extended') }}</th>
                                     <th>{{ _('OpenSpool') }}</th>
+                                    <th>{{ _('TigerTag') }}</th>
                                     <th>{{ _('OpenPrintTag') }}</th>
                                 </tr>
                             </thead>
@@ -1023,29 +1024,34 @@ FPE;	2.16
                                     <td>{{ _('everything') }}</td>
                                     <td>{{ _('not supported') }}</td>
                                     <td>{{ _('not supported') }}</td>
+                                    <td>{{ _('not supported') }}</td>
                                 </tr>
                                 <tr>
                                     <td>{{ _('NTAG215 / NTAG216') }}</td>
                                     <td>{{ _('everything') }}</td>
                                     <td>{{ _('everything') }}</td>
+                                    <td>{{ _('material, brand, aspect, diameter, color, weight, temperatures - no database id') }}</td>
                                     <td>{{ _('not supported') }}</td>
                                 </tr>
                                 <tr>
                                     <td>{{ _('NTAG213') }}</td>
                                     <td>{{ _('write fails (tag too small)') }}</td>
                                     <td>{{ _('no temperatures, no diameter') }}</td>
+                                    <td>{{ _('material, brand, aspect, diameter, color, weight, temperatures - no database id') }}</td>
                                     <td>{{ _('not supported') }}</td>
                                 </tr>
                                 <tr>
                                     <td>{{ _('NFC-V, small (SLI-X, 112 B)') }}</td>
                                     <td>{{ _('everything') }}</td>
                                     <td>{{ _('ID + material only') }}</td>
+                                    <td>{{ _('not supported (NTAG only)') }}</td>
                                     <td>{{ _('write fails (tag too small)') }}</td>
                                 </tr>
                                 <tr>
                                     <td>{{ _('NFC-V, large (SLIX2, ST25DV, 316 B+)') }}</td>
                                     <td>{{ _('everything') }}</td>
                                     <td>{{ _('everything') }}</td>
+                                    <td>{{ _('not supported (NTAG only)') }}</td>
                                     <td>{{ _('everything') }}</td>
                                 </tr>
                             </tbody>
@@ -1131,6 +1137,26 @@ FPE;	2.16
                                     </small>
                                 </div>
                             </div>
+                            <div class="row-fluid" style="margin-top: 10px;">
+                                <div class="span4">
+                                    <strong style="font-size: 12px;">{{ _('TigerTag') }}</strong><br>
+                                    <small class="muted">{{ _('Raw page layout, NTAG213/215/216, open spec (unsigned/Standard only)') }}</small>
+                                    <ul style="padding-left: 16px; margin: 6px 0 0; font-size: 12px;">
+                                        <li>{{ _('Material, brand, aspect, diameter, weight unit (TigerTag\'s own numeric ids)') }}</li>
+                                        <li>{{ _('Color (RGB)') }}</li>
+                                        <li>{{ _('Total weight') }}</li>
+                                        <li>{{ _('Nozzle temp (min/max)') }}</li>
+                                        <li>{{ _('Bed temp (min/max)') }}</li>
+                                        <li>{{ _('Drying temp / time') }}</li>
+                                        <li class="muted">{{ _('Database ID - not written') }}</li>
+                                        <li class="muted">{{ _('Color name, density, used weight - not written') }}</li>
+                                        <li class="muted">{{ _('Serial, batch number, purchase info, finish, display name, dates, TD - not written') }}</li>
+                                    </ul>
+                                    <small class="help-block" style="margin-top: 4px; border-left: 2px solid #ddd; padding-left: 8px;">
+                                        {{ _('No database id field, same as OpenPrintTag - matched back to a spool by the tag\'s own UID. A field whose value cannot be matched to a TigerTag id (e.g. an unlisted vendor) is left off the tag rather than guessed. Total weight and total length share one slot on the tag - weight wins if both are set.') }}
+                                    </small>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1157,13 +1183,45 @@ FPE;	2.16
                         <select data-bind="value: pluginSettings.octoScaleNtagFormat">
                             <option value="openSpool">{{ _('OpenSpool (NDEF/JSON, phone-readable, fewer fields)') }}</option>
                             <option value="extended">{{ _('Extended (all fields, OctoScale-specific, NTAG215/216 only)') }}</option>
+                            <option value="tigerTag">{{ _('TigerTag (Standard, open spec)') }}</option>
                         </select>
                         <span class="help-block">
                             <small>
                                 <strong>{{ _('Extended') }}</strong> {{ _('writes every field OctoScale knows, but needs NTAG215/216 - on NTAG213 the write fails outright rather than falling back.') }}<br>
-                                <strong>{{ _('OpenSpool') }}</strong> {{ _('writes a standard NDEF/JSON record readable by generic phone NFC apps.') }}
+                                <strong>{{ _('OpenSpool') }}</strong> {{ _('writes a standard NDEF/JSON record readable by generic phone NFC apps.') }}<br>
+                                <strong>{{ _('TigerTag') }}</strong> {{ _('writes TigerTag Standard (unsigned, open spec) - material, brand, aspect, diameter and weight unit as TigerTag\'s own ids, plus color, weight, and nozzle/bed temperature range. No database id (matched back to a spool by the tag\'s own UID, like OpenPrintTag). TigerTag+ (signed) is not supported.') }}
                             </small>
                         </span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.tigerTagIdsAutoUpdateEnabled"> {{ _('Auto-update TigerTag id tables') }}
+                        </label>
+                        <span class="help-block"><small>{{ _('TigerTag material/brand/aspect/type/diameter/unit tables are downloaded from TigerTag-SDK-Python and cached locally, refreshed roughly every 7 days. When disabled, only the small set shipped with the plugin is used - most vendor/material combinations will not resolve to a TigerTag id.') }}</small></span>
+                        <button class="btn" data-bind="click: refreshTigerTagIds, enable: pluginSettings.tigerTagIdsAutoUpdateEnabled() && !tigerTagIdsRefreshBusy()" style="margin-top: 6px;">
+                            <i class="fas fa-spinner fa-spin" data-bind="visible: tigerTagIdsRefreshBusy"></i>
+                            {{ _('Refresh now') }}
+                        </button>
+                        <span class="help-inline" data-bind="visible: tigerTagIdsRefreshResult">
+                            <span data-bind="text: tigerTagIdsRefreshResult() && tigerTagIdsRefreshResult().status"></span>
+                        </span>
+                        <span class="help-block" data-bind="visible: tigerTagIdsRefreshResult()">
+                            <small>
+                                {{ _('Materials:') }}
+                                <span data-bind="text: tigerTagIdsRefreshResult() && tigerTagIdsRefreshResult().section_counts && tigerTagIdsRefreshResult().section_counts.id_material"></span>
+                                &nbsp;{{ _('Brands:') }}
+                                <span data-bind="text: tigerTagIdsRefreshResult() && tigerTagIdsRefreshResult().section_counts && tigerTagIdsRefreshResult().section_counts.id_brand"></span>
+                            </small>
+                        </span>
+                        <span class="help-block" data-bind="visible: tigerTagIdsRefreshResult()">
+                            <small>
+                                {{ _('Last fetch:') }}
+                                <span data-bind="text: tigerTagIdsRefreshResult() && tigerTagIdsRefreshResult().last_fetch ? tigerTagIdsRefreshResult().last_fetch.replace('T', ' ').split('.')[0] : ''"></span>
+                            </small>
+                        </span>
+                        <span class="help-block"><small>{{ _('Source: TigerTag-SDK-Python (Apache-2.0). Data is fetched at runtime, cached locally, and not shipped with this plugin beyond a small offline fallback.') }}</small></span>
                     </div>
                 </div>
                 <div class="control-group">

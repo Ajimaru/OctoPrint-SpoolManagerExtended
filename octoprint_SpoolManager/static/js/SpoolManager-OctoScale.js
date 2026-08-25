@@ -391,6 +391,59 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
     // here writes back to it.
     self.targetSpoolItem = ko.observable(null);
 
+    // Whether this spool's material/vendor/diameter would resolve against TigerTag's
+    // curated id tables, checked proactively (before a write is attempted) so a mismatch
+    // surfaces here rather than only as an unexplained failure on the OctoScale device's
+    // own display - the plugin has no visibility into that error at all otherwise (see
+    // the incident this addresses: vendor "Hobby King", not in TigerTag's ~130-brand
+    // table, failed the firmware's "all required" check with nothing shown in
+    // SpoolManager itself). null until checked; {wouldSucceed, unresolvedFields} after.
+    self.tigerTagResolution = ko.observable(null);
+    self.isCheckingTigerTagResolution = ko.observable(false);
+
+    // Rendered warning text for an unresolvable spool, built here rather than in a
+    // data-bind expression: the field list needs quotes around each value, and a string
+    // containing a double quote inside a double-quoted data-bind attribute terminates the
+    // attribute early. That produced malformed markup, which made Knockout abort binding
+    // for the whole dialog - every conditional block then rendered raw, all at once, with
+    // empty values. Keep complex expressions out of the template.
+    self.tigerTagResolutionWarning = ko.pureComputed(function () {
+        var resolution = self.tigerTagResolution();
+        if (resolution == null || resolution.wouldSucceed !== false) {
+            return "";
+        }
+        var fields = resolution.unresolvedFields || [];
+        var names = fields.map(function (field) {
+            return field.value ? field.label + " (" + field.value + ")" : field.label;
+        });
+        return (
+            "This spool cannot be written as TigerTag: " +
+            names.join(", ") +
+            (fields.length === 1
+                ? " does not match a TigerTag entry."
+                : " do not match a TigerTag entry.") +
+            " The write will fail on the device."
+        );
+    });
+
+    self.checkTigerTagResolution = function () {
+        var databaseId = self.targetDatabaseId();
+        if (databaseId == null) {
+            self.tigerTagResolution(null);
+            return;
+        }
+        self.isCheckingTigerTagResolution(true);
+        self.apiClient.getTigerTagResolution(databaseId, function (responseData) {
+            self.isCheckingTigerTagResolution(false);
+            if (self.isActive() == false) {
+                return;
+            }
+            self.tigerTagResolution(
+                responseData && responseData.success === true ? responseData : null
+            );
+        });
+    };
+
     var pollTimerId = null;
 
     // A tag that already carries a *different* spool id would be silently re-labelled by a
@@ -468,15 +521,29 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
     // those rather than showing raw keys.
     self.writeUnsupportedFieldLabels = ko.pureComputed(function () {
         var labelsByKey = {};
+        // Companion fields carrying only the time of day for one of the date fields
+        // (firstUseMinuteOfDay, ...). They are not fields a user ever sees or sets, and
+        // the date they belong to is already listed in its own right - naming them
+        // separately would just repeat "First use" in raw-key form, which is exactly how
+        // they used to show up here.
+        var timeOfDayKeys = {};
         OCTOSCALE_TAG_DIFF_FIELDS.forEach(function (field) {
             labelsByKey[field.key] = field.label;
         });
         OCTOSCALE_TAG_DIFF_DATE_FIELDS.forEach(function (field) {
             labelsByKey[field.key] = field.label;
+            if (field.minuteOfDayKey) {
+                timeOfDayKeys[field.minuteOfDayKey] = true;
+            }
         });
-        return self.writeUnsupportedFields().map(function (key) {
-            return labelsByKey[key] || key;
-        });
+        return self
+            .writeUnsupportedFields()
+            .filter(function (key) {
+                return timeOfDayKeys[key] !== true;
+            })
+            .map(function (key) {
+                return labelsByKey[key] || key;
+            });
     });
 
     self.foreignTagWarningText = ko.pureComputed(function () {
@@ -603,11 +670,24 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
         return (typeof value === "function" ? value() : value) === true;
     });
 
+    // True when the proactive TigerTag id check (see checkTigerTagResolution) has already
+    // established that the firmware would refuse this write. Unlike the overwrite/foreign
+    // confirmations below, this is not something a click can resolve - no amount of
+    // confirming makes an unlisted vendor resolvable - so it blocks the button outright
+    // rather than only the write itself, and the warning next to it explains why.
+    self.isBlockedByTigerTagResolution = ko.pureComputed(function () {
+        var resolution = self.tigerTagResolution();
+        return resolution != null && resolution.wouldSucceed === false;
+    });
+
     self.canWrite = ko.pureComputed(function () {
         if (self.isWriting() || self.targetDatabaseId() == null) {
             return false;
         }
         if (self.tagPresent() != true) {
+            return false;
+        }
+        if (self.isBlockedByTigerTagResolution()) {
             return false;
         }
         if (self.needsOverwriteConfirmation() && self.overwriteConfirmed() != true) {
@@ -638,7 +718,8 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
         return (
             self.isWriting() != true &&
             self.targetDatabaseId() != null &&
-            self.tagPresent() === true
+            self.tagPresent() === true &&
+            self.isBlockedByTigerTagResolution() != true
         );
     });
 
@@ -716,14 +797,28 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
     };
 
     self.start = function (databaseId, spoolItem) {
+        // Fully reset first, reusing stop()'s reset list rather than keeping a second,
+        // separately-maintained one here - the two had drifted apart (stop() cleared
+        // tagValues/tagSpoolId/hasExtendedData/writeFormat/... that start() didn't touch
+        // at all), so reopening the NFC panel after a previous write/read on this or
+        // another spool kept showing the old result - "Tag written and verified", a
+        // populated-looking but stale diff table, a leftover teach-in outcome - all at
+        // once next to the fresh "place a tag" prompt. Calling stop() here means any
+        // observable added to its reset list in the future is automatically covered here
+        // too, instead of requiring the same fix twice.
+        self.stop();
+
         self.targetDatabaseId(databaseId);
         self.targetSpoolItem(spoolItem || null);
-        self.writeSucceeded(false);
-        self.overwriteConfirmed(false);
-        self.foreignTagConfirmed(false);
-        self.errorMessage(null);
-        if (pollTimerId != null) {
-            return;
+        // Only worth checking when TigerTag is actually the format that would be used -
+        // no point warning about a format the user isn't writing (see checkTigerTagResolution
+        // above for why this check exists at all).
+        if (
+            self.pluginSettings &&
+            self.pluginSettings.octoScaleNtagFormat &&
+            self.pluginSettings.octoScaleNtagFormat() === "tigerTag"
+        ) {
+            self.checkTigerTagResolution();
         }
         self.isActive(true);
         consecutiveFailures = 0;
@@ -771,6 +866,17 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
         self.isReadingTag(false);
         self.readTagResult(null);
         self.readTagError(null);
+        // The result of the last completed write - without these, reopening the panel
+        // (start() calls this reset first, see there) kept showing "Tag written and
+        // verified" plus its unsupported-fields/dropped-fields/warning sub-lines from a
+        // previous write, alongside the fresh "place a tag" prompt.
+        self.writeSucceeded(false);
+        self.writeFormatUsed(null);
+        self.writeBytesWritten(null);
+        self.writeDroppedFields([]);
+        self.writeUnsupportedFields([]);
+        self.writeWarning(null);
+        self.tigerTagResolution(null);
     };
 
     self.confirmOverwrite = function () {
@@ -969,15 +1075,31 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
         return formatString.toLowerCase().indexOf("openprinttag") !== -1;
     };
 
-    // After a successful OpenPrintTag write, teaches the spool's rfidTagKey from the tag's
-    // UID automatically (see POST /octoscale/teachRfidTagKey) - OpenPrintTag tags carry no
-    // database id, so without this the user would have to copy the UID in by hand. Prefers
-    // the UID of the tag actually written (statusData.uid, newer firmware); falls back to
-    // the UID last seen on the reader via /octoscale/nfc otherwise. Never blocks or delays
-    // writeSucceeded - this runs after the write is already reported done.
+    // TigerTag is in the same boat as OpenPrintTag: the spec has no database id field (see
+    // TagFormats.py's TigerTag section), so without this a spool written with TigerTag was
+    // readable and correctly parsed, but never findable by scanning the tag again - the
+    // OctoScale reader would report "not assigned to a spool" even though the write
+    // succeeded, because nothing ever taught it the UID -> databaseId mapping. Matched the
+    // same loose way as isOpenPrintTagFormat, against the TagFormats id ("ntagTigerTag").
+    var isTigerTagFormat = function (formatString) {
+        if (!formatString) {
+            return false;
+        }
+        return formatString.toLowerCase().indexOf("tigertag") !== -1;
+    };
+
+    // After a successful OpenPrintTag/TigerTag write, teaches the spool's rfidTagKey from
+    // the tag's UID automatically (see POST /octoscale/teachRfidTagKey) - neither format's
+    // tags carry a database id, so without this the user would have to copy the UID in by
+    // hand. Prefers the UID of the tag actually written (statusData.uid, newer firmware);
+    // falls back to the UID last seen on the reader via /octoscale/nfc otherwise. Never
+    // blocks or delays writeSucceeded - this runs after the write is already reported done.
     self.teachRfidTagKeyIfNeeded = function (statusData) {
         self.teachInResult(null);
-        if (!isOpenPrintTagFormat(statusData.format)) {
+        if (
+            !isOpenPrintTagFormat(statusData.format) &&
+            !isTigerTagFormat(statusData.format)
+        ) {
             return;
         }
         var uid = statusData.uid || self.tagUid();
@@ -1045,12 +1167,11 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
 
     // Writes are async on the firmware: writeOctoScaleTag only starts the write (device
     // answers 202), the actual result is polled via getOctoScaleWriteStatus until "done".
-    self.writeTag = function () {
-        if (self.canWrite() == false) {
-            return;
-        }
-        self.isWriting(true);
-        self.errorMessage(null);
+    // Everything describing the outcome of one write attempt. Cleared both before a new
+    // attempt and whenever an attempt fails: a failed write used to leave the *previous*
+    // write's "verified", unsupported-fields and teach-in lines on screen underneath the
+    // new error message, which read as if both had happened.
+    var clearWriteOutcome = function () {
         self.writeSucceeded(false);
         self.writeFormatUsed(null);
         self.writeBytesWritten(null);
@@ -1058,6 +1179,15 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
         self.writeUnsupportedFields([]);
         self.writeWarning(null);
         self.teachInResult(null);
+    };
+
+    self.writeTag = function () {
+        if (self.canWrite() == false) {
+            return;
+        }
+        self.isWriting(true);
+        self.errorMessage(null);
+        clearWriteOutcome();
 
         self.apiClient.writeOctoScaleTag(
             self.targetDatabaseId(),
@@ -1067,7 +1197,7 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
                 }
                 if (!responseData || responseData.success !== true) {
                     self.isWriting(false);
-                    self.writeSucceeded(false);
+                    clearWriteOutcome();
                     self.errorMessage(
                         responseData && responseData.error
                             ? responseData.error
@@ -1094,7 +1224,7 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
                     if (writeStatusElapsedMs >= OCTOSCALE_WRITE_STATUS_TIMEOUT_MS) {
                         stopWriteStatusPolling();
                         self.isWriting(false);
-                        self.writeSucceeded(false);
+                        clearWriteOutcome();
                         self.errorMessage(
                             "OctoScale did not report a write result in time."
                         );
@@ -1132,7 +1262,7 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
                             self.writeWarning(statusData.warning || null);
                             self.teachRfidTagKeyIfNeeded(statusData);
                         } else {
-                            self.writeSucceeded(false);
+                            clearWriteOutcome();
                             self.errorMessage(
                                 statusData.error || "Could not write the tag."
                             );

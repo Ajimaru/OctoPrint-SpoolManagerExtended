@@ -781,4 +781,43 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
             }
         );
     };
+
+    this.getTigerTagIdsStatus = function (responseHandler) {
+        _callApi(
+            _buildPluginUrl("tigerTagIdsStatus"),
+            {method: "GET"},
+            function (data) {
+                responseHandler(data || {status: {status: "error"}});
+            },
+            function (body) {
+                responseHandler(body || {status: {status: "error"}});
+            }
+        );
+    };
+
+    this.refreshTigerTagIds = function (responseHandler) {
+        _callApi(
+            _buildPluginUrl("tigerTagIdsRefresh"),
+            {method: "POST"},
+            function (data) {
+                responseHandler(data || {status: {status: "error"}});
+            },
+            function (body) {
+                responseHandler(body || {status: {status: "error"}});
+            }
+        );
+    };
+
+    this.getTigerTagResolution = function (databaseId, responseHandler) {
+        _callApi(
+            _buildPluginUrl("spool/" + databaseId + "/tigerTagResolution"),
+            {method: "GET"},
+            function (data) {
+                responseHandler(data || {success: false, wouldSucceed: null});
+            },
+            function (body) {
+                responseHandler(body || {success: false, wouldSucceed: null});
+            }
+        );
+    };
 }

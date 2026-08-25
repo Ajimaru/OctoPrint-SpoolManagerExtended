@@ -94,12 +94,26 @@ def genericFilamentToSpoolFields(filament, uid=None):
         fields["temperature"] = maxTemp if maxTemp is not None else minTemp
 
     bedTemp = _noneIfZero(filament.bed_temp_c)
+    bedMinTemp = _noneIfZero(getattr(filament, "bed_min_temp_c", None))
+    bedMaxTemp = _noneIfZero(getattr(filament, "bed_max_temp_c", None))
     if bedTemp is not None:
-        # A tag carries one bed temperature; mirror it into the range so the spool is
-        # consistent with how resolveTemperatureRange() reads it back.
         fields["bedTemperature"] = bedTemp
-        fields["minBedTemperature"] = bedTemp
-        fields["maxBedTemperature"] = bedTemp
+        if bedMinTemp is not None or bedMaxTemp is not None:
+            # This tag format carries an actual bed range (currently only TigerTag) -
+            # preserve it instead of collapsing to the single bed_temp_c value, which
+            # would silently flatten min/target/max to the same number on every
+            # write-then-read round trip.
+            fields["minBedTemperature"] = (
+                bedMinTemp if bedMinTemp is not None else bedTemp
+            )
+            fields["maxBedTemperature"] = (
+                bedMaxTemp if bedMaxTemp is not None else bedTemp
+            )
+        else:
+            # A tag carries one bed temperature; mirror it into the range so the spool is
+            # consistent with how resolveTemperatureRange() reads it back.
+            fields["minBedTemperature"] = bedTemp
+            fields["maxBedTemperature"] = bedTemp
 
     dryingTemp = _noneIfZero(filament.drying_temp_c)
     if dryingTemp is not None:
