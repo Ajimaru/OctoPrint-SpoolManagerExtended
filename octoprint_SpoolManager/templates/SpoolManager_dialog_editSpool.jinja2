@@ -269,6 +269,14 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                 </datalist>
                             </div>
                         </div>
+                        <div class="control-group no-bottom-gap">
+                            <label class="control-label">{{ _('Variant') }}<sup>6</sup></label>
+                            <div class="controls">
+                                <input type="text" class="input-large" autocomplete="off"
+                                       placeholder="{{ _('Silk, Matte, ...') }}"
+                                       data-bind="textInput: spoolDialog.spoolItemForEditing.materialCharacteristic">
+                            </div>
+                        </div>
                         <div class="control-group no-bottom-gap" data-bind="visible: spoolDialog.spoolmanProducts().length || spoolDialog.spoolmanLoading()">
                             <label class="control-label">SpoolmanDB product</label>
                             <div class="controls">
@@ -365,7 +373,7 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                             </div>
                         </div>
                         <div class="control-group no-bottom-gap" data-bind="visible: !spoolDialog.simpleMode()">
-                            <label class="control-label">Tool Range<sup>4</sup></label>
+                            <label class="control-label">Tool Range<sup>4,7</sup></label>
                             <div class="row controls">
                                 <div class="input-append">
                                     <input type="number" step="1" min="0" class="input-mini text-right" placeholder="min" data-bind="value: spoolDialog.spoolItemForEditing.minTemperature,
@@ -377,11 +385,10 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                 </div>
                                 <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('minTemperature') !== -1 || spoolDialog.invalidNumberFields().indexOf('maxTemperature') !== -1">Please enter a valid number</span>
                                 <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('minTemperature') === -1 && spoolDialog.invalidNumberFields().indexOf('maxTemperature') === -1 && !spoolDialog._isTemperatureRangePairValid(spoolDialog.spoolItemForEditing.minTemperature(), spoolDialog.spoolItemForEditing.maxTemperature())">Set both min and max, with min not greater than max</span>
-                                <span class="help-block"><small>Optional. Leave blank to use the tool temperature above for both.</small></span>
                             </div>
                         </div>
                         <div class="control-group no-bottom-gap" data-bind="visible: !spoolDialog.simpleMode()">
-                            <label class="control-label">Bed Range<sup>4</sup></label>
+                            <label class="control-label">Bed Range<sup>4,7</sup></label>
                             <div class="row controls">
                                 <div class="input-append">
                                     <input type="number" step="1" min="0" class="input-mini text-right" placeholder="min" data-bind="value: spoolDialog.spoolItemForEditing.minBedTemperature,
@@ -393,7 +400,6 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                 </div>
                                 <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('minBedTemperature') !== -1 || spoolDialog.invalidNumberFields().indexOf('maxBedTemperature') !== -1">Please enter a valid number</span>
                                 <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('minBedTemperature') === -1 && spoolDialog.invalidNumberFields().indexOf('maxBedTemperature') === -1 && !spoolDialog._isTemperatureRangePairValid(spoolDialog.spoolItemForEditing.minBedTemperature(), spoolDialog.spoolItemForEditing.maxBedTemperature())">Set both min and max, with min not greater than max</span>
-                                <span class="help-block"><small>Optional. Leave blank to use the bed temperature above for both.</small></span>
                             </div>
                         </div>
                         <div class="control-group " data-bind="visible: !spoolDialog.simpleMode()">
@@ -437,7 +443,7 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                             </div>
                         </div>
                         <div class="control-group " data-bind="visible: !spoolDialog.simpleMode()">
-                            <label class="control-label">Drying</label>
+                            <label class="control-label">Drying<sup>8</sup></label>
                             <div class="controls">
                                 <div class="input-append">
                                     <input type="number" step="1" min="0" class="input-mini text-right" data-bind="value: spoolDialog.spoolItemForEditing.dryingTemperature,
@@ -450,7 +456,6 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                     <span class="add-on">h</span>
                                 </div>
                                 <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('dryingTemperature') !== -1 || spoolDialog.invalidNumberFields().indexOf('dryingTime') !== -1">Please enter a valid number</span>
-                                <span class="help-block"><small>Optional. Most vendor RFID tags carry these values.</small></span>
                             </div>
                         </div>
                         {# TD is off by default: it is a niche value (only HueForge and OrcaSlicer's
@@ -540,6 +545,9 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                 <div><sup>3</sup><small>See <a href="https://icezaza2543.github.io/SpoolmanDB-Community/" target="newTab">https://icezaza2543.github.io/SpoolmanDB-Community/ (without warranty)</a></small></div>
                                 <div data-bind="visible: !spoolDialog.simpleMode()"><sup>4</sup><small>Not send to the printer</small></div>
                                 <div data-bind="visible: !spoolDialog.simpleMode()"><sup>5</sup><small>Temperature offset enabled via Plugin Settings -> temperature tab</small></div>
+                                <div><sup>6</sup><small>Variant on top of the base material (Silk, Matte, ...). Read from vendor tags; separate from Material so the density lookup and material filter keep working</small></div>
+                                <div data-bind="visible: !spoolDialog.simpleMode()"><sup>7</sup><small>Optional - leave blank to use the single temperature above for both ends of the range</small></div>
+                                <div data-bind="visible: !spoolDialog.simpleMode()"><sup>8</sup><small>Optional - most vendor RFID tags carry these values</small></div>
                              </label>
                         </div>
 

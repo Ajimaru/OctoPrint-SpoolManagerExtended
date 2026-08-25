@@ -170,6 +170,15 @@
                         <span class="help-block"><small>{{ _('Choosing a known material fills in a matching density.') }}</small></span>
                     </div>
                 </div>
+                <div class="control-group">
+                    <label class="control-label">{{ _('Variant') }}</label>
+                    <div class="controls">
+                        <input type="text" class="input-large" autocomplete="off"
+                               placeholder="{{ _('Silk, Matte, ...') }}"
+                               data-bind="textInput: spoolItemForCreation.materialCharacteristic">
+                        <span class="help-block"><small>{{ _('Filled in from a vendor tag when it carries one. Kept separate from Material so the density lookup keeps working.') }}</small></span>
+                    </div>
+                </div>
                 <div class="control-group" data-bind="visible: spoolmanProducts().length || spoolmanLoading()">
                     <label class="control-label">{{ _('SpoolmanDB product') }}</label>
                     <div class="controls">

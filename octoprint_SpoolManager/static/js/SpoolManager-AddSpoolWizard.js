@@ -1281,7 +1281,12 @@ function SpoolManagerAddSpoolWizard() {
                 // NEW tag makes no sense here (and there is no OctoScale device attached
                 // to the U1 anyway, so the step would just fail with a 404). Skip straight
                 // to closing instead of offering the NFC step.
-                if (self.isU1RfidFlow()) {
+                // A spool created from a tag already has one, so there is nothing to write.
+                // For the U1 that tag is a Snapmaker/Mifare Classic resolved via `code`,
+                // and no OctoScale is attached anyway; for a vendor tag read on the
+                // OctoScale the tag is still sitting on the reader, and offering to write
+                // it would offer to destroy it. Both cases skip straight to closing.
+                if (self.isTagDrivenFlow()) {
                     self.closeDialog(true);
                     return;
                 }
