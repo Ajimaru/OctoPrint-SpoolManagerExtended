@@ -28,6 +28,7 @@ from octoprint_SpoolManager.U1RfidManager import (
 from octoprint_SpoolManager.api import Transformer
 from octoprint_SpoolManager.common import (
     CSVExportImporter,
+    FilamentTagKeys,
     FilamentTagModel,
     FilamentTagParsers,
     FilamentTagReader,
@@ -1813,6 +1814,44 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             keys = [keys] * FilamentTagReader.SECTORS_PER_CLASSIC_1K
 
         return reader.readRaw(keyA=list(keys), sectors=sectors)
+
+    @octoprint.plugin.BlueprintPlugin.route("/octoscale/tagKeyStatus", methods=["GET"])
+    @no_firstrun_access
+    def getOctoScaleTagKeyStatus(self):
+        # Per-key status for the settings dialog: "missing", "invalid" or "ok". Never the key
+        # itself - the values are restricted (see get_settings_restricted_paths) and there is
+        # no reason to send them back to a browser.
+        #
+        # This exists because without it a mistyped key is undiagnosable: a wrong key and no
+        # key at all both end in a parser that silently never claims a tag. Upstream OpenRFID
+        # only logs that; a settings dialog for end users has to say it out loud.
+        keyStore = FilamentTagKeys.FilamentTagKeyStore(
+            self._settings.get([SettingsKeys.SETTINGS_KEY_OCTOSCALE_TAG_KEYS])
+        )
+        statuses = keyStore.statuses()
+
+        return flask.jsonify(
+            {
+                "success": True,
+                "statuses": statuses,
+                # Which parsers are actually usable right now, so the dialog can say
+                # "Bambu: needs a key" instead of leaving the user to work it out.
+                "parsers": [
+                    {
+                        "id": descriptor["id"],
+                        "label": descriptor["label"],
+                        "requiresKey": descriptor.get("requiresKey", False),
+                        "keyName": descriptor.get("keyName"),
+                        "available": (
+                            not descriptor.get("requiresKey", False)
+                            or statuses.get(descriptor.get("keyName"))
+                            == FilamentTagKeys.STATUS_OK
+                        ),
+                    }
+                    for descriptor in FilamentTagParsers.FILAMENT_TAG_PARSERS.values()
+                ],
+            }
+        )
 
     @octoprint.plugin.BlueprintPlugin.route("/octoscale/readTag", methods=["POST"])
     @no_firstrun_access

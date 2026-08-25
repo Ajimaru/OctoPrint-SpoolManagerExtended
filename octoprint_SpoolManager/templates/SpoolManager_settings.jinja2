@@ -1212,20 +1212,30 @@ FPE;	2.16
                                         <td>{{ _('supported') }}</td>
                                     </tr>
                                     <tr>
-                                        <td class="muted">{{ _('Bambu, Creality, Snapmaker') }}</td>
-                                        <td class="muted">{{ _('Mifare Classic') }}</td>
-                                        <td class="muted">{{ _('not yet - encrypted') }}</td>
+                                        <td>{{ _('TigerTag') }}</td>
+                                        <td>NTAG</td>
+                                        <td>{{ _('supported') }}</td>
                                     </tr>
                                     <tr>
-                                        <td class="muted">{{ _('Qidi') }}</td>
+                                        <td>{{ _('Snapmaker') }}</td>
+                                        <td>{{ _('Mifare Classic') }}</td>
+                                        <td>{{ _('supported') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>{{ _('Qidi') }}</td>
+                                        <td>{{ _('Mifare Classic') }}</td>
+                                        <td>{{ _('supported') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="muted">{{ _('Bambu, Creality') }}</td>
                                         <td class="muted">{{ _('Mifare Classic') }}</td>
-                                        <td class="muted">{{ _('not yet') }}</td>
+                                        <td class="muted">{{ _('needs a key you supply') }}</td>
                                     </tr>
                                 </tbody>
                             </table>
                             <small class="help-block" style="margin-bottom: 8px; border-left: 2px solid #ddd; padding-left: 8px;">
-                                {{ _('The supported formats above are all unencrypted, so nothing has to be configured - place the tag on the reader and read it.') }}<br>
-                                {{ _('Bambu, Creality and Snapmaker protect their tags with keys that are not published. Reading those would need a key entered here, and no key material ships with this plugin; support for them is not built yet. Qidi uses the factory default key and needs no key either, but its tags are Mifare Classic, which this feature does not read yet.') }}
+                                {{ _('The supported formats above need no configuration - place the tag on the reader and read it. Snapmaker tags are encrypted, but their keys are derived from each tag\'s own id using values that are published, so nothing has to be entered. Qidi uses the factory default key.') }}<br>
+                                {{ _('Bambu and Creality protect their tags with keys that are not published. No key material ships with this plugin: those formats stay switched off until you enter a key below, and are simply skipped while none is set.') }}
                             </small>
                             <div class="row-fluid">
                                 <div class="span6">
@@ -1254,9 +1264,61 @@ FPE;	2.16
                             </div>
                             <small class="help-block" style="margin-top: 8px; border-left: 2px solid #ddd; padding-left: 8px;">
                                 {{ _('Values are a suggestion: they prefill the dialog and never overwrite something you already entered. Nothing is saved until you confirm.') }}<br>
-                                {{ _('None of the supported formats stores drying values on the tag itself. OpenSpool and SpoolEase tags get a typical value derived from the material name - treat it as a starting point, not as a manufacturer specification.') }}
+                                {{ _('Snapmaker and TigerTag tags carry drying values; those are read from the tag. OpenSpool and SpoolEase do not store them, so a typical value is derived from the material name instead - treat that one as a starting point, not as a manufacturer specification.') }}
                             </small>
                         </div>
+                    </div>
+                </div>
+                <div class="control-group" data-bind="visible: pluginSettings.octoScaleTagReadingEnabled" style="display: none;">
+                    <label class="control-label">{{ _('Vendor keys') }}</label>
+                    <div class="controls">
+                        <span class="help-block" style="margin-bottom: 8px;">
+                            <small>
+                                {{ _('Bambu and Creality tags are protected by keys this plugin does not ship and cannot supply. If you have obtained one, enter it here to read tags on spools you own. Keys are stored with your settings, are never sent anywhere, and are only ever used for reading - no manufacturer format is written.') }}<br>
+                                {{ _('A stored key is never shown here. Leave a field empty to keep what is saved; type a new key to replace it, or the word "clear" to delete it.') }}
+                            </small>
+                        </span>
+                        <div class="row-fluid" style="margin-bottom: 6px;">
+                            <div class="span5">
+                                <label style="font-size: 12px; margin-bottom: 2px;">{{ _('Bambu salt key') }}</label>
+                                <input type="password" class="input-block-level" autocomplete="off"
+                                       data-bind="value: octoScaleTagKeyBambuSalt, valueUpdate: 'afterkeydown'">
+                            </div>
+                            <div class="span7">
+                                <span class="help-block" style="margin-top: 18px;">
+                                    <small data-bind="text: octoScaleTagKeyStatusText('bambuSalt'), css: octoScaleTagKeyStatusCss('bambuSalt')"></small>
+                                </span>
+                            </div>
+                        </div>
+                        <div class="row-fluid" style="margin-bottom: 6px;">
+                            <div class="span5">
+                                <label style="font-size: 12px; margin-bottom: 2px;">{{ _('Creality salt key') }}</label>
+                                <input type="password" class="input-block-level" autocomplete="off"
+                                       data-bind="value: octoScaleTagKeyCrealitySalt, valueUpdate: 'afterkeydown'">
+                            </div>
+                            <div class="span7">
+                                <span class="help-block" style="margin-top: 18px;">
+                                    <small data-bind="text: octoScaleTagKeyStatusText('crealitySalt'), css: octoScaleTagKeyStatusCss('crealitySalt')"></small>
+                                </span>
+                            </div>
+                        </div>
+                        <div class="row-fluid">
+                            <div class="span5">
+                                <label style="font-size: 12px; margin-bottom: 2px;">{{ _('Creality encryption key') }}</label>
+                                <input type="password" class="input-block-level" autocomplete="off"
+                                       data-bind="value: octoScaleTagKeyCrealityEncryption, valueUpdate: 'afterkeydown'">
+                            </div>
+                            <div class="span7">
+                                <span class="help-block" style="margin-top: 18px;">
+                                    <small data-bind="text: octoScaleTagKeyStatusText('crealityEncryptionKey'), css: octoScaleTagKeyStatusCss('crealityEncryptionKey')"></small>
+                                </span>
+                            </div>
+                        </div>
+                        <span class="help-block" style="margin-top: 8px;">
+                            <small class="muted">
+                                {{ _('Snapmaker and Qidi need no key here: Snapmaker derives one per tag from values that are public, Qidi uses the factory default.') }}
+                            </small>
+                        </span>
                     </div>
                 </div>
             </div>

@@ -58,6 +58,18 @@ def extract_uint16_be(data, pos):
     return struct.unpack(">H", raw)[0]
 
 
+def extract_uint24_be(data, pos):
+    """Extract a big-endian 24-bit unsigned value, or None if out of range.
+
+    Not part of upstream's helper set: TigerTag stores the filament quantity in three bytes,
+    which struct has no format character for.
+    """
+    raw = _slice(data, pos, 3)
+    if raw is None:
+        return None
+    return (raw[0] << 16) | (raw[1] << 8) | raw[2]
+
+
 def extract_uint32_le(data, pos):
     """Extract a little-endian uint32, or None if out of range."""
     raw = _slice(data, pos, 4)

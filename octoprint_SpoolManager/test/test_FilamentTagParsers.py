@@ -11,6 +11,7 @@
 import importlib.util
 import json
 import os
+import struct
 import sys
 import types
 import unittest
@@ -801,6 +802,97 @@ class TestSnapmakerRealTagFields(unittest.TestCase):
         self.assertEqual(
             FilamentTagConstants.NO_MANUFACTURING_DATE, filament.manufacturing_date
         )
+
+
+def _tigerTagImage(
+    magic=0x5BF59264, product=0xFFFFFFFF, material=18775, diameter=56,
+    measure=1000, unit=21, nozzleMin=190, nozzleMax=230, bedMin=50, bedMax=60,
+    dryTemp=55, dryTime=6, rgba=(0xE7, 0x2F, 0x1D, 0xFF), pagePrefix=True
+):
+    """A synthetic TigerTag, built from the layout in TigerTag-SDK-Python's tag.py.
+
+    All multi-byte fields are big-endian, and the layout starts at user memory (page 4) -
+    the 16-byte prefix stands in for pages 0-3, which is what the reader actually returns.
+    """
+    body = bytearray(80)
+    struct.pack_into(">I", body, 0, magic)
+    struct.pack_into(">I", body, 4, product)
+    struct.pack_into(">H", body, 8, material)
+    body[13] = diameter
+    body[16], body[17], body[18], body[19] = rgba
+    body[20] = (measure >> 16) & 0xFF
+    body[21] = (measure >> 8) & 0xFF
+    body[22] = measure & 0xFF
+    body[23] = unit
+    struct.pack_into(">H", body, 24, nozzleMin)
+    struct.pack_into(">H", body, 26, nozzleMax)
+    body[28], body[29] = dryTemp, dryTime
+    body[30], body[31] = bedMin, bedMax
+    return (bytes(16) if pagePrefix else b"") + bytes(body)
+
+
+class TestTigerTagParser(unittest.TestCase):
+    def setUp(self):
+        self.parser = FilamentTagParsers.TigerTagTagParser()
+        self.scan = ntagScan()
+
+    def test_parses_a_valid_tag(self):
+        filament = self.parser.parseTag(self.scan, _tigerTagImage())
+        self.assertIsNotNone(filament)
+        self.assertEqual("PE-CF", filament.type)
+        self.assertEqual(1.75, filament.diameter_mm)
+        self.assertEqual(1000, filament.weight_grams)
+        self.assertEqual(190, filament.hotend_min_temp_c)
+        self.assertEqual(230, filament.hotend_max_temp_c)
+        self.assertEqual(60, filament.bed_temp_c)
+        self.assertEqual(0xFFE72F1D, filament.colors[0])
+
+    def test_offsets_are_relative_to_user_memory(self):
+        # The reader returns the tag from page 0; the layout starts at page 4. Handing the
+        # parser a dump without those 16 bytes must not accidentally parse - that is the
+        # mistake this format invites, and it would misread every single field.
+        self.assertIsNone(
+            self.parser.parseTag(self.scan, _tigerTagImage(pagePrefix=False))
+        )
+
+    def test_weight_unit_is_honoured(self):
+        # measure is a bare number; the unit lives in a separate id. Reading it as grams is
+        # wrong by a factor of 1000 for a tag that states kilograms.
+        inGrams = self.parser.parseTag(self.scan, _tigerTagImage(measure=1, unit=21))
+        inKilos = self.parser.parseTag(self.scan, _tigerTagImage(measure=1, unit=35))
+        self.assertEqual(1, inGrams.weight_grams)
+        self.assertEqual(1000, inKilos.weight_grams)
+
+    def test_length_unit_leaves_the_weight_unset(self):
+        # A length cannot be converted to a weight without a density, so it must stay unset
+        # rather than be reported as if it were grams.
+        inMetres = self.parser.parseTag(self.scan, _tigerTagImage(measure=330, unit=149))
+        self.assertIsNone(inMetres.weight_grams)
+
+    def test_rejects_foreign_and_blank_tags(self):
+        self.assertIsNone(
+            self.parser.parseTag(self.scan, _tigerTagImage(magic=0x11223344))
+        )
+        # Initialised but never programmed - recognized, but carries no filament data.
+        self.assertIsNone(
+            self.parser.parseTag(self.scan, _tigerTagImage(magic=0x6C41A2E1))
+        )
+        self.assertIsNone(self.parser.parseTag(self.scan, _tigerTagImage(product=0)))
+
+    def test_rejects_truncated_and_implausible_input(self):
+        self.assertIsNone(self.parser.parseTag(self.scan, bytes(50)))
+        self.assertIsNone(
+            self.parser.parseTag(
+                self.scan, _tigerTagImage(nozzleMin=250, nozzleMax=200)
+            )
+        )
+
+    def test_unknown_material_id_degrades_instead_of_failing(self):
+        # The shipped tables are a snapshot and will age; an unknown id must cost a label,
+        # not the whole tag.
+        filament = self.parser.parseTag(self.scan, _tigerTagImage(material=9999))
+        self.assertIsNotNone(filament)
+        self.assertEqual("Unknown(9999)", filament.type)
 
 
 if __name__ == "__main__":
