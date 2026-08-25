@@ -332,7 +332,7 @@ class TestDetectionChain(unittest.TestCase):
         self.assertFalse(status["supported"])
 
     def test_nonMoonrakerPrinterStopsAtStageTwo(self):
-        # e.g. the A1mini instance, which runs bambu_connector instead
+        # a Bambu printer, which runs bambu_connector instead
         manager, plugin = _makeManager(
             connectionState={"connector": "bambu", "host": "192.0.2.11"}
         )
@@ -380,7 +380,7 @@ class TestDetectionChain(unittest.TestCase):
         manager, plugin = _makeManager(
             connectionState={
                 "connector": "moonraker",
-                "host": "10.0.0.5",
+                "host": "198.51.100.5",
                 "port": 7125,
             }
         )
