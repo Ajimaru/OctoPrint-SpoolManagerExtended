@@ -1461,15 +1461,23 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     def getOctoScaleNfcStatus(self):
         # Talks to /nfcprobe (there is no "/nfc" endpoint on the device, see the class
         # comment above). /nfcprobe answers roughly:
-        # {debug, ready, present, type, typeName, uid, idParsed, idText, flowWouldUse,
-        #  tagType, capacityBytes, writeFormat, formatLabel, hasExtendedData, extended}
+        # {debug, ready, present, type, typeName, product, uid, idParsed, idText,
+        #  flowWouldUse, tagType, capacityBytes, writeFormat, formatLabel, hasExtendedData,
+        #  extended}
         # idParsed/idText hold the spool id already on the tag (idParsed is -1 / idText is
         # "" for a blank tag or a tag with no parseable id). tagType/capacityBytes/
         # writeFormat/formatLabel/hasExtendedData/extended are newer fields older firmware
         # may not send yet - all are read with .get() and degrade gracefully to "unknown"/
         # the legacy format. NOTE: "typeName" is the coarse protocol class the firmware
-        # reports ("NFC-A"/"NFC-V"/"no tag"), NOT a human label for the specific tag -
-        # "formatLabel" is the human-readable one ("Mifare Classic 1K", "NTAG215", ...).
+        # reports ("NFC-A"/"NFC-V"/"no tag"), NOT a human label for the specific tag.
+        # "formatLabel" is NOT the chip type either, despite reading like one ("Mifare
+        # Classic 1K", "NTAG215", ...) for NTAG/NFC-V - for Mifare Classic specifically it is
+        # always "Extended" (the only write format that chip supports, see
+        # nfcClassifyTag() in the firmware's main.cpp), regardless of what is actually on
+        # the tag - a blank Mifare Classic, one SpoolManager wrote, and an unrelated vendor
+        # tag (e.g. Snapmaker) all report "Extended" here alike. The actual chip
+        # identification is the separate "product" field (via pn5180NfcaProduct(atqa, sak)
+        # in main.cpp), which is what a "Tag detected: ..." UI label should show.
         # "extended", when present, mirrors the same field set _buildFullSpoolPayload()
         # writes (see TagFormats.py) with whatever subset actually fit on the tag - used
         # by the UI to show a before/after diff when re-writing a tag that already
@@ -1518,6 +1526,10 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             "writeFormat": nfcData.get("writeFormat")
             or TagFormats.formatForTagType(tagType, nfcvFormatSetting, ntagFormatSetting),
             "formatLabel": nfcData.get("formatLabel"),
+            # The actual chip identification ("Mifare Classic 1K", ...) - unlike
+            # formatLabel, this does not collapse every Mifare Classic tag to "Extended".
+            # Older firmware simply omits it.
+            "product": nfcData.get("product"),
             "hasExtendedData": nfcData.get("hasExtendedData") or False,
             "extended": nfcData.get("extended") or None,
             # "empty" | "foreign" | "" - what the firmware makes of the data already on the
@@ -1623,7 +1635,14 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # Set once the user confirmed overwriting a tag the firmware flagged as foreign.
         # Without it the device keeps refusing with 409 - the confirmation happens in the
         # UI, but the decision has to reach the firmware for its own guard to step aside.
-        if jsonData.get("force") is True:
+        #
+        # Gated on the settings toggle server-side too, not just in the frontend's
+        # confirmForeignTagOverwrite()/canWrite(): a request forged or replayed straight
+        # against this endpoint must not be able to force a vendor-tag overwrite while the
+        # user has switched that possibility off entirely.
+        if jsonData.get("force") is True and self._settings.get_boolean(
+            [SettingsKeys.SETTINGS_KEY_OCTOSCALE_VENDOR_TAG_WRITE_ENABLED]
+        ):
             payload["force"] = True
 
         self._logger.info(

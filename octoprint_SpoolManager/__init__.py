@@ -1358,6 +1358,7 @@ class SpoolmanagerPlugin(
         settings[SettingsKeys.SETTINGS_KEY_OCTOSCALE_NFCV_FORMAT] = "extended"
         settings[SettingsKeys.SETTINGS_KEY_OCTOSCALE_NTAG_FORMAT] = "openSpool"
         settings[SettingsKeys.SETTINGS_KEY_OCTOSCALE_TAG_READING_ENABLED] = False
+        settings[SettingsKeys.SETTINGS_KEY_OCTOSCALE_VENDOR_TAG_WRITE_ENABLED] = False
         # Empty on purpose: no manufacturer key material ships with this plugin, and the
         # parsers that need one disable themselves until the user supplies it.
         settings[SettingsKeys.SETTINGS_KEY_OCTOSCALE_TAG_KEYS] = {}

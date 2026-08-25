@@ -77,6 +77,16 @@ class SettingsKeys:
     # that one is a safeguard against destroying a manufacturer tag and has to apply
     # whether or not reading is enabled.
     SETTINGS_KEY_OCTOSCALE_TAG_READING_ENABLED = "octoScaleTagReadingEnabled"
+    # Writing over a tag the firmware has flagged as a manufacturer tag (occupancy
+    # "foreign", see isConfirmedForeignTag in the frontend) - normally still possible after
+    # the "this looks like a vendor tag, writing destroys it" confirmation. Off by default
+    # and deliberately opt-in, mirroring SETTINGS_KEY_OCTOSCALE_TAG_READING_ENABLED above:
+    # a user who wants a hard guarantee that their vendor tags are never touched, rather
+    # than relying on always clicking "Cancel" on the confirmation, can disable the
+    # possibility outright. Unlike the read setting, this does NOT gate the confirmation
+    # dialog itself - the warning always shows when a foreign tag is on the reader; this
+    # setting only removes "Overwrite anyway" as an option while it does.
+    SETTINGS_KEY_OCTOSCALE_VENDOR_TAG_WRITE_ENABLED = "octoScaleVendorTagWriteEnabled"
     # Vendor keys the user supplies for tag formats whose sectors are protected by a
     # manufacturer secret (Bambu, Creality). A dict of {keyName: value}, empty by default -
     # NO KEY MATERIAL IS SHIPPED WITH THIS PLUGIN, and the parsers that need one stay
