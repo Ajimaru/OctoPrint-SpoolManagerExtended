@@ -210,6 +210,13 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         spoolModel.material = self._toStringFromJSONOrNone(
             "material", jsonData, validationErrors
         )
+        # The variant on top of the base material (Silk, Matte, SnapSpeed, ...). The column
+        # has existed since schema V4 but was never read here, so the value could not be
+        # saved at all - seven of the eight vendor tag parsers supply one and it was being
+        # dropped on every read.
+        spoolModel.materialCharacteristic = self._toStringFromJSONOrNone(
+            "materialCharacteristic", jsonData, validationErrors
+        )
         spoolModel.density = self._toFloatFromJSONOrNone(
             "density", jsonData, validationErrors, minValue=0
         )

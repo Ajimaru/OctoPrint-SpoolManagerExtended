@@ -202,6 +202,10 @@ let SpoolItem;
         // them to a native <input list=...> + <datalist>, so no widget wrapper is involved.
         this.vendor = ko.observable();
         this.material = ko.observable();
+        // The variant on top of the base material (Silk, Matte, SnapSpeed, Basic, ...).
+        // Kept apart from material on purpose: density lookup and the material filter work
+        // on the base name, so folding the variant into it would break both.
+        this.materialCharacteristic = ko.observable();
         this.labels = ko.observableArray();
         this.allLabels = ko.observableArray();
 
@@ -400,6 +404,7 @@ let SpoolItem;
         this.vendor(updateData.vendor);
 
         this.material(updateData.material);
+        this.materialCharacteristic(updateData.materialCharacteristic);
         this.density(updateData.density);
         this.diameter(updateData.diameter);
         this.diameterTolerance(updateData.diameterTolerance);
