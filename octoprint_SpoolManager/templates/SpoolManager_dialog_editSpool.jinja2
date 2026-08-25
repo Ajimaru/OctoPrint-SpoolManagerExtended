@@ -823,76 +823,81 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                 <div class="control-group">
                                     <label class="control-label">NFC tag</label>
                                     <div class="controls">
-                                        <span class="help-block" style="margin-bottom: 0;" data-bind="visible: !spoolDialog.isExistingSpool()">
-                                            <small>Save the spool first - the tag stores its database id.</small>
+                                        {# A new, unsaved spool has no database id yet, so writing is pointless - but reading a
+                                           vendor tag to prefill the form is still useful right away (issue: RFID import was
+                                           wizard-only before). Read-only session, started via startTagReading(). #}
+                                        <span data-bind="visible: !spoolDialog.isExistingSpool()">
+                                            <button type="button" class="btn btn-small"
+                                                    data-bind="click: spoolDialog.startTagReading, visible: !spoolDialog.octoScaleTagWriter.isActive()">
+                                                <i class="fas fa-tag"></i> Read NFC tag
+                                            </button>
+                                            <span class="help-block" style="margin-bottom: 0;" data-bind="visible: !spoolDialog.octoScaleTagWriter.isActive()">
+                                                <small>Save the spool to write a tag - reading to prefill the form works already.</small>
+                                            </span>
                                         </span>
                                         <span data-bind="visible: spoolDialog.isExistingSpool">
                                             <button type="button" class="btn btn-small"
                                                     data-bind="click: spoolDialog.startTagWriting, visible: !spoolDialog.octoScaleTagWriter.isActive()">
-                                                <i class="fas fa-tag"></i> Write NFC tag
+                                                <i class="fas fa-tag"></i> Manage NFC tag
                                             </button>
-                                            <span data-bind="visible: spoolDialog.octoScaleTagWriter.isActive">
+                                        </span>
+                                        <span data-bind="visible: spoolDialog.octoScaleTagWriter.isActive">
+                                            {# Read/Write/Cancel side by side in one row, with the tag status string (place a
+                                               tag.../tag detected: <chip type>) on its own line right underneath - previously
+                                               the read button lived further down the page near the diff table, and the status
+                                               string was inline next to Cancel, which read as unrelated to the buttons above it. #}
+                                            <span data-bind="visible: spoolDialog.octoScaleTagWriter.shouldOfferTagRead">
+                                                <button type="button" class="btn btn-small"
+                                                        data-bind="click: spoolDialog.octoScaleTagWriter.readTag, enable: spoolDialog.octoScaleTagWriter.canReadTag">
+                                                    <i class="fas fa-spinner fa-spin" data-bind="visible: spoolDialog.octoScaleTagWriter.isReadingTag"></i>
+                                                    Read tag
+                                                </button>
+                                            </span>
+                                            <span data-bind="visible: spoolDialog.isExistingSpool">
                                                 <button type="button" class="btn btn-small btn-primary"
-                                                        data-bind="click: spoolDialog.octoScaleTagWriter.writeTag, enable: spoolDialog.octoScaleTagWriter.canWrite">
+                                                        data-bind="click: spoolDialog.writeTagWithConfirmation, enable: spoolDialog.octoScaleTagWriter.canAttemptWrite">
                                                     <i class="fas fa-spinner fa-spin" data-bind="visible: spoolDialog.octoScaleTagWriter.isWriting"></i>
                                                     Write tag
                                                 </button>
-                                                <button type="button" class="btn btn-small" data-bind="click: spoolDialog.stopTagWriting">Cancel</button>
-                                                <span style="margin-left: 8px;" data-bind="visible: !spoolDialog.octoScaleTagWriter.tagPresent()">
-                                                    <i class="fas fa-spinner fa-spin"></i> <small>Place a tag on the reader...</small>
-                                                </span>
-                                                <span style="margin-left: 8px;" data-bind="visible: spoolDialog.octoScaleTagWriter.tagPresent">
-                                                    <i class="fas fa-check text-success"></i> <small>Tag detected<!--
-                                                    --><span data-bind="visible: spoolDialog.octoScaleTagWriter.formatLabel">: <span data-bind="text: spoolDialog.octoScaleTagWriter.formatLabel"></span></span></small>
-                                                </span>
-                                                <span class="help-block" style="margin-bottom: 0;"
-                                                      data-bind="visible: spoolDialog.octoScaleTagWriter.tagPresent() && spoolDialog.octoScaleTagWriter.hasExtendedData() && !spoolDialog.octoScaleTagWriter.isOwnSpoolTag()">
-                                                    <small class="text-warning"><i class="fas fa-info-circle"></i> This tag already carries extended data (material/color/weights) which will be overwritten.</small>
-                                                </span>
-                                                <!-- ko if: spoolDialog.octoScaleTagWriter.tagPresent() && spoolDialog.octoScaleTagWriter.isOwnSpoolTag() -->
-                                                <span class="help-block" style="margin-bottom: 0;"
-                                                      data-bind="visible: spoolDialog.octoScaleTagWriter.tagValueDiff().length > 0">
-                                                    <small class="text-warning"><i class="fas fa-info-circle"></i> This tag already belongs to this spool. The following values will be updated:</small>
-                                                    <table class="table table-condensed" style="margin: 4px 0 0 0;">
-                                                        <tbody data-bind="foreach: spoolDialog.octoScaleTagWriter.tagValueDiff">
-                                                            <tr>
-                                                                <td style="padding: 2px 8px 2px 0; border: none;"><small data-bind="text: label"></small></td>
-                                                                <td style="padding: 2px 8px; border: none;"><small data-bind="text: oldValueText"></small></td>
-                                                                <td style="padding: 2px 0; border: none;"><small><i class="fas fa-arrow-right"></i> <span data-bind="text: newValueText"></span></small></td>
-                                                            </tr>
-                                                        </tbody>
-                                                    </table>
-                                                </span>
-                                                <span class="help-block text-success" style="margin-bottom: 0;"
-                                                      data-bind="visible: spoolDialog.octoScaleTagWriter.tagValueDiff().length === 0">
-                                                    <small><i class="fas fa-check"></i> This tag already belongs to this spool and is up to date.</small>
-                                                </span>
-                                                <!-- /ko -->
-                                                <span class="help-block" style="margin-bottom: 0;"
-                                                      data-bind="visible: spoolDialog.octoScaleTagWriter.needsOverwriteConfirmation() && !spoolDialog.octoScaleTagWriter.overwriteConfirmed()">
-                                                    <small class="text-warning" data-bind="text: spoolDialog.octoScaleTagWriter.overwriteWarningText"></small>
-                                                    <button type="button" class="btn btn-mini btn-warning" style="margin-left: 6px;"
-                                                            data-bind="click: spoolDialog.octoScaleTagWriter.confirmOverwrite">Overwrite anyway</button>
-                                                </span>
-                                                <!-- A manufacturer tag carries no spool id, so the id-based warning above never
-                                                     fires for it - without this it would look exactly like a blank tag. -->
-                                                <span class="help-block" style="margin-bottom: 0;"
-                                                      data-bind="visible: spoolDialog.octoScaleTagWriter.isPossiblyForeignTag() && !spoolDialog.octoScaleTagWriter.foreignTagConfirmed()">
-                                                    <small class="text-error"><i class="fas fa-exclamation-triangle"></i> <span data-bind="text: spoolDialog.octoScaleTagWriter.foreignTagWarningText"></span></small>
-                                                    <button type="button" class="btn btn-mini btn-danger" style="margin-left: 6px;"
-                                                            data-bind="click: spoolDialog.octoScaleTagWriter.confirmForeignTagOverwrite">Overwrite anyway</button>
-                                                </span>
-                                                <!-- Outside the foreign-tag warning above: reading works for any tag, including
-                                                     one SpoolManager wrote itself. Nesting it in the warning made "show me what is
-                                                     on this tag" impossible for our own tags. -->
-                                                <span class="help-block" style="margin-bottom: 0;"
-                                                      data-bind="visible: spoolDialog.octoScaleTagWriter.shouldOfferTagRead">
-                                                    <button type="button" class="btn btn-mini"
-                                                            data-bind="click: spoolDialog.octoScaleTagWriter.readTag, enable: spoolDialog.octoScaleTagWriter.canReadTag">
-                                                        <i class="fas fa-spinner fa-spin" data-bind="visible: spoolDialog.octoScaleTagWriter.isReadingTag"></i>
-                                                        Read tag
-                                                    </button>
-                                                </span>
+                                            </span>
+                                            <button type="button" class="btn btn-small" data-bind="click: spoolDialog.stopTagWriting">Cancel</button>
+                                            <div style="margin-top: 4px;" data-bind="visible: !spoolDialog.octoScaleTagWriter.tagPresent()">
+                                                <i class="fas fa-spinner fa-spin"></i> <small>Place a tag on the reader...</small>
+                                            </div>
+                                            <div style="margin-top: 4px;" data-bind="visible: spoolDialog.octoScaleTagWriter.tagPresent">
+                                                <i class="fas fa-check text-success"></i> <small>Tag detected<!--
+                                                --><span data-bind="visible: spoolDialog.octoScaleTagWriter.chipLabel">: <span data-bind="text: spoolDialog.octoScaleTagWriter.chipLabel"></span></span></small>
+                                            </div>
+                                            <span class="help-block" style="margin-bottom: 0;"
+                                                  data-bind="visible: spoolDialog.isExistingSpool() && spoolDialog.octoScaleTagWriter.tagPresent() && spoolDialog.octoScaleTagWriter.hasExtendedData() && !spoolDialog.octoScaleTagWriter.isOwnSpoolTag()">
+                                                <small class="text-warning"><i class="fas fa-info-circle"></i> This tag already carries extended data (material/color/weights) which will be overwritten.</small>
+                                            </span>
+                                            <!-- ko if: spoolDialog.isExistingSpool() && spoolDialog.octoScaleTagWriter.tagPresent() && spoolDialog.octoScaleTagWriter.isOwnSpoolTag() -->
+                                            <span class="help-block" style="margin-bottom: 0;"
+                                                  data-bind="visible: spoolDialog.octoScaleTagWriter.tagValueDiff().length > 0">
+                                                <small class="text-warning"><i class="fas fa-info-circle"></i> This tag already belongs to this spool. Writing will update it as follows:</small>
+                                                <table class="table table-condensed" style="margin: 4px 0 0 0;">
+                                                    <thead>
+                                                        <tr>
+                                                            <th style="padding: 2px 8px 2px 0; border: none;"><small>Field</small></th>
+                                                            <th style="padding: 2px 8px; border: none;"><small>On tag</small></th>
+                                                            <th style="padding: 2px 0; border: none;"><small>In database</small></th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody data-bind="foreach: spoolDialog.octoScaleTagWriter.tagValueDiff">
+                                                        <tr>
+                                                            <td style="padding: 2px 8px 2px 0; border: none;"><small data-bind="text: label"></small></td>
+                                                            <td style="padding: 2px 8px; border: none;"><small data-bind="text: oldValueText"></small></td>
+                                                            <td style="padding: 2px 0; border: none;"><small><i class="fas fa-arrow-right"></i> <span data-bind="text: newValueText"></span></small></td>
+                                                        </tr>
+                                                    </tbody>
+                                                </table>
+                                            </span>
+                                            <span class="help-block text-success" style="margin-bottom: 0;"
+                                                  data-bind="visible: spoolDialog.octoScaleTagWriter.tagValueDiff().length === 0">
+                                                <small><i class="fas fa-check"></i> This tag already belongs to this spool and is up to date.</small>
+                                            </span>
+                                            <!-- /ko -->
                                                 <!-- Reading takes a moment on the device, so say so rather than leaving the
                                                      user wondering whether the tag has to stay put. It does. -->
                                                 <span class="help-block" style="margin-bottom: 0;" data-bind="visible: spoolDialog.octoScaleTagWriter.isReadingTag">
@@ -901,7 +906,11 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                                 <span class="help-block" style="margin-bottom: 0;" data-bind="visible: spoolDialog.octoScaleTagWriter.readTagError">
                                                     <small class="text-warning"><i class="fas fa-info-circle"></i> <span data-bind="text: spoolDialog.octoScaleTagWriter.readTagError"></span></small>
                                                 </span>
-                                                <!-- ko if: spoolDialog.octoScaleTagWriter.readTagResult() != null && spoolDialog.octoScaleTagWriter.readTagResult().parsed === true -->
+                                                {# On an existing spool, a successful parse jumps straight to the field-by-field
+                                                   review dialog (see the readTagResult subscription in initBinding) - this inline
+                                                   summary only remains for a new, unsaved spool, where there is no database value
+                                                   to compare against and "Use these values" is a direct one-click apply. #}
+                                                <!-- ko if: !spoolDialog.isExistingSpool() && spoolDialog.octoScaleTagWriter.readTagResult() != null && spoolDialog.octoScaleTagWriter.readTagResult().parsed === true -->
                                                 <span class="help-block" style="margin-bottom: 0;">
                                                     <small class="text-success"><i class="fas fa-check"></i>
                                                         Recognized as <strong data-bind="text: spoolDialog.octoScaleTagWriter.readTagResult().parserLabel"></strong>.
@@ -960,7 +969,6 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                                 <span class="help-block text-error" style="margin-bottom: 0;" data-bind="visible: spoolDialog.octoScaleTagWriter.errorMessage">
                                                     <small><i class="fas fa-exclamation-triangle"></i> <span data-bind="text: spoolDialog.octoScaleTagWriter.errorMessage"></span></small>
                                                 </span>
-                                            </span>
                                         </span>
                                     </div>
                                 </div>
@@ -1109,5 +1117,54 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
     <div class="modal-footer">
         <button type="button" class="btn" data-bind="click: spoolDialog.stayInSimpleViewFromWarning">Stay in Simple view</button>
         <button type="button" class="btn btn-primary" data-bind="click: spoolDialog.switchToFullViewFromWarning">Switch to Full view</button>
+    </div>
+</div>
+
+<!--###############################################################  Read Tag Import-Dialog: id="dialog_read_tag_import" -->
+<div id="dialog_read_tag_import" class="modal hide fade">
+    <div class="modal-header">
+        <a href="#" class="close" aria-hidden="true"
+           data-bind="click: spoolDialog.closeReadTagImportDialog">&times;</a>
+        <h3 class="modal-title"><i class="fas fa-tag"></i>&nbsp; Import values from the tag</h3>
+    </div>
+    <div class="modal-body">
+        <p>
+            <small>Values that differ from what is currently saved for this spool are preselected.
+            Uncheck anything you don't want to import, or use Select/Deselect all.</small>
+        </p>
+        <!-- ko if: spoolDialog.readTagImportRows().length > 0 -->
+        <table class="table table-condensed">
+            <thead>
+                <tr>
+                    <th style="width: 24px;">
+                        <input type="checkbox"
+                               data-bind="checked: spoolDialog.readTagImportAllSelected, click: spoolDialog.toggleAllReadTagFields">
+                    </th>
+                    <th>Field</th>
+                    <th>On tag</th>
+                    <th>In database</th>
+                </tr>
+            </thead>
+            <tbody data-bind="foreach: spoolDialog.readTagImportRows">
+                <tr data-bind="css: {info: differs}">
+                    <td>
+                        <input type="checkbox" data-bind="checked: selected">
+                    </td>
+                    <td><small data-bind="text: label"></small></td>
+                    <td><small data-bind="text: tagValueText"></small></td>
+                    <td><small data-bind="text: dbValueText"></small></td>
+                </tr>
+            </tbody>
+        </table>
+        <!-- /ko -->
+        <!-- ko if: spoolDialog.readTagImportRows().length === 0 -->
+        <p><small class="text-warning"><i class="fas fa-info-circle"></i> The tag has no values SpoolManager recognizes.</small></p>
+        <!-- /ko -->
+    </div>
+    <div class="modal-footer">
+        <button type="button" class="btn" data-bind="click: spoolDialog.selectAllReadTagFields" style="float: left;">Select all</button>
+        <button type="button" class="btn" data-bind="click: spoolDialog.deselectAllReadTagFields" style="float: left;">Deselect all</button>
+        <button type="button" class="btn" data-bind="click: spoolDialog.closeReadTagImportDialog">Cancel</button>
+        <button type="button" class="btn btn-primary" data-bind="click: spoolDialog.applySelectedReadTagValues">Import selected</button>
     </div>
 </div>

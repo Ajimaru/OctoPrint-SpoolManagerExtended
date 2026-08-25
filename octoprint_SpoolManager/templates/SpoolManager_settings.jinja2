@@ -1275,6 +1275,18 @@ FPE;	2.16
                         </div>
                     </div>
                 </div>
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.octoScaleVendorTagWriteEnabled, enable: pluginSettings.octoScaleEnabled"> {{ _('Allow overwriting vendor RFID tags') }}
+                        </label>
+                        <span class="help-block">
+                            <small>
+                                {{ _('Off by default: SpoolManager always warns before writing over a tag that looks like a manufacturer tag (Bambu, Snapmaker, ...), destroying it irreversibly. With this off, that warning has no "Overwrite anyway" option - the write is refused outright. Independent of "Read vendor RFID tags" above.') }}
+                            </small>
+                        </span>
+                    </div>
+                </div>
                 <div class="control-group" data-bind="visible: pluginSettings.octoScaleTagReadingEnabled" style="display: none;">
                     <label class="control-label">{{ _('Vendor keys') }}</label>
                     <div class="controls">
