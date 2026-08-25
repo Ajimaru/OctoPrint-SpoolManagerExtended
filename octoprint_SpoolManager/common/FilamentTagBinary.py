@@ -94,6 +94,19 @@ def extract_float_le(data, pos):
     return struct.unpack("<f", raw)[0]
 
 
+def extract_double_le(data, pos):
+    """Extract a little-endian float64, or None if out of range.
+
+    Separate from extract_float_le: Bambu stores the filament diameter as an 8-byte double,
+    and reading it with the 4-byte helper returns a plausible-looking but meaningless number
+    rather than failing.
+    """
+    raw = _slice(data, pos, 8)
+    if raw is None:
+        return None
+    return struct.unpack("<d", raw)[0]
+
+
 def extract_byte(data, pos):
     """Single byte at pos, or None if out of range."""
     raw = _slice(data, pos, 1)

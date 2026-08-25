@@ -402,8 +402,6 @@ $(function () {
         // fields start empty even when a key is stored. That is why the status line next to
         // them matters: without it "empty field" and "no key saved" look identical.
         self.octoScaleTagKeyBambuSalt = ko.observable("");
-        self.octoScaleTagKeyCrealitySalt = ko.observable("");
-        self.octoScaleTagKeyCrealityEncryption = ko.observable("");
         self.octoScaleTagKeyStatuses = ko.observable({});
 
         self.octoScaleTagKeyStatusText = function (keyName) {
@@ -2599,8 +2597,6 @@ $(function () {
             // Never prefill the inputs from a previous visit - an empty field means "leave
             // whatever is stored alone", and a leftover value would silently resave it.
             self.octoScaleTagKeyBambuSalt("");
-            self.octoScaleTagKeyCrealitySalt("");
-            self.octoScaleTagKeyCrealityEncryption("");
         };
 
         self.onSettingsBeforeSave = function () {
@@ -2622,9 +2618,7 @@ $(function () {
             }
 
             var entered = {
-                bambuSalt: self.octoScaleTagKeyBambuSalt(),
-                crealitySalt: self.octoScaleTagKeyCrealitySalt(),
-                crealityEncryptionKey: self.octoScaleTagKeyCrealityEncryption()
+                bambuSalt: self.octoScaleTagKeyBambuSalt()
             };
             Object.keys(entered).forEach(function (name) {
                 var value = (entered[name] || "").trim();

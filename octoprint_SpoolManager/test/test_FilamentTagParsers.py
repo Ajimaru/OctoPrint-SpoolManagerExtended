@@ -612,10 +612,30 @@ class TestParserRegistry(unittest.TestCase):
     def test_lookup_of_unknown_id(self):
         self.assertIsNone(FilamentTagParsers.getParser("doesNotExist"))
 
-    def test_no_shipped_parser_needs_a_key_yet(self):
-        # Phase 1 is deliberately keyless - the keyed vendors come with the key store.
+    def test_every_keyed_parser_names_its_key_and_stays_off_without_it(self):
+        # A parser that needs a user-supplied secret must say which one, and must disable
+        # itself when it is absent - that is what keeps the dispatch free of special cases
+        # and what guarantees the plugin ships usable without any key material at all.
         for descriptor in FilamentTagParsers.FILAMENT_TAG_PARSERS.values():
-            self.assertFalse(descriptor["requiresKey"])
+            if not descriptor["requiresKey"]:
+                continue
+            self.assertIsNotNone(
+                descriptor.get("keyName"),
+                descriptor["id"] + " requires a key but does not name it",
+            )
+            parser = FilamentTagParsers.instantiateParser(descriptor, None)
+            self.assertFalse(
+                parser.enabled,
+                descriptor["id"] + " is enabled without a key",
+            )
+
+    def test_keyless_parsers_take_no_constructor_argument(self):
+        # instantiateParser() branches on requiresKey; a keyless parser that started needing
+        # one would break the dispatch rather than just itself.
+        for descriptor in FilamentTagParsers.FILAMENT_TAG_PARSERS.values():
+            if descriptor["requiresKey"]:
+                continue
+            self.assertIsNotNone(FilamentTagParsers.instantiateParser(descriptor, None))
 
     def test_no_parser_asks_for_key_b_without_needing_it(self):
         # Sending key B costs 3.3x on a rejection (measured: 765 ms -> 2547 ms across 16
@@ -893,6 +913,91 @@ class TestTigerTagParser(unittest.TestCase):
         filament = self.parser.parseTag(self.scan, _tigerTagImage(material=9999))
         self.assertIsNotNone(filament)
         self.assertEqual("Unknown(9999)", filament.type)
+
+
+FilamentTagKeys = _loadModule("FilamentTagKeys")
+
+
+def _bambuImage(
+    materialId=b"GFA50   ", filamentType=b"PLA", detailedType=b"PLA Basic",
+    rgba=(0xF4, 0xC0, 0x32, 0xFF), weight=1000, diameter=1.75,
+    dryTemp=55, dryHours=8, bedTemp=60, hotendMax=230, hotendMin=190
+):
+    """A synthetic Bambu 1K image, per the layout in Bambu-Research-Group/RFID-Tag-Guide."""
+    image = bytearray(1024)
+    image[24:32] = materialId[:8].ljust(8, b"\x00")
+    image[32 : 32 + len(filamentType)] = filamentType
+    image[64 : 64 + len(detailedType)] = detailedType
+    image[80], image[81], image[82], image[83] = rgba
+    struct.pack_into("<H", image, 84, weight)
+    # Eight bytes: a double. Writing a float32 here is the mistake the parser guards against.
+    struct.pack_into("<d", image, 88, diameter)
+    struct.pack_into("<H", image, 96, dryTemp)
+    struct.pack_into("<H", image, 98, dryHours)
+    struct.pack_into("<H", image, 102, bedTemp)
+    struct.pack_into("<H", image, 104, hotendMax)
+    struct.pack_into("<H", image, 106, hotendMin)
+    return bytes(image)
+
+
+class TestBambuTagParser(unittest.TestCase):
+    def setUp(self):
+        self.scan = ScanResult(
+            TagType.MIFARE_CLASSIC_1K, bytes.fromhex("04AABBCCDDEE80")
+        )
+        # Not a real Bambu salt - any value works here, since no reference checksum is
+        # configured and the derivation only has to be exercised, not be correct.
+        self.keyStore = FilamentTagKeys.FilamentTagKeyStore(
+            {FilamentTagKeys.KEY_BAMBU_SALT: "9a759cf2c4f7caff222cb9769b41bc96"}
+        )
+        self.parser = FilamentTagParsers.BambuTagParser(self.keyStore)
+
+    def test_disables_itself_without_a_key(self):
+        # The behaviour upstream relies on: no key means the parser never claims a tag, and
+        # the dispatch skips it without needing a special case.
+        parser = FilamentTagParsers.BambuTagParser(None)
+        self.assertFalse(parser.enabled)
+        self.assertIsNone(parser.parseTag(self.scan, _bambuImage()))
+        self.assertIsNone(parser.authenticationKeys(self.scan))
+
+    def test_parses_a_valid_tag(self):
+        filament = self.parser.parseTag(self.scan, _bambuImage())
+        self.assertIsNotNone(filament)
+        self.assertEqual("Bambu Lab", filament.manufacturer)
+        self.assertEqual("PLA", filament.type)
+        self.assertEqual(["Basic"], filament.modifiers)
+        self.assertEqual(1.75, filament.diameter_mm)
+        self.assertEqual(190, filament.hotend_min_temp_c)
+        self.assertEqual(230, filament.hotend_max_temp_c)
+
+    def test_diameter_is_read_as_a_double(self):
+        # Reading these eight bytes with a float32 helper yields a number, just not this one.
+        filament = self.parser.parseTag(self.scan, _bambuImage(diameter=2.85))
+        self.assertAlmostEqual(2.85, filament.diameter_mm, places=6)
+
+    def test_drying_time_stays_in_hours(self):
+        filament = self.parser.parseTag(self.scan, _bambuImage(dryHours=8))
+        self.assertEqual(8, filament.drying_time_hours)
+        self.assertEqual(55, filament.drying_temp_c)
+
+    def test_derives_sixteen_per_sector_keys(self):
+        keys = self.parser.authenticationKeys(self.scan)
+        self.assertEqual(16, len(keys))
+        self.assertEqual(16, len(set(keys)))
+
+    def test_rejects_implausible_content(self):
+        self.assertIsNone(
+            self.parser.parseTag(self.scan, _bambuImage(materialId=b"XX999   "))
+        )
+        self.assertIsNone(
+            self.parser.parseTag(
+                self.scan, _bambuImage(filamentType=b"", detailedType=b"")
+            )
+        )
+        self.assertIsNone(
+            self.parser.parseTag(self.scan, _bambuImage(hotendMin=20, hotendMax=30))
+        )
+        self.assertIsNone(self.parser.parseTag(self.scan, bytes(50)))
 
 
 if __name__ == "__main__":
