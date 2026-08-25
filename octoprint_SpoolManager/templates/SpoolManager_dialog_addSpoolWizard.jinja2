@@ -32,8 +32,8 @@
 
                 <div data-bind="visible: octoScaleTagWriter.tagPresent">
                     <i class="fas fa-check text-success"></i>
-                    <small>{{ _('Tag detected') }}<span data-bind="visible: octoScaleTagWriter.formatLabel">
-                        (<span data-bind="text: octoScaleTagWriter.formatLabel"></span>)</span></small>
+                    <small>{{ _('Tag detected') }}<span data-bind="visible: octoScaleTagWriter.chipLabel">
+                        (<span data-bind="text: octoScaleTagWriter.chipLabel"></span>)</span></small>
                 </div>
 
                 <div style="margin-top: 10px;" data-bind="visible: octoScaleTagWriter.tagPresent() && octoScaleTagWriter.readTagResult() == null">
@@ -552,7 +552,7 @@
                     </div>
                     <div data-bind="visible: octoScaleTagWriter.tagPresent">
                         <i class="fas fa-check text-success"></i> {{ _('Tag detected') }}
-                        <span class="muted" data-bind="visible: octoScaleTagWriter.formatLabel">(<span data-bind="text: octoScaleTagWriter.formatLabel"></span>)</span>
+                        <span class="muted" data-bind="visible: octoScaleTagWriter.chipLabel">(<span data-bind="text: octoScaleTagWriter.chipLabel"></span>)</span>
                         <span class="muted" data-bind="text: octoScaleTagWriter.tagSpoolId() != null ? '(' + octoScaleTagWriter.tagSpoolId() + ')' : ''"></span>
                     </div>
                     <div class="text-warning" data-bind="visible: octoScaleTagWriter.tagPresent() && octoScaleTagWriter.hasExtendedData">
@@ -572,8 +572,13 @@
                          data-bind="visible: octoScaleTagWriter.isPossiblyForeignTag() && !octoScaleTagWriter.foreignTagConfirmed()">
                         <i class="fas fa-exclamation-triangle"></i>
                         <span data-bind="text: octoScaleTagWriter.foreignTagWarningText"></span>
+                        <!-- ko if: octoScaleTagWriter.vendorTagWriteEnabled -->
                         <button type="button" class="btn btn-small btn-danger" style="margin-left: 8px;"
                                 data-bind="click: octoScaleTagWriter.confirmForeignTagOverwrite">{{ _('Overwrite anyway') }}</button>
+                        <!-- /ko -->
+                        <!-- ko ifnot: octoScaleTagWriter.vendorTagWriteEnabled -->
+                        <div><small>{{ _('Writing over vendor tags is disabled in the SpoolManager settings.') }}</small></div>
+                        <!-- /ko -->
                     </div>
 
                     <!-- Outside the warning above: reading works for any tag, including one
