@@ -64,6 +64,10 @@ let SpoolItem;
         this.minBedTemperature = ko.observable();
         this.maxBedTemperature = ko.observable();
         this.enclosureTemperature = ko.observable();
+        // Drying values and TD, carried by most vendor RFID tags (since V12).
+        this.dryingTemperature = ko.observable();
+        this.dryingTime = ko.observable();
+        this.td = ko.observable();
         this.offsetTemperature = ko.observable();
         this.offsetBedTemperature = ko.observable();
         this.offsetEnclosureTemperature = ko.observable();
@@ -198,6 +202,10 @@ let SpoolItem;
         // them to a native <input list=...> + <datalist>, so no widget wrapper is involved.
         this.vendor = ko.observable();
         this.material = ko.observable();
+        // The variant on top of the base material (Silk, Matte, SnapSpeed, Basic, ...).
+        // Kept apart from material on purpose: density lookup and the material filter work
+        // on the base name, so folding the variant into it would break both.
+        this.materialCharacteristic = ko.observable();
         this.labels = ko.observableArray();
         this.allLabels = ko.observableArray();
 
@@ -396,6 +404,7 @@ let SpoolItem;
         this.vendor(updateData.vendor);
 
         this.material(updateData.material);
+        this.materialCharacteristic(updateData.materialCharacteristic);
         this.density(updateData.density);
         this.diameter(updateData.diameter);
         this.diameterTolerance(updateData.diameterTolerance);
@@ -424,6 +433,9 @@ let SpoolItem;
         this.minBedTemperature(updateData.minBedTemperature);
         this.maxBedTemperature(updateData.maxBedTemperature);
         this.enclosureTemperature(updateData.enclosureTemperature);
+        this.dryingTemperature(updateData.dryingTemperature);
+        this.dryingTime(updateData.dryingTime);
+        this.td(updateData.td);
         this.offsetTemperature(updateData.offsetTemperature);
         this.offsetBedTemperature(updateData.offsetBedTemperature);
         this.offsetEnclosureTemperature(updateData.offsetEnclosureTemperature);

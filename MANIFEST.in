@@ -6,3 +6,5 @@ recursive-include octoprint_SpoolManager/static *
 # conditions and disclaimer to accompany redistributions in binary form - the minified
 # bundles under static/ only carry the copyright header, so the full text ships here.
 include 3rdPartySoftware/*/LICENSE
+# Static lookup tables for vendor tag parsers (TigerTag ids).
+recursive-include octoprint_SpoolManager/common/tagdata *.json

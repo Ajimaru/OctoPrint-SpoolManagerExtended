@@ -1,0 +1,19 @@
+{
+  "_provenance": "TigerTag-Project/TigerTag-SDK-Python, tigertag/database/*.json, Apache-2.0, Copyright TigerTag Corp. 2025-2026",
+  "_note": "Partial: only ids confirmed against the SDK are listed. Unknown ids degrade to Unknown(<id>) by design - see FilamentTagParsers.TigerTagTagParser.",
+  "id_diameter": {
+    "56": "1.75",
+    "221": "2.85"
+  },
+  "id_measure_unit": {
+    "21": "g",
+    "35": "kg",
+    "149": "m"
+  },
+  "id_material": {
+    "18775": "PE-CF"
+  },
+  "id_brand": {},
+  "id_aspect": {},
+  "id_type": {}
+}

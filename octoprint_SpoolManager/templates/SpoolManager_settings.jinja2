@@ -160,6 +160,20 @@ FPE;	2.16
                 </div>
 -->
 
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.tdFieldEnabled"> {{ _('Show the TD field in the spool dialog') }}
+                        </label>
+                        <span class="help-block">
+                            <small>
+                                {{ _('TD (transmission distance) is how far light travels through the filament before it turns opaque - used by HueForge and OrcaSlicer to plan color layers. Measuring it needs a printed test swatch, so the field stays hidden unless you work with it.') }}<br>
+                                {{ _('The value is still read from vendor RFID tags and stored either way; this only controls whether the field is shown for manual editing.') }}
+                            </small>
+                        </span>
+                    </div>
+                </div>
+
             </div>
 
             <!-- TEMPERATURE - TAB -->
@@ -986,11 +1000,12 @@ FPE;	2.16
                     </div>
                 </div>
                 <div class="control-group">
-                    <label class="control-label">{{ _('NFC tag format') }}</label>
+                    <label class="control-label">{{ _('NFC tag format (writing)') }}</label>
                     <div class="controls">
                         <span class="help-block">
                             <small>
-                                {{ _('Chosen automatically by tag type: Mifare Classic 1K gets an extended layout (material, vendor, color, weights, temperatures); other tags fall back to the database id only. Two exceptions: NFC-V/ISO15693 tags let you choose between the three formats below, set in "NFC-V / ISO15693 tag format" further down; NTAG213/215/216 tags let you choose between OpenSpool and Extended, set in "NTAG213/215/216 tag format" further down.') }}
+                                {{ _('Applies to tags SpoolManager writes. Reading manufacturer tags is a separate feature - see "Read vendor RFID tags" below.') }}<br>
+                                {{ _('Chosen by tag type: Mifare Classic 1K always gets Extended, unknown tags the database id only. For NFC-V and NTAG213/215/216 you pick the format yourself, further down.') }}
                             </small>
                         </span>
                         <table class="table table-condensed" style="margin-bottom: 6px; margin-top: 6px;">
@@ -1037,7 +1052,7 @@ FPE;	2.16
                         </table>
                         <span class="help-block">
                             <small>
-                                {{ _('"Everything" means every field the format itself defines - OpenSpool\'s own specification has no field for color name, density, spool/used weight, target (non-range) temperatures, or enclosure temperature, so those are never written regardless of tag size. On small NFC-V tags, prefer Extended.') }}
+                                {{ _('"Everything" means every field that format defines - OpenSpool has no field for color name, density or spool/used weight, so those are never written whatever the tag size. On small NFC-V tags, prefer Extended.') }}
                             </small>
                         </span>
                         <a href="#" data-bind="click: function () { nfcFormatFieldsExpanded(!nfcFormatFieldsExpanded()); return false; }" style="font-size: 12px;">
@@ -1066,6 +1081,8 @@ FPE;	2.16
                                         <li>{{ _('Finish') }}</li>
                                         <li>{{ _('Display name') }}</li>
                                         <li>{{ _('First / last use date') }}</li>
+                                        <li>{{ _('Drying temp / time') }}</li>
+                                        <li>{{ _('TD') }}</li>
                                     </ul>
                                 </div>
                                 <div class="span4">
@@ -1083,9 +1100,11 @@ FPE;	2.16
                                         <li class="muted">{{ _('Spool / used weight - not written') }}</li>
                                         <li class="muted">{{ _('Nozzle / bed target temp - not written') }}</li>
                                         <li class="muted">{{ _('Enclosure temp - not written') }}</li>
+                                        <li class="muted">{{ _('Drying temp / time - not written') }}</li>
+                                        <li class="muted">{{ _('TD - not written') }}</li>
                                     </ul>
                                     <small class="help-block" style="margin-top: 4px; border-left: 2px solid #ddd; padding-left: 8px;">
-                                        {{ _('These fields have no equivalent in the OpenSpool specification - true for every OpenSpool tag regardless of size, not just small ones.') }}
+                                        {{ _('These have no equivalent in the OpenSpool specification - true for every tag size.') }}
                                     </small>
                                 </div>
                                 <div class="span4">
@@ -1100,13 +1119,15 @@ FPE;	2.16
                                         <li>{{ _('Full / empty weight') }}</li>
                                         <li>{{ _('Print temp (min/max + preheat)') }}</li>
                                         <li>{{ _('Bed temp (min/max)') }}</li>
+                                        <li>{{ _('Drying temp / time') }}</li>
+                                        <li>{{ _('TD (transmission distance)') }}</li>
                                         <li class="muted">{{ _('Database ID - not written') }}</li>
                                         <li class="muted">{{ _('Color name - not written') }}</li>
                                         <li class="muted">{{ _('Used weight - not written') }}</li>
                                         <li class="muted">{{ _('Batch number, serial, purchase date - not written') }}</li>
                                     </ul>
                                     <small class="help-block" style="margin-top: 4px; border-left: 2px solid #ddd; padding-left: 8px;">
-                                        {{ _('No database ID field in the spec - a scanned tag is matched back to a spool via the tag\'s own UID instead.') }}
+                                        {{ _('The spec has no database id field - a scanned tag is matched by its own UID instead.') }}
                                     </small>
                                 </div>
                             </div>
@@ -1124,8 +1145,8 @@ FPE;	2.16
                         <span class="help-block">
                             <small>
                                 <strong>{{ _('Extended') }}</strong> {{ _('writes every field OctoScale knows.') }}<br>
-                                <strong>{{ _('OpenSpool') }}</strong> {{ _('writes a standard NDEF/JSON record readable by generic phone NFC apps, but with fewer fields (no color name, density, spool/used weight).') }}<br>
-                                <strong>{{ _('OpenPrintTag') }}</strong> {{ _('writes a vendor-neutral CBOR/NDEF record following the OpenPrintTag specification, readable by other OpenPrintTag-aware tools, but a spool that does not fit the tag fails the write outright instead of dropping fields.') }}
+                                <strong>{{ _('OpenSpool') }}</strong> {{ _('writes a standard NDEF/JSON record any phone NFC app can read, with fewer fields (no color name, density, spool/used weight).') }}<br>
+                                <strong>{{ _('OpenPrintTag') }}</strong> {{ _('writes a vendor-neutral CBOR/NDEF record other OpenPrintTag tools can read. A spool that does not fit fails the write outright instead of dropping fields.') }}
                             </small>
                         </span>
                     </div>
@@ -1139,8 +1160,145 @@ FPE;	2.16
                         </select>
                         <span class="help-block">
                             <small>
-                                <strong>{{ _('Extended') }}</strong> {{ _('writes every field OctoScale knows, but only fits on NTAG215/216 - NTAG213 has too little room and the write fails outright rather than falling back.') }}<br>
+                                <strong>{{ _('Extended') }}</strong> {{ _('writes every field OctoScale knows, but needs NTAG215/216 - on NTAG213 the write fails outright rather than falling back.') }}<br>
                                 <strong>{{ _('OpenSpool') }}</strong> {{ _('writes a standard NDEF/JSON record readable by generic phone NFC apps.') }}
+                            </small>
+                        </span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.octoScaleTagReadingEnabled, enable: pluginSettings.octoScaleEnabled"> {{ _('Read vendor RFID tags') }}
+                        </label>
+                        <span class="help-block">
+                            <small>
+                                {{ _('Reads manufacturer tags on spools you own and offers to create a spool from them. Reading only - no tag is ever modified.') }}<br>
+                                {{ _('Independent of this setting, SpoolManager always warns before overwriting a tag that looks like a manufacturer tag.') }}
+                            </small>
+                        </span>
+                        <a href="#" data-bind="click: function () { vendorTagFormatsExpanded(!vendorTagFormatsExpanded()); return false; }" style="font-size: 12px;">
+                            <i class="fas" data-bind="css: vendorTagFormatsExpanded() ? 'fa-caret-down' : 'fa-caret-right'"></i>
+                            {{ _('Which tags can be read, and what is read from them') }}
+                        </a>
+                        <div data-bind="visible: vendorTagFormatsExpanded" style="display: none; margin-top: 8px; padding-top: 10px; border-top: 1px solid #eee;">
+                            <table class="table table-condensed" style="margin-bottom: 6px;">
+                                <thead>
+                                    <tr>
+                                        <th>{{ _('Vendor format') }}</th>
+                                        <th>{{ _('Tag type') }}</th>
+                                        <th>{{ _('Status') }}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>{{ _('OpenSpool') }}</td>
+                                        <td>NTAG</td>
+                                        <td>{{ _('supported') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>{{ _('SpoolEase') }}</td>
+                                        <td>NTAG</td>
+                                        <td>{{ _('supported') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>{{ _('Anycubic') }}</td>
+                                        <td>NTAG</td>
+                                        <td>{{ _('supported') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>{{ _('Elegoo') }}</td>
+                                        <td>NTAG</td>
+                                        <td>{{ _('supported') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>{{ _('TigerTag') }}</td>
+                                        <td>NTAG</td>
+                                        <td>{{ _('supported') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>{{ _('Snapmaker') }}</td>
+                                        <td>{{ _('Mifare Classic') }}</td>
+                                        <td>{{ _('supported') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>{{ _('Qidi') }}</td>
+                                        <td>{{ _('Mifare Classic') }}</td>
+                                        <td>{{ _('supported') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>{{ _('Bambu Lab') }}</td>
+                                        <td>{{ _('Mifare Classic') }}</td>
+                                        <td>{{ _('needs a key you supply') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="muted">{{ _('Creality') }}</td>
+                                        <td class="muted">{{ _('Mifare Classic') }}</td>
+                                        <td class="muted">{{ _('not supported') }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <small class="help-block" style="margin-bottom: 8px; border-left: 2px solid #ddd; padding-left: 8px;">
+                                {{ _('The supported formats need no configuration - place the tag on the reader and read it. Snapmaker tags are encrypted, but their keys come from each tag\'s own id plus published values; Qidi uses the factory default key.') }}<br>
+                                {{ _('Bambu uses a key that is not published, and none ships with this plugin - that format stays off until you enter one below. Creality is not supported: its published format describes neither weight, diameter nor temperatures.') }}
+                            </small>
+                            <div class="row-fluid">
+                                <div class="span6">
+                                    <strong style="font-size: 12px;">{{ _('Read from the tag') }}</strong>
+                                    <ul style="padding-left: 16px; margin: 6px 0 0; font-size: 12px;">
+                                        <li>{{ _('Vendor') }}</li>
+                                        <li>{{ _('Material (+ variant, e.g. Silk, Matte)') }}</li>
+                                        <li>{{ _('Color') }}</li>
+                                        <li>{{ _('Diameter') }}</li>
+                                        <li>{{ _('Nominal weight') }}</li>
+                                        <li>{{ _('Nozzle temp (min/max)') }}</li>
+                                        <li>{{ _('Bed temp (min/max)') }}</li>
+                                        <li>{{ _('Drying temp / time - Snapmaker, TigerTag, Bambu') }}</li>
+                                    </ul>
+                                </div>
+                                <div class="span6">
+                                    <strong style="font-size: 12px;">{{ _('Not on any vendor tag') }}</strong>
+                                    <ul style="padding-left: 16px; margin: 6px 0 0; font-size: 12px;">
+                                        <li class="muted">{{ _('Empty spool weight - needed for the scale, comes from a template') }}</li>
+                                        <li class="muted">{{ _('Remaining filament - a tag says nothing about use') }}</li>
+                                        <li class="muted">{{ _('Display name - suggested from vendor + material') }}</li>
+                                        <li class="muted">{{ _('Density - looked up from the material name') }}</li>
+                                        <li class="muted">{{ _('TD - no vendor format stores it') }}</li>
+                                        <li class="muted">{{ _('Cost, purchase date, batch number') }}</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            <small class="help-block" style="margin-top: 8px; border-left: 2px solid #ddd; padding-left: 8px;">
+                                {{ _('Values only prefill the dialog, never overwrite what you entered, and nothing is saved until you confirm.') }}<br>
+                                {{ _('OpenSpool and SpoolEase store no drying values, so a typical one is derived from the material name - a starting point, not a manufacturer specification.') }}
+                            </small>
+                        </div>
+                    </div>
+                </div>
+                <div class="control-group" data-bind="visible: pluginSettings.octoScaleTagReadingEnabled" style="display: none;">
+                    <label class="control-label">{{ _('Vendor keys') }}</label>
+                    <div class="controls">
+                        <span class="help-block" style="margin-bottom: 8px;">
+                            <small>
+                                {{ _('Bambu tags need a key this plugin does not ship. If you have one, enter it here to read tags on spools you own. It stays in your settings, is never sent anywhere, and is only used for reading.') }}<br>
+                                {{ _('A stored key is never shown here. Leave a field empty to keep what is saved; type a new key to replace it, or the word "clear" to delete it.') }}
+                            </small>
+                        </span>
+                        <div class="row-fluid" style="margin-bottom: 6px;">
+                            <div class="span5">
+                                <label style="font-size: 12px; margin-bottom: 2px;">{{ _('Bambu salt key') }}</label>
+                                <input type="password" class="input-block-level" autocomplete="off"
+                                       data-bind="value: octoScaleTagKeyBambuSalt, valueUpdate: 'afterkeydown'">
+                            </div>
+                            <div class="span7">
+                                <span class="help-block" style="margin-top: 18px;">
+                                    <small data-bind="text: octoScaleTagKeyStatusText('bambuSalt'), css: octoScaleTagKeyStatusCss('bambuSalt')"></small>
+                                </span>
+                            </div>
+                        </div>
+                        <span class="help-block" style="margin-top: 8px;">
+                            <small class="muted">
+                                {{ _('Snapmaker and Qidi need no key: Snapmaker derives one per tag from public values, Qidi uses the factory default.') }}
                             </small>
                         </span>
                     </div>

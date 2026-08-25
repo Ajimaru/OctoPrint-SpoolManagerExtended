@@ -113,3 +113,12 @@ class SpoolModel(BaseModel):
     offsetTemperature = IntegerField(null=True)  # since V6
     offsetBedTemperature = IntegerField(null=True)  # since V6
     offsetEnclosureTemperature = IntegerField(null=True)  # since V6
+    # Drying. Carried by most vendor RFID tags (Bambu, OpenSpool, SpoolEase, ...), which is
+    # what these fields were added for - there was nowhere to put the values before.
+    dryingTemperature = IntegerField(null=True)  # since V12
+    dryingTime = IntegerField(null=True)  # since V12, in hours
+    # Transmission Distance, used by HueForge and OrcaSlicer's full-spectrum mode. NOT a
+    # length despite the name: the OpenPrintTag spec (main_fields.yaml key 27) defines it as
+    # a dimensionless opacity number from 0.1 (most opaque) to 100 (most transparent).
+    # Float, unlike the two above: it is a measured optical property, not a setpoint.
+    td = FloatField(null=True)  # since V12
