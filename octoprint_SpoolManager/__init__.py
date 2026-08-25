@@ -1172,6 +1172,25 @@ class SpoolmanagerPlugin(
 
         pass
 
+    def get_settings_restricted_paths(self):
+        # Settings that must not be handed to clients without admin rights. OctoPrint keeps
+        # these out of the settings payload it serves, so an anonymous or read-only session
+        # cannot read them back out of the browser.
+        #
+        # Both entries are credentials the user supplied, not plugin data: the database
+        # password, and the manufacturer keys for reading protected vendor tags. Neither is
+        # needed to render anything - the settings dialog shows a status ("set" / "not set"
+        # / "does not match") rather than the value itself.
+        #
+        # This hook did not exist in this plugin before; the database password was public to
+        # any logged-in client. Adding the tag keys was the occasion to close that too.
+        return {
+            "admin": [
+                [SettingsKeys.SETTINGS_KEY_DATABASE_PASSWORD],
+                [SettingsKeys.SETTINGS_KEY_OCTOSCALE_TAG_KEYS],
+            ]
+        }
+
     def on_settings_save(self, data):
         # Enable cleaning up any offsets that are turned off
         oldToolOffsetEnabled = self._settings.get_boolean(
@@ -1339,6 +1358,9 @@ class SpoolmanagerPlugin(
         settings[SettingsKeys.SETTINGS_KEY_OCTOSCALE_NFCV_FORMAT] = "extended"
         settings[SettingsKeys.SETTINGS_KEY_OCTOSCALE_NTAG_FORMAT] = "openSpool"
         settings[SettingsKeys.SETTINGS_KEY_OCTOSCALE_TAG_READING_ENABLED] = False
+        # Empty on purpose: no manufacturer key material ships with this plugin, and the
+        # parsers that need one disable themselves until the user supplies it.
+        settings[SettingsKeys.SETTINGS_KEY_OCTOSCALE_TAG_KEYS] = {}
 
         ## SpoolmanDB-Community
         ## Optional spool fields

@@ -11,6 +11,11 @@
 // "rainbow" (rendered as a rainbow gradient, see upstream issue #19) and
 // "transparent"/"transparent:#hex" (rendered as a checkerboard, optionally
 // tinted with the base color).
+// Typed into a vendor key field to delete the stored key. Needed because the fields never
+// show what is saved (the values are admin-restricted), so an empty field has to mean
+// "leave it alone" - which leaves no way to clear one without a word of its own.
+const OCTOSCALE_TAG_KEY_CLEAR_WORD = "clear";
+
 // Attached to window because OctoPrint wraps packed plugin JS in a closure,
 // but the knockout bindings in the templates need global access.
 window.spmSpoolColorCss = function (color) {
@@ -388,6 +393,53 @@ $(function () {
         // come off them. Kept separate from the writing reference above because the two
         // answer different questions - what we put on a tag vs. what we can get off one.
         self.vendorTagFormatsExpanded = ko.observable(false);
+
+        // Vendor keys for the tag formats protected by a manufacturer secret. Stored as one
+        // settings dict, so each field is a plain observable here and they are folded back
+        // into the dict on save (see onSettingsBeforeSave below).
+        //
+        // The saved values are admin-restricted and never sent back to the browser, so these
+        // fields start empty even when a key is stored. That is why the status line next to
+        // them matters: without it "empty field" and "no key saved" look identical.
+        self.octoScaleTagKeyBambuSalt = ko.observable("");
+        self.octoScaleTagKeyCrealitySalt = ko.observable("");
+        self.octoScaleTagKeyCrealityEncryption = ko.observable("");
+        self.octoScaleTagKeyStatuses = ko.observable({});
+
+        self.octoScaleTagKeyStatusText = function (keyName) {
+            var status = (self.octoScaleTagKeyStatuses() || {})[keyName];
+            if (status === "ok") {
+                return gettext("Key stored and valid.");
+            }
+            if (status === "invalid") {
+                // The case this whole status line exists for: a typo otherwise looks exactly
+                // like an empty field, because both end in a parser that stays silent.
+                return gettext(
+                    "The stored key does not match the expected checksum - probably a typo. This format stays switched off."
+                );
+            }
+            return gettext("No key stored - this format stays switched off.");
+        };
+
+        self.octoScaleTagKeyStatusCss = function (keyName) {
+            var status = (self.octoScaleTagKeyStatuses() || {})[keyName];
+            return {
+                "text-success": status === "ok",
+                "text-error": status === "invalid",
+                muted: status !== "ok" && status !== "invalid"
+            };
+        };
+
+        self.loadOctoScaleTagKeyStatus = function () {
+            if (!self.apiClient) {
+                return;
+            }
+            self.apiClient.getOctoScaleTagKeyStatus(function (responseData) {
+                if (responseData && responseData.success === true) {
+                    self.octoScaleTagKeyStatuses(responseData.statuses || {});
+                }
+            });
+        };
 
         self.spoolmanDbRefreshBusy = ko.observable(false);
         self.spoolmanDbRefreshResult = ko.observable(null);
@@ -2541,6 +2593,59 @@ $(function () {
             // re-evaluates the detection chain server-side, so the tab always shows the
             // current state (e.g. after the printer connection changed)
             self.loadU1RfidStatus();
+            // The key fields cannot show their own values (admin-restricted), so the status
+            // beside them is the only feedback that a stored key exists and validates.
+            self.loadOctoScaleTagKeyStatus();
+            // Never prefill the inputs from a previous visit - an empty field means "leave
+            // whatever is stored alone", and a leftover value would silently resave it.
+            self.octoScaleTagKeyBambuSalt("");
+            self.octoScaleTagKeyCrealitySalt("");
+            self.octoScaleTagKeyCrealityEncryption("");
+        };
+
+        self.onSettingsBeforeSave = function () {
+            if (!self.pluginSettings || !self.pluginSettings.octoScaleTagKeys) {
+                return;
+            }
+
+            // Only fields the user actually typed into are written. An empty field keeps the
+            // stored key, because the input never shows what is saved - clearing it here
+            // would wipe a working key just by opening the dialog and pressing Save.
+            var stored = ko.utils.unwrapObservable(
+                self.pluginSettings.octoScaleTagKeys
+            );
+            var keys = {};
+            if (stored) {
+                Object.keys(stored).forEach(function (name) {
+                    keys[name] = ko.utils.unwrapObservable(stored[name]);
+                });
+            }
+
+            var entered = {
+                bambuSalt: self.octoScaleTagKeyBambuSalt(),
+                crealitySalt: self.octoScaleTagKeyCrealitySalt(),
+                crealityEncryptionKey: self.octoScaleTagKeyCrealityEncryption()
+            };
+            Object.keys(entered).forEach(function (name) {
+                var value = (entered[name] || "").trim();
+                if (value === "") {
+                    return;
+                }
+                if (value.toLowerCase() === OCTOSCALE_TAG_KEY_CLEAR_WORD) {
+                    // Without this a stored key could never be removed through the UI: an
+                    // empty field has to mean "leave it alone", so deleting needs a word of
+                    // its own rather than a blank the user cannot distinguish from a blank.
+                    delete keys[name];
+                    return;
+                }
+                keys[name] = value;
+            });
+
+            if (ko.isObservable(self.pluginSettings.octoScaleTagKeys)) {
+                self.pluginSettings.octoScaleTagKeys(keys);
+            } else {
+                self.pluginSettings.octoScaleTagKeys = keys;
+            }
         };
 
         // receive data from server

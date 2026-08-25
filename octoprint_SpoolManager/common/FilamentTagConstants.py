@@ -208,3 +208,74 @@ SNAPMAKER_SUB_TYPES = {
     12: "Translucent",
     13: "Full Spectrum",
 }
+
+
+# ---------------------------------------------------------------------------------------
+# TigerTag
+#
+# Lookup tables from TigerTag-Project/TigerTag-SDK-Python (`tigertag/database/*.json`),
+# Apache-2.0, Copyright TigerTag Corp. 2025-2026. Shipped as data under common/tagdata/;
+# see THIRD_PARTY_NOTICES.md.
+#
+# The ids are not sequential and carry no structure, so they have to be looked up - there is
+# nothing to derive them from. Unknown ids degrade to None here and are surfaced as
+# "Unknown(<id>)" rather than failing the parse: a table that ages should cost a label, not
+# the whole tag.
+import json as _json
+import os as _os
+
+_TAG_DATA_DIR = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "tagdata")
+_tigerTagIds = None
+
+
+def _loadTigerTagIds():
+    global _tigerTagIds
+    if _tigerTagIds is None:
+        try:
+            with open(
+                _os.path.join(_TAG_DATA_DIR, "tigertag_ids.json"), "rb"
+            ) as handle:
+                _tigerTagIds = _json.loads(handle.read().decode("utf-8"))
+        except (IOError, OSError, ValueError):
+            # Missing or unreadable data file must not break tag reading; every lookup then
+            # degrades to "Unknown(<id>)", which is the same path an outdated table takes.
+            _tigerTagIds = {}
+    return _tigerTagIds
+
+
+def tigerTagLabel(sectionName, identifier):
+    """Label for a TigerTag id, or None when the id is not in the shipped table."""
+    if identifier is None:
+        return None
+    section = _loadTigerTagIds().get(sectionName) or {}
+    return section.get(str(identifier))
+
+
+def tigerTagDiameterMm(diameterId):
+    """Nominal diameter in mm; falls back to 1.75 when the id is unknown."""
+    label = tigerTagLabel("id_diameter", diameterId)
+    try:
+        return float(label)
+    except (TypeError, ValueError):
+        return 1.75
+
+
+# Multiplier to grams per unit label. Length units cannot be converted without a density,
+# so they yield None rather than a wrong number.
+_TIGERTAG_UNIT_TO_GRAMS = {"g": 1.0, "kg": 1000.0}
+
+
+def tigerTagWeightGrams(measure, unitId):
+    """Filament quantity in grams, or None when the tag states it as a length.
+
+    The measure field is a bare number - the unit lives in a separate id. Assuming grams
+    would be wrong by a factor of 1000 for a tag that says kilograms, so an unknown or
+    non-mass unit returns None and leaves the weight unset instead of guessing.
+    """
+    if measure is None:
+        return None
+    unitLabel = tigerTagLabel("id_measure_unit", unitId)
+    multiplier = _TIGERTAG_UNIT_TO_GRAMS.get(unitLabel)
+    if multiplier is None:
+        return None
+    return int(round(measure * multiplier))

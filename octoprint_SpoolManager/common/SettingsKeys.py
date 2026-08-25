@@ -77,6 +77,20 @@ class SettingsKeys:
     # that one is a safeguard against destroying a manufacturer tag and has to apply
     # whether or not reading is enabled.
     SETTINGS_KEY_OCTOSCALE_TAG_READING_ENABLED = "octoScaleTagReadingEnabled"
+    # Vendor keys the user supplies for tag formats whose sectors are protected by a
+    # manufacturer secret (Bambu, Creality). A dict of {keyName: value}, empty by default -
+    # NO KEY MATERIAL IS SHIPPED WITH THIS PLUGIN, and the parsers that need one stay
+    # disabled until the user enters it. One dict rather than one setting per parser, the
+    # same way the U1 integration deliberately has no per-device settings: whether a parser
+    # runs follows from whether its key validates, not from a separate switch.
+    #
+    # Snapmaker is deliberately NOT here: its keys are derived from each tag's own UID with
+    # salts that are published literals, so there is no secret to enter (see
+    # common/FilamentTagKeys.py). Adding a field for it would be a field that does nothing.
+    #
+    # Listed in get_settings_restricted_paths() so it is not handed to unauthenticated
+    # clients - see __init__.py.
+    SETTINGS_KEY_OCTOSCALE_TAG_KEYS = "octoScaleTagKeys"
 
     ## Optional spool fields
     # Shows the TD (transmission distance) field in the spool dialog. Off by default: it is

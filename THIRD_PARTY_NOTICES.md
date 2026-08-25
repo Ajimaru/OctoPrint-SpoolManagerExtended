@@ -12,6 +12,26 @@ Snapmaker is the one case where nothing has to be supplied, and it is worth stat
 
 Reading is read-only — this plugin never writes a proprietary vendor tag format. Tags recognized as belonging to a manufacturer stay protected by the overwrite safeguard even though they can now be read: being readable does not make a tag safe to write.
 
+## TigerTag SDK (TigerTag tag format)
+
+The TigerTag vendor tag parser and the id lookup tables under
+`octoprint_SpoolManager/common/tagdata/` are derived from
+[TigerTag-SDK-Python](https://github.com/TigerTag-Project/TigerTag-SDK-Python) by TigerTag
+Corp., published under the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0)
+(full text in `3rdPartySoftware/TigerTag-SDK-Python/LICENSE`), specifically `tigertag/tag.py`
+and `tigertag/database/*.json`.
+
+Copyright © TigerTag Corp. 2025-2026. The TigerTag specification carries an explicit,
+irrevocable, royalty-free permission to implement it in any product or software, open source
+or proprietary. Apache-2.0-licensed code may be combined into this AGPLv3-licensed work; the
+combined work remains available under the AGPLv3, and as with the GPLv3 components this
+direction is one-way.
+
+Changes made: only the id-to-label mappings this plugin needs were kept; the per-material
+`recommended` temperature values are deliberately **not** used, because a tag's own values
+must never be shadowed by a table lookup. The shipped tables are a partial snapshot and are
+not updated at runtime - an unrecognized id degrades to `Unknown(<id>)`.
+
 ## spool-link-apps (Snapmaker tag format)
 
 The Snapmaker vendor tag parser and its key derivation are derived from [spool-link-apps](https://github.com/paxx12-snapmaker-u1/spool-link-apps) by paxx12-snapmaker-u1 / paxx12, published under the [GNU General Public License v3.0](https://github.com/paxx12-snapmaker-u1/spool-link-apps/blob/main/LICENSE) (full text in `3rdPartySoftware/spool-link-apps/LICENSE`), specifically `android-app/app/src/main/java/dev/pages/paxx12/spoollink/formats/SnapmakerFormat.kt` (repository state 2026-07-30).

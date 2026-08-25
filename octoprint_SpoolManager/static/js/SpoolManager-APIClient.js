@@ -475,6 +475,28 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
         );
     };
 
+    this.getOctoScaleTagKeyStatus = function (responseHandler) {
+        // Returns only a status per key ("missing"/"invalid"/"ok"), never the key itself -
+        // the values are admin-restricted and the dialog has no reason to hold them.
+        _callApi(
+            _buildPluginUrl("octoscale/tagKeyStatus"),
+            {method: "GET"},
+            function (data) {
+                responseHandler(
+                    data || {success: false, error: "No answer from the plugin backend."}
+                );
+            },
+            function (body, rawText) {
+                responseHandler(
+                    body || {
+                        success: false,
+                        error: rawText || "Could not read the vendor key status."
+                    }
+                );
+            }
+        );
+    };
+
     this.getOctoScaleNfcStatus = function (responseHandler) {
         _callApi(
             _buildPluginUrl("octoscale/nfc"),

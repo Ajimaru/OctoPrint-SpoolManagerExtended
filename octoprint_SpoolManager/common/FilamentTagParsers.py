@@ -20,8 +20,15 @@
 #   The byte offsets and the material/sub-type tables are that project's reverse
 #   engineering result, not independent findings.
 #
+# Derived from TigerTag-SDK-Python (https://github.com/TigerTag-Project/TigerTag-SDK-Python),
+# Apache-2.0, Copyright TigerTag Corp. 2025-2026:
+#   TigerTagTagParser    <- tigertag/tag.py (offsets, magic values, field order)
+#   the id tables under common/tagdata/  <- tigertag/database/*.json
+#   The specification grants an explicit, irrevocable permission to implement it.
+#
 # Combined into this AGPLv3 work; see THIRD_PARTY_NOTICES.md,
-# 3rdPartySoftware/OpenRFID/LICENSE and 3rdPartySoftware/spool-link-apps/LICENSE.
+# 3rdPartySoftware/OpenRFID/LICENSE, 3rdPartySoftware/spool-link-apps/LICENSE and
+# 3rdPartySoftware/TigerTag-SDK-Python/LICENSE.
 #
 # Divergences from upstream:
 #  - parsers are plain classes with a parseTag() method instead of the ConfigurableEntity
@@ -570,6 +577,137 @@ class KeyedClassicTagParser(object):
         raise NotImplementedError
 
 
+class TigerTagTagParser(object):
+    """TigerTag's raw page layout (no NDEF).
+
+    Ported from TigerTag-Project/TigerTag-SDK-Python (`tigertag/tag.py`), Apache-2.0,
+    Copyright TigerTag Corp. 2025-2026. The specification carries an explicit, irrevocable
+    permission to implement it; see THIRD_PARTY_NOTICES.md and
+    3rdPartySoftware/TigerTag-SDK-Python/LICENSE.
+
+    Three things differ from every other parser here and are easy to get wrong:
+      - all multi-byte values are BIG-endian, where the other formats are little-endian,
+      - offsets are relative to the start of user memory (page 4), so the page-0 dump the
+        reader returns has to be advanced by 16 bytes first,
+      - the weight is a bare number whose unit lives in a separate id field: reading it as
+        grams is wrong by a factor of 1000 whenever the tag says kilograms.
+    """
+
+    id = "tigerTag"
+    label = "TigerTag"
+    tagClass = TagType.MIFARE_ULTRALIGHT
+    requiresKey = False
+
+    # User memory starts at page 4; the reader hands us the tag from page 0.
+    USER_MEMORY_OFFSET = 16
+
+    # id_tigertag, u32 BE at offset 0. Four bytes of magic - a foreign tag matching one of
+    # these by chance is not a practical concern.
+    MAGIC_TIGERTAG = 0x5BF59264
+    MAGIC_TIGERTAG_PLUS = 0xBC0FCB97
+    MAGIC_TIGERTAG_INIT = 0x6C41A2E1
+
+    # An initialised-but-unprogrammed tag carries no filament data worth offering.
+    INIT_PRODUCT_ID = 0x00000000
+
+    # The SDK accepts exactly these two lengths: 80 bytes without the ECDSA signature
+    # (NTAG213), 144 with it (NTAG215/216).
+    MIN_DATA_LEN = 80
+
+    def parseTag(self, scanResult, data):
+        if scanResult.tag_type != TagType.MIFARE_ULTRALIGHT:
+            return None
+        if data is None:
+            return None
+
+        # Advance past pages 0-3 (UID, lock bytes, capability container).
+        if len(data) < self.USER_MEMORY_OFFSET + self.MIN_DATA_LEN:
+            return None
+        body = data[self.USER_MEMORY_OFFSET :]
+
+        magic = Binary.extract_uint32_be(body, 0)
+        if magic not in (
+            self.MAGIC_TIGERTAG,
+            self.MAGIC_TIGERTAG_PLUS,
+            self.MAGIC_TIGERTAG_INIT,
+        ):
+            return None
+
+        productId = Binary.extract_uint32_be(body, 4)
+        if magic == self.MAGIC_TIGERTAG_INIT or productId == self.INIT_PRODUCT_ID:
+            # A blank TigerTag: correctly recognized, but there is nothing to fill a spool
+            # with. Rejecting keeps it out of the "create a spool from this" flow.
+            return None
+
+        materialId = Binary.extract_uint16_be(body, 8)
+        typeId = Binary.extract_byte(body, 12)
+        diameterId = Binary.extract_byte(body, 13)
+        brandId = Binary.extract_uint16_be(body, 14)
+        if None in (materialId, diameterId):
+            return None
+
+        red = Binary.extract_byte(body, 16)
+        green = Binary.extract_byte(body, 17)
+        blue = Binary.extract_byte(body, 18)
+        alpha = Binary.extract_byte(body, 19)
+        if None in (red, green, blue):
+            return None
+        argb = ((alpha if alpha is not None else 0xFF) << 24) | (
+            (red << 16) | (green << 8) | blue
+        )
+
+        measure = Binary.extract_uint24_be(body, 20)
+        unitId = Binary.extract_byte(body, 23)
+        weightGrams = Constants.tigerTagWeightGrams(measure, unitId)
+
+        nozzleMin = Binary.extract_uint16_be(body, 24)
+        nozzleMax = Binary.extract_uint16_be(body, 26)
+        dryTemp = Binary.extract_byte(body, 28)
+        dryTime = Binary.extract_byte(body, 29)
+        bedMin = Binary.extract_byte(body, 30)
+        bedMax = Binary.extract_byte(body, 31)
+        if None in (nozzleMin, nozzleMax):
+            return None
+        if nozzleMax < nozzleMin:
+            return None
+
+        # The tag's own bed temperature, never the material table's recommendation: a table
+        # lookup shadowing a real value is exactly the silent error this project already hit
+        # once with OpenSpool's bed temperature.
+        bedTempC = bedMax if bedMax else bedMin
+
+        typeName = Constants.tigerTagLabel("id_material", materialId)
+        diameterMm = Constants.tigerTagDiameterMm(diameterId)
+        brandName = Constants.tigerTagLabel("id_brand", brandId)
+
+        modifiers = []
+        aspectName = Constants.tigerTagLabel("id_aspect", Binary.extract_byte(body, 10))
+        if aspectName:
+            modifiers.append(aspectName)
+        typeLabel = Constants.tigerTagLabel("id_type", typeId)
+        if typeLabel:
+            modifiers.append(typeLabel)
+
+        return GenericFilament(
+            source_processor=self.id,
+            unique_id=GenericFilament.generate_unique_id(
+                "TigerTag", productId, materialId, argb, measure
+            ),
+            manufacturer=brandName or "TigerTag",
+            type=typeName or ("Unknown(%s)" % materialId),
+            modifiers=modifiers,
+            colors=[argb],
+            diameter_mm=diameterMm,
+            weight_grams=weightGrams,
+            hotend_min_temp_c=nozzleMin,
+            hotend_max_temp_c=nozzleMax,
+            bed_temp_c=bedTempC if bedTempC is not None else 0,
+            drying_temp_c=dryTemp if dryTemp is not None else 0,
+            drying_time_hours=dryTime if dryTime is not None else 0,
+            manufacturing_date=Constants.NO_MANUFACTURING_DATE,
+        )
+
+
 class SnapmakerTagParser(object):
     """Snapmaker's Mifare Classic layout.
 
@@ -745,6 +883,16 @@ FILAMENT_TAG_PARSERS = {
         "needsKeyB": False,
         "parser": ElegooTagParser,
         "description": "Elegoo vendor tags (binary layout at a fixed 0x40 offset).",
+    },
+    TigerTagTagParser.id: {
+        "id": TigerTagTagParser.id,
+        "label": TigerTagTagParser.label,
+        "tagClass": TigerTagTagParser.tagClass,
+        "requiresKey": False,
+        "sectors": None,
+        "needsKeyB": False,
+        "parser": TigerTagTagParser,
+        "description": "TigerTag tags (raw NTAG page layout, big-endian, 4-byte magic).",
     },
     SnapmakerTagParser.id: {
         "id": SnapmakerTagParser.id,
