@@ -43,6 +43,47 @@ import datetime
 # the firmware team: it rejects an Extended write on NTAG213 (or any unrecognized NTAG
 # sub-type) outright rather than attempting a partial write, since the v3 field set alone
 # needs more room than a 213 has.
+#
+# TigerTag (TAG_FORMAT_NTAG_TIGERTAG, "ntagTigerTag") is a fourth NTAG option, alongside
+# OpenSpool/Extended as a third value of the same SETTINGS_KEY_OCTOSCALE_NTAG_FORMAT
+# preference - it targets the same physical NTAG213/215/216 tag class, so a fourth
+# independent settings key would just duplicate that choice. It writes TigerTag STANDARD
+# only (unsigned, magic 0x5BF59264, 80 bytes across pages 0x04-0x17): CC-BY-4.0 open spec,
+# explicit royalty-free right to implement, no secret key required. TigerTag+ (signed,
+# magic 0xBC0FCB97, needs a private ECDSA-P256 key TigerTag does not hand out to third
+# parties) is explicitly out of scope and this plugin never attempts to produce it.
+#
+# Unlike the other NTAG formats, the payload the firmware needs is not free text - the
+# on-tag fields are numeric ids (material/brand/aspect/type/diameter/measure-unit) drawn
+# from TigerTag's own curated tables. Per the design agreed with the OctoScale firmware
+# team: the FIRMWARE does not know those tables (that would be a data copy that can drift
+# out of sync with TigerTag's registry) - this plugin resolves the spool's text
+# material/vendor/etc. against common/tagdata (TigerTagIdService, see
+# FilamentTagConstants.tigerTagIdForLabel) and sends already-resolved integers
+# (tigerTagMaterialId, tigerTagBrandId, ...) alongside the usual flat payload; the firmware
+# only packs bytes. An id that cannot be resolved (TigerTag's brand/material tables are
+# curated and will not cover every string a user has typed into SpoolManager) is omitted
+# from the payload rather than guessed - same "None stays None" convention as the rest of
+# this file.
+#
+# "supported" is True since the OctoScale firmware team confirmed a real write-then-read
+# round trip on physical hardware (NTAG215, previously blank): all 6 ids plus
+# color/totalWeight/temperatureMin-Max/bedTemperatureMin-Max/dryingTemperature/dryingTime
+# written and read back byte-for-byte, magic 0x5BF59264 at offset 0 as specified,
+# unsupportedFields empty, tag left in a clean "empty" occupancy state afterwards.
+# pn5180WriteNtagTigerTag/pn5180ReadNtagTigerTag in pn5180nfc.h, dispatched from
+# main.cpp's /nfcwritespool and /nfcprobe handlers; "tigerTag" is a valid
+# preferredNtagFormat value (main.cpp:1698 no longer coerces it to "openSpool").
+#
+# Read-back reuses the plugin's existing generic vendor-tag matching: TigerTag tags carry
+# no SpoolManager database id (same situation as OpenPrintTag), so an already-known spool
+# is found via the tag's own UID -> rfidTagKey, same path as every other vendor format -
+# no TigerTag-specific matching code was needed on this plugin's side.
+#
+# Known layout limitation, not a bug: totalWeight and totalLength share the tag's single
+# 3-byte "measure" slot on the firmware side. Both are always present in this plugin's
+# payload; the firmware keeps totalWeight and silently drops totalLength when both are
+# set. See the comment on _buildTigerTagPayload below for why this needs no fix here.
 
 TAG_FORMAT_SPOOL_ID_NTAG = "spoolIdNtag"
 TAG_FORMAT_OCTOSCALE_EXTENDED = "octoscaleExtended"
@@ -51,6 +92,7 @@ TAG_FORMAT_NFCV_EXTENDED = "nfcvExtended"
 TAG_FORMAT_NFCV_OPENSPOOL = "nfcvOpenSpool"
 TAG_FORMAT_NFCV_OPENPRINTTAG = "nfcvOpenPrintTag"
 TAG_FORMAT_NTAG_EXTENDED = "ntagExtended"
+TAG_FORMAT_NTAG_TIGERTAG = "ntagTigerTag"
 
 
 def _buildSpoolIdPayload(spoolModel):
@@ -201,6 +243,50 @@ def _buildFullSpoolPayload(spoolModel):
     }
 
 
+def _buildTigerTagPayload(spoolModel):
+    # Same flat payload as every other format (firmware ignores keys it doesn't know,
+    # see _buildFullSpoolPayload's own comment on that point) plus TigerTag's own
+    # numeric ids, resolved from the spool's text fields against TigerTag's curated
+    # tables. Imported here rather than at module level to avoid a hard dependency from
+    # TagFormats (payload shapes) onto FilamentTagConstants (id lookup) at import time -
+    # mirrors how the rest of this file treats field resolution as the caller's problem.
+    #
+    # Firmware note (confirmed with the OctoScale team once pn5180WriteNtagTigerTag
+    # existed): totalWeight and totalLength share the tag's single 3-byte "measure" slot -
+    # both are always present in this payload (from _buildFullSpoolPayload below), and the
+    # firmware keeps totalWeight and drops totalLength whenever both are set, rather than
+    # picking whichever arrived last or erroring. Nothing to do here on our side: the
+    # priority (weight over length) already matches what every other field on this tag
+    # means (grams, via tigerTagMeasureUnitId="g" below) - just don't be surprised if a
+    # spool tracked by length only shows an empty measure back after a TigerTag write.
+    from octoprint_SpoolManager.common.FilamentTagConstants import tigerTagIdForLabel
+
+    payload = _buildFullSpoolPayload(spoolModel)
+    payload.update(
+        {
+            "tigerTagMaterialId": tigerTagIdForLabel("id_material", spoolModel.material),
+            "tigerTagBrandId": tigerTagIdForLabel("id_brand", spoolModel.vendor),
+            "tigerTagAspectId": tigerTagIdForLabel("id_aspect", spoolModel.finish),
+            # Always "Filament" (id 142 in TigerTag's id_type table): SpoolManager only
+            # ever manages filament spools, never resin/accessories/spare parts, so there
+            # is no SpoolModel field this could meaningfully resolve against - fixed like
+            # tigerTagMeasureUnitId below, not omitted. A prior version of this builder
+            # left this key out entirely, which the firmware treated as making the whole
+            # 6-id group invalid rather than just this one field unset - see the
+            # incident this fix addresses.
+            "tigerTagTypeId": tigerTagIdForLabel("id_type", "Filament"),
+            "tigerTagDiameterId": tigerTagIdForLabel(
+                "id_diameter",
+                None if spoolModel.diameter is None else str(spoolModel.diameter),
+            ),
+            # Always grams: SpoolManager stores weight fields in grams throughout, so the
+            # unit id is fixed rather than resolved from anything on the spool.
+            "tigerTagMeasureUnitId": tigerTagIdForLabel("id_measure_unit", "g"),
+        }
+    )
+    return payload
+
+
 TAG_FORMATS = {
     TAG_FORMAT_SPOOL_ID_NTAG: {
         "id": TAG_FORMAT_SPOOL_ID_NTAG,
@@ -270,6 +356,19 @@ TAG_FORMATS = {
         "rfidTagKey), and a spool that doesn't fit fails the write outright instead of "
         "dropping fields - needs a large NFC-V tag (SLIX2/ST25DV, not a 112-byte SLI-X).",
     },
+    TAG_FORMAT_NTAG_TIGERTAG: {
+        "id": TAG_FORMAT_NTAG_TIGERTAG,
+        "label": "TigerTag (NTAG)",
+        # Verified with a real write-then-read round trip on physical hardware
+        # (NTAG215) by the OctoScale firmware team - see the module comment above.
+        "supported": True,
+        "buildPayload": _buildTigerTagPayload,
+        "description": "Writes TigerTag Standard (unsigned, open spec) onto an "
+        "NTAG213/215/216 tag - material, brand, aspect, diameter and weight unit as "
+        "TigerTag's own numeric ids, plus the common field set every format carries. "
+        "Fields whose value cannot be matched to a TigerTag id are left off the tag "
+        "rather than guessed. TigerTag+ (signed) is not supported.",
+    },
 }
 
 
@@ -323,16 +422,25 @@ NFCV_FORMAT_SETTING_TO_TAG_FORMAT = {
 NTAG_FORMAT_SETTING_TO_TAG_FORMAT = {
     "openSpool": TAG_FORMAT_OPENSPOOL,
     "extended": TAG_FORMAT_NTAG_EXTENDED,
+    "tigerTag": TAG_FORMAT_NTAG_TIGERTAG,
 }
 
 
 def formatForTagType(tagType, nfcvFormatSetting=None, ntagFormatSetting=None):
+    # Centralized guard: a recognized-but-unsupported preference (currently only
+    # "tigerTag" - see TAG_FORMATS[TAG_FORMAT_NTAG_TIGERTAG]["supported"]) must never be
+    # surfaced as "this is what will be written", in preview or in the actual write - the
+    # firmware would silently write something else instead (main.cpp:1698). Falling back
+    # to the same default the setting would resolve to if unset keeps this function's
+    # result always something the firmware can actually produce.
     if tagType == "nfcv":
-        return NFCV_FORMAT_SETTING_TO_TAG_FORMAT.get(
+        formatId = NFCV_FORMAT_SETTING_TO_TAG_FORMAT.get(
             nfcvFormatSetting, TAG_FORMAT_NFCV_EXTENDED
         )
+        return formatId if isSupported(formatId) else TAG_FORMAT_NFCV_EXTENDED
     if tagType == "ntag":
-        return NTAG_FORMAT_SETTING_TO_TAG_FORMAT.get(
+        formatId = NTAG_FORMAT_SETTING_TO_TAG_FORMAT.get(
             ntagFormatSetting, TAG_FORMAT_OPENSPOOL
         )
+        return formatId if isSupported(formatId) else TAG_FORMAT_OPENSPOOL
     return TAG_TYPE_TO_FORMAT.get(tagType, TAG_FORMAT_SPOOL_ID_NTAG)

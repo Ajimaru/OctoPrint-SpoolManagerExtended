@@ -467,6 +467,34 @@ $(function () {
             });
         };
 
+        self.tigerTagIdsRefreshBusy = ko.observable(false);
+        self.tigerTagIdsRefreshResult = ko.observable(null);
+        self.refreshTigerTagIdsStatus = function () {
+            if (
+                !self.pluginSettings ||
+                !self.pluginSettings.tigerTagIdsAutoUpdateEnabled ||
+                self.pluginSettings.tigerTagIdsAutoUpdateEnabled() !== true
+            ) {
+                self.tigerTagIdsRefreshResult(null);
+                return;
+            }
+            self.apiClient.getTigerTagIdsStatus(function (response) {
+                self.tigerTagIdsRefreshResult(
+                    response && response.status ? response.status : response
+                );
+            });
+        };
+        self.refreshTigerTagIds = function () {
+            self.tigerTagIdsRefreshBusy(true);
+            self.tigerTagIdsRefreshResult(null);
+            self.apiClient.refreshTigerTagIds(function (response) {
+                self.tigerTagIdsRefreshBusy(false);
+                self.tigerTagIdsRefreshResult(
+                    response && response.status ? response.status : response
+                );
+            });
+        };
+
         self.deleteDatabaseAction = function (databaseType) {
             SPOOLMANAGER_DIALOGS.confirmDanger({
                 title: "Delete all spool data",
@@ -2588,6 +2616,7 @@ $(function () {
                 });
             }
             self.refreshSpoolmanDbStatus();
+            self.refreshTigerTagIdsStatus();
             // re-evaluates the detection chain server-side, so the tab always shows the
             // current state (e.g. after the printer connection changed)
             self.loadU1RfidStatus();

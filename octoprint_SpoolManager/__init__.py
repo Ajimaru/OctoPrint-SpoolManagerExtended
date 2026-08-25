@@ -21,6 +21,8 @@ from octoprint_SpoolManager.common.EventBusKeys import EventBusKeys
 from octoprint_SpoolManager.common.FilamentDatabaseService import (
     FilamentDatabaseService,
 )
+from octoprint_SpoolManager.common import FilamentTagConstants
+from octoprint_SpoolManager.common.TigerTagIdService import TigerTagIdService
 from octoprint_SpoolManager.common.SettingsKeys import SettingsKeys
 from octoprint_SpoolManager.DatabaseManager import DatabaseManager
 from octoprint_SpoolManager.MqttManager import MqttManager
@@ -95,6 +97,15 @@ class SpoolmanagerPlugin(
         self._filamentDatabaseService = FilamentDatabaseService(
             self.get_plugin_data_folder(), self._logger, self._plugin_version
         )
+        self._tigerTagIdService = TigerTagIdService(
+            self.get_plugin_data_folder(),
+            self._logger,
+            self._plugin_version,
+            is_enabled=lambda: self._settings.get_boolean(
+                [SettingsKeys.SETTINGS_KEY_TIGERTAG_IDS_AUTO_UPDATE_ENABLED]
+            ),
+        )
+        FilamentTagConstants.setTigerTagIdService(self._tigerTagIdService)
 
         self._logger.info("Done initializing")
         pass
@@ -1370,6 +1381,12 @@ class SpoolmanagerPlugin(
         ## SpoolmanDB-Community
         settings[SettingsKeys.SETTINGS_KEY_SPOOLMANDB_ENABLED] = False
         settings[SettingsKeys.SETTINGS_KEY_SPOOLMANDB_CACHE_TTL_DAYS] = 7
+
+        ## TigerTag id lookup tables (auto-update from TigerTag-SDK-Python)
+        # Enabled by default, unlike SpoolmanDB: these tables aren't an optional
+        # convenience, they're what TigerTag reading/writing needs to resolve anything
+        # beyond the sparse offline fallback snapshot.
+        settings[SettingsKeys.SETTINGS_KEY_TIGERTAG_IDS_AUTO_UPDATE_ENABLED] = True
 
         ## Debugging
         settings[SettingsKeys.SETTINGS_KEY_SQL_LOGGING_ENABLED] = False

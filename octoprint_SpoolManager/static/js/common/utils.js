@@ -207,11 +207,34 @@ SPOOLMANAGER_UTILS = {
         return !isNaN(value) && value > 0;
     },
 
+    // Mandatory since 2026-08-25, mirroring the server-side check added to
+    // SpoolManagerAPI.py's _updateSpoolModelFromJSONData: requested by the OctoScale
+    // firmware team after a TigerTag write failed for a spool missing material/vendor -
+    // TigerTag's firmware only accepts a write when material/brand/diameter (plus the
+    // fixed type/measureUnit) all resolve, and a filament tag without a material is
+    // barely meaningful anyway. Enforced here, where the user is already filling in the
+    // form, rather than as special-case handling on the firmware side.
+    isMaterialPresent: function (spoolItem) {
+        return (spoolItem.material() || "").trim().length > 0;
+    },
+
+    isVendorPresent: function (spoolItem) {
+        return (spoolItem.vendor() || "").trim().length > 0;
+    },
+
+    isDiameterPresent: function (spoolItem) {
+        var value = parseFloat(spoolItem.diameter());
+        return !isNaN(value) && value > 0;
+    },
+
     areMandatorySpoolFieldsPresent: function (spoolItem) {
         return (
             SPOOLMANAGER_UTILS.isDisplayNamePresent(spoolItem) &&
             SPOOLMANAGER_UTILS.isColorNamePresent(spoolItem) &&
-            SPOOLMANAGER_UTILS.isTotalCombinedWeightPresent(spoolItem)
+            SPOOLMANAGER_UTILS.isTotalCombinedWeightPresent(spoolItem) &&
+            SPOOLMANAGER_UTILS.isMaterialPresent(spoolItem) &&
+            SPOOLMANAGER_UTILS.isVendorPresent(spoolItem) &&
+            SPOOLMANAGER_UTILS.isDiameterPresent(spoolItem)
         );
     },
 

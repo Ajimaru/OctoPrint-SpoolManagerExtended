@@ -153,6 +153,18 @@ class TestFieldMapping(unittest.TestCase):
         self.assertEqual(70, fields["minBedTemperature"])
         self.assertEqual(70, fields["maxBedTemperature"])
 
+    def test_bed_range_is_preserved_when_the_tag_carries_one(self):
+        # Regression guard for the TigerTag write-then-read flattening bug: a tag format
+        # that reports bed_min_temp_c/bed_max_temp_c separately (currently only TigerTag)
+        # must not have its range collapsed to the single bed_temp_c value the way a
+        # format without a range does (see the test above).
+        fields = FilamentTagToSpool.genericFilamentToSpoolFields(
+            filament(bed_temp_c=70, bed_min_temp_c=50, bed_max_temp_c=70)
+        )
+        self.assertEqual(70, fields["bedTemperature"])
+        self.assertEqual(50, fields["minBedTemperature"])
+        self.assertEqual(70, fields["maxBedTemperature"])
+
     def test_drying_values_map_to_the_v12_fields(self):
         fields = FilamentTagToSpool.genericFilamentToSpoolFields(filament())
         self.assertEqual(65, fields["dryingTemperature"])

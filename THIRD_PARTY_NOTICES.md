@@ -42,8 +42,13 @@ direction is one-way.
 
 Changes made: only the id-to-label mappings this plugin needs were kept; the per-material
 `recommended` temperature values are deliberately **not** used, because a tag's own values
-must never be shadowed by a table lookup. The shipped tables are a partial snapshot and are
-not updated at runtime - an unrecognized id degrades to `Unknown(<id>)`.
+must never be shadowed by a table lookup. `common/tagdata/tigertag_ids.json` ships as an
+offline fallback snapshot only; at runtime `TigerTagIdService` (mirroring
+`FilamentDatabaseService`'s SpoolmanDB-Community mechanism) fetches the current
+`tigertag/database/*.json` files directly from the TigerTag-SDK-Python repository on a
+jittered TTL, caches them in the plugin's data folder, and falls back to the shipped
+snapshot on any fetch failure. An id still unrecognized after that degrades to
+`Unknown(<id>)` on read, or is simply omitted from the written payload on write.
 
 ## spool-link-apps (Snapmaker tag format)
 
