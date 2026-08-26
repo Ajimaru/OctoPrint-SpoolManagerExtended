@@ -1,0 +1,1451 @@
+
+<form id="settings_spoolmanager" class="form-horizontal" >
+    <h3>Spool Manager <small>{{ _('Version') }}: <span data-bind="text: pluginSettings.installed_version"></span></small></h3>
+    <div class="tabbable"> <!-- Only required for left/right tabs -->
+        <ul class="nav nav-tabs" id="spoolmanger-settings-tab">
+            <li class="active"><a href="#tab-spool-General" data-toggle="tab">General</a></li>
+            <li><a href="#tab-spool-Temperature" data-toggle="tab">Temperature</a></li>
+            <li><a href="#tab-spool-QR-Code" data-toggle="tab">QR - Code</a></li>
+            <li><a href="#tab-spool-Template" data-toggle="tab">Template</a></li>
+            <li><a href="#tab-spool-Export-Import" data-toggle="tab">Export / Import</a></li>
+            <li><a href="#tab-spool-Storage" data-toggle="tab">Storage</a></li>
+            <li><a href="#tab-spool-MQTT" data-toggle="tab">MQTT</a></li>
+            <li><a href="#tab-spool-OctoScale" data-toggle="tab">OctoScale</a></li>
+            <li><a href="#tab-spool-U1RFID" data-toggle="tab">U1 RFID</a></li>
+            <li><a href="#tab-spool-SpoolmanDB" data-toggle="tab">SpoolmanDB</a></li>
+            <li><a href="#tab-spool-Debugging" data-toggle="tab">Debugging</a></li>
+        </ul>
+        <div class="tab-content">
+            <!-- GENERAL - TAB -->
+            <div class="tab-pane active" id="tab-spool-General">
+                <div class="control-group">
+                    <label class="control-label">Currency symbol</label>
+                    <div class="controls">
+                        <input type="text" class="input-mini text-center" data-bind="value: pluginSettings.currencySymbol">
+                    </div>
+                </div>
+                <hr/>
+                <h4>Display units</h4>
+                <div class="control-group">
+                    <label class="control-label">Filament length unit</label>
+                    <div class="controls">
+                        <select class="input-small" data-bind="value: pluginSettings.lengthUnit">
+                            <option value="mm">mm</option>
+                            <option value="cm">cm</option>
+                            <option value="m">m</option>
+                        </select>
+                        <span class="help-inline">Used for the length fields in the spool edit dialog.</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Weight unit</label>
+                    <div class="controls">
+                        <select class="input-small" data-bind="value: pluginSettings.weightUnit">
+                            <option value="g">g</option>
+                            <option value="kg">kg</option>
+                        </select>
+                        <span class="help-inline">Used for the weight fields in the spool edit dialog.</span>
+                    </div>
+                </div>
+                <hr/>
+                <h4>Edit dialog</h4>
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.defaultViewModeSimple" > Open the spool editor in <strong>Simple view</strong> by default.
+                        </label>
+                        <span class="help-block">
+                            <small>Simple view hides advanced fields (temperatures, flow rate, QR/serial/batch, dates, purchase &amp; cost).
+                            The per-browser toggle in the editor overrides this default.</small>
+                        </span>
+                    </div>
+                </div>
+                <hr/>
+                <h4>Notifications</h4>
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.reminderSelectingSpool" > Reminder for verifying the selected spool.
+                        </label>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.warnIfSpoolNotSelected" > Warn, if no spool is selected.
+                        </label>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.warnIfFilamentNotEnough" > Warn, if filament is not enough for print job
+                        </label>
+                        <span class="help-inline">Hint: It is only working, if the spool contains values for these fields: <br>
+                            <code>diameter</code>, <code>density</code>, <code>total weight</code>!</span>
+                    </div>
+                </div>
+
+                <hr/>
+                <h4>Performance</h4>
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.performanceLazyLoadSpoolSelectorData" > Lazy load spool selector data (spool list is fetched on first "select spool" dialog open instead of on page load).
+                        </label>
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.performanceLazyLoadSpoolTable" > Lazy load spool table (table is fetched on first SpoolManager tab open instead of on page load).
+                        </label>
+                        <span class="help-inline"><small>Reduces load on less powerful machines / large databases. A page reload is required after changing these options.</small></span>
+                    </div>
+                </div>
+
+                <hr/>
+                <h4>Remaining check</h4>
+                <div class="control-group">
+                    <label class="control-label">Enter safety buffer (e.g. PTFE Tube length)</label>
+                    <div class="controls">
+                        <div class="input-append">
+                            <input type="number" step="1" min="0" class="input-mini text-right" data-bind="value: pluginSettings.safetyLength" >
+                            <span class="add-on">mm</span>
+                        </div>
+                    </div>
+                </div>
+<!--
+                <h4>Default Catalogs</h4>
+                <div>
+                    You can enter default values for the selection lists in the Spool edit dialog.<br/>
+                    Please be aware, if you change the values in the following textareas it is not reflected to existing values!
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Vendors</label>
+                    <div class="controls">
+                        <textarea id="vendorsTextArea"
+                                  rows="5"
+                                  style="width:90%"
+                                  >
+JANBEX
+MatterHackers
+Prusament
+Proto Pasta
+                        </textarea>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Materials</label>
+                    <div class="controls">
+                        <textarea id="materialTextArea"
+                                  rows="5"
+                                  style="width:90%"
+                                  >
+PLA;	1.24
+PLA_plus;	1.24
+ABS;	1.04
+PETG;	1.27
+NYLON;	1.52
+TPU;	1.21
+PC;	    1.3
+Wood;	1.28
+Carbon;	1.3
+PC_ABS;	1.19
+HIPS;	1.03
+PVA;	1.23
+ASA;	1.05
+PP;	    0.9
+POM;	1.4
+PMMA;	1.18
+FPE;	2.16
+                        </textarea>
+                    </div>
+                </div>
+-->
+
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.tdFieldEnabled"> {{ _('Show the TD field in the spool dialog') }}
+                        </label>
+                        <span class="help-block">
+                            <small>
+                                {{ _('TD (transmission distance) is how far light travels through the filament before it turns opaque - used by HueForge and OrcaSlicer to plan color layers. Measuring it needs a printed test swatch, so the field stays hidden unless you work with it.') }}<br>
+                                {{ _('The value is still read from vendor RFID tags and stored either way; this only controls whether the field is shown for manual editing.') }}
+                            </small>
+                        </span>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- TEMPERATURE - TAB -->
+            <div class="tab-pane" id="tab-spool-Temperature">
+                <div class="control-group">
+                    <h4>Temperature Offsets</h4>
+                    <div>
+                        Setting these will replace the current offset value on the temperature tab with the value set in the temperature field of the selected spool.
+                    </div>
+                    <br>
+
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.toolOffsetEnabled" > Update Tool Offset with the spool Tool Temperature value
+                        </label>
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.bedOffsetEnabled" > Update Bed Offset with the spool Bed Temperature value
+                        </label>
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.enclosureOffsetEnabled" > Update Enclosure Offset with the spool Enclosure Temperature value
+                        </label>
+                        <span class="help-inline">HINT: You will need to reselect a spool or reconnect the printer for changes from this page to take effect.</span>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="alert alert-info" style="margin-bottom: 0px !important">
+                        <div style="font-weight: bold">Note for Bambu Connector users</div>
+                        <div>Temperature offsets are <b>not</b> transferred to the printer when using the Bambu connector. Prints run from printer storage and use the temperatures from the sliced file only.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- QR - Code - TAB -->
+            <div class="tab-pane" id="tab-spool-QR-Code">
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.qrCodeEnabled" > Show generated QR-Code in Spool-Dialog.
+                        </label>
+                    </div>
+                </div>
+                <hr/>
+                <div class="control-group">
+                    <label class="control-label">Fill color</label>
+                    <div class="controls">
+                        {# Container for the color picker component; the value is kept in sync
+                           with pluginSettings.qrCodeFillColor in SpoolManager.js. #}
+                        <span id="qrcode-fill-color-picker"></span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Background color</label>
+                    <div class="controls">
+                        <span id="qrcode-background-color-picker"></span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">
+                        <button data-bind="click: reloadQRCodePreviewImage">Reload Image</button>
+                    </label>
+                    <div class="controls">
+                        <a data-bind="attr: $root.generateQRCodeImageSourceAttribute('qrPreviewId','qrPreviewLabel', 'htmlView')" target="_new">
+                            <img id="settings-qrimage-preview" loading="lazy" class="qr-code-large" alt="QR Code" data-bind="attr: $root.generateQRCodeImageSourceAttribute('qrPreviewId',
+                                                                                                                                              'qrPreviewLabel',
+                                                                                                                                              '',
+                                                                                                                                              true)">
+                        </a>
+                    </div>
+                </div>
+                <hr/>
+                <div class="control-group">
+                    <label class="control-label">Label size (print)</label>
+                    <div class="controls">
+                        <div class="input-append">
+                            <input type="number" step="1" min="1" class="input-mini text-right" data-bind="value: pluginSettings.qrCodeLabelWidthMM">
+                            <span class="add-on">mm</span>
+                        </div>
+                        &times;
+                        <div class="input-append">
+                            <input type="number" step="1" min="1" class="input-mini text-right" data-bind="value: pluginSettings.qrCodeLabelHeightMM">
+                            <span class="add-on">mm</span>
+                        </div>
+                        <span class="help-block">Page size (width &times; height) used when printing the label via "Preview Label". Default 89 &times; 36 mm (Dymo 99012 address label).</span>
+                    </div>
+                </div>
+                <hr/>
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.qrCodeUseURLPrefix"> Use URL prefix for QR-Code URL
+                        </label>
+                    </div>
+                    <div class="controls">
+                        <input type="text" class="input-xlarge text-left" data-bind="value: pluginSettings.qrCodeURLPrefix, enable: pluginSettings.qrCodeUseURLPrefix" placeholder="http://192.0.2.0">
+                    </div>
+                    <div class="control-label" data-bind="visible:pluginSettings.qrCodeUseURLPrefix" >
+                        <a class="text-center" target="_newTab" data-bind="attr: $root.generateQRCodeTestLink()">
+                            <span data-bind="text: pluginSettings.qrCodeURLPrefix"></span>/plugin/SpoolManager/selectSpoolByQRCode/'databaseId'
+                        </a>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Template - TAB -->
+            <div class="tab-pane" id="tab-spool-Template">
+                <div>
+                    Which fields should be copied when creating a new spool from a template?
+                </div>
+                <br/>
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: checkExcludedFromTemplateCopy('displayName')" > Display Name<br/>
+                        </label>
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: checkExcludedFromTemplateCopy('material')" > Material<br/>
+                        </label>
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: checkExcludedFromTemplateCopy('vendor')" > Vendor<br/>
+                        </label>
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: checkExcludedFromTemplateCopy('density')" > Density<br/>
+                        </label>
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: checkExcludedFromTemplateCopy('diameter')" > Diameter<br/>
+                        </label>
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: checkExcludedFromTemplateCopy('diameterTolerance')" > Diameter Tolerance<br/>
+                        </label>
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: checkExcludedFromTemplateCopy('flowRateCompensation')" > Flow Rate Compensation<br/>
+                        </label>
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: checkExcludedFromTemplateCopy('temperature')" > Temperature<br/>
+                        </label>
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: checkExcludedFromTemplateCopy('bedTemperature')" > Bed Temperature<br/>
+                        </label>
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: checkExcludedFromTemplateCopy('enclosureTemperature')" > Enclosure Temperature<br/>
+                        </label>
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: checkExcludedFromTemplateCopy('offsetTemperature')" > Offset Temperature<br/>
+                        </label>
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: checkExcludedFromTemplateCopy('offsetEnclosureTemperature')" > Offset Enclosure<br/>
+                        </label>
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: checkExcludedFromTemplateCopy('totalWeight')" > Total Weight<br/>
+                        </label>
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: checkExcludedFromTemplateCopy('totalLength')" > Total Length<br/>
+                        </label>
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: checkExcludedFromTemplateCopy('code')" > Serialnumber<br/>
+                        </label>
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: checkExcludedFromTemplateCopy('batchNumber')" > Batchnumber<br/>
+                        </label>
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: checkExcludedFromTemplateCopy('purchasedFrom')" > Purchased from<br/>
+                        </label>
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: checkExcludedFromTemplateCopy('cost')" > Cost<br/>
+                        </label>
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: checkExcludedFromTemplateCopy('allNotes')" > Notes<br/>
+                        </label>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- EXPORT / IMPORT - TAB -->
+            <div class="tab-pane" id="tab-spool-Export-Import">
+
+                <div class="control-group">
+                    <div class="alert alert-info" style="margin-bottom: 0px !important">
+                        <div style="font-weight: bold">Database in Use: <span data-bind="text: databaseInUse"></span></div>
+                        <div>Importing and exporting of SpoolManager data will be done against this database instance.</div>
+                    </div>
+                </div>
+
+                <h3>Export</h3>
+                <div class="control-group">
+                    <div class="controls">
+                        <span><b>SpoolManager Database</b>: Export all data as
+                            <a target="_newTab" href="#" data-bind="visible: pluginSettings.useExternal, attr: {href: $root.apiClient.getExportUrl('CSV', 'external')}">CSV-File</a>
+                            <a target="_newTab" href="#" data-bind="hidden: pluginSettings.useExternal, attr: {href: $root.apiClient.getExportUrl('CSV', 'internal')}">CSV-File</a>
+                        </span>
+                    </div>
+                </div>
+                <!-- Internal SQLite: full .db file export -->
+                <div class="control-group" data-bind="hidden: pluginSettings.useExternal">
+                    <div class="controls">
+                        <span><b>Local SQLite Database</b>: Export the full database as
+                            <a class="btn btn-info btn-mini" href="#" data-bind="attr: {href: downloadDatabaseUrl}" target="_blank"><i class="icon-download"></i> Database file (.db)</a>
+                        </span>
+                    </div>
+                </div>
+                <!-- External MySQL: full .sql dump export (moved here from the Storage tab) -->
+                <div class="control-group" data-bind="visible: isExternalMySQL">
+                    <div class="controls">
+                        <span><b>External MySQL Database</b>: Export the full database as
+                            <a class="btn btn-info btn-mini" href="#" data-bind="attr: {href: getDatabaseDumpExportUrl()}"><i class="icon-download"></i> SQL-Dump (.sql)</a>
+                        </span>
+                        <div class="help-block" style="margin-top: 5px;">
+                            The .sql dump works on the <b>saved</b> connection settings (MySQL only). Save the storage settings first.
+                        </div>
+                    </div>
+                </div>
+                <div class="control-group" data-bind="visible: isFilamentManagerPluginAvailable">
+                    <div class="controls">
+                        <span><b>Legacy: Filament Manager Database</b>: Export all data as <a target="_newTab" href="#" data-bind="attr: {href: $root.apiClient.getExportUrl('legacyFilamentManager', 'internal'), css: {disabled: !$root.apiClient.getExportUrl('legacyFilamentManager', 'internal')}}">CSV-File</a></span>
+                    </div>
+                </div>
+
+
+                <h3>Import</h3>
+
+                <div class="alert alert-info" style="margin-bottom: 10px;">
+                    A safety backup of the current database is automatically created and downloaded
+                    <b>before</b> every import (append and replace). If the backup fails, the import is aborted.
+                </div>
+                <div class="alert" data-bind="visible: printerStateViewModel.isBusy()" style="">
+                        Take note that import functionality is disabled while your printer is printing or paused.
+                </div>
+
+                <h4>CSV Import</h4>
+                <div class="control-group" data-bind="visible: !printerStateViewModel.isBusy()">
+                    <div class="controls">
+                        <div class="row">
+                            Import a CSV-File to the SpoolManager database.
+                        </div>
+                        <br/>
+                        <div class="row">
+                            <div class="span6">
+                                <label class="radio">
+                                    <input type="radio" name="importCSVMode" value="replace" data-bind="checked: pluginSettings.importCSVMode"> Replace <span data-bind="text: databaseInUse().toLowerCase()"></span> database
+                                </label>
+                                <label class="radio">
+                                        <input type="radio" name="importCSVMode" value="append" data-bind="checked: pluginSettings.importCSVMode"> Append to <span data-bind="text: databaseInUse().toLowerCase()"></span> database
+                                </label>
+                            </div>
+
+                            <div class="span6">
+                                <div class="input-prepend">
+                                    <span class="btn fileinput-button">
+                                        <span>Browse...</span>
+                                        <input id="settings-spool-importcsv-upload"
+                                               type="file"
+                                               name="file"
+{#                                               data-url="/plugin/SpoolManager/importCSV"#}
+                                               data-url="{{ url_for("plugin.SpoolManagerExtended.importSpoolData") }}"
+                                               accept=".csv">
+                                    </span>
+                                    <span class="add-on" data-bind="text: csvFileUploadName"></span>
+                                </div>
+                                <button class="btn btn-primary"
+                                        data-bind="disable: (csvImportInProgress() || csvFileUploadName() == undefined), click: performCSVImportFromUpload">
+                                    <i class="fa fa-spinner fa-spin"
+                                       data-bind="visible: csvImportInProgress"></i> Upload & import
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Internal SQLite: .db file restore (replace = whole-file swap, append = insert spools) -->
+                <div data-bind="hidden: pluginSettings.useExternal">
+                    <h4>Database File Restore (.db)</h4>
+                    <div class="control-group" data-bind="visible: !printerStateViewModel.isBusy()">
+                        <div class="controls">
+                            <div class="row">
+                                Restore the local SQLite database from a <b>.db</b> file. Replace swaps the whole database file; append inserts the spools from the file.
+                            </div>
+                            <br/>
+                            <div class="row">
+                                <div class="span6">
+                                    <label class="radio">
+                                        <input type="radio" name="dbRestoreMode" value="replace" data-bind="checked: dbRestoreMode"> Replace local database
+                                    </label>
+                                    <label class="radio">
+                                        <input type="radio" name="dbRestoreMode" value="append" data-bind="checked: dbRestoreMode"> Append spools to local database
+                                    </label>
+                                </div>
+                                <div class="span6">
+                                    <div class="input-prepend">
+                                        <span class="btn fileinput-button">
+                                            <span>Browse...</span>
+                                            <input id="settings-spool-importdb-upload"
+                                                   type="file"
+                                                   name="file"
+                                                   accept=".db"
+                                                   data-bind="event: {change: dbRestoreFileChanged}">
+                                        </span>
+                                        <span class="add-on" data-bind="text: dbRestoreFileName"></span>
+                                    </div>
+                                    <button class="btn btn-primary"
+                                            data-bind="disable: (dbRestoreInProgress() || dbRestoreFileName() == undefined), click: performDBRestoreFromUpload">
+                                        <i class="fa fa-spinner fa-spin"
+                                           data-bind="visible: dbRestoreInProgress"></i> Upload & restore
+                                    </button>
+                                    <div class="help-block" data-bind="visible: dbRestoreResultText">
+                                        <div class="alert alert-success">
+                                            <font color="green"><b><span data-bind="text: dbRestoreResultText"></span></b></font>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- External MySQL: .sql dump import (moved here from the Storage tab) -->
+                <div data-bind="visible: isExternalMySQL">
+                    <h4>SQL-Dump Import</h4>
+                    <div class="control-group" data-bind="visible: !printerStateViewModel.isBusy()">
+                        <div class="controls">
+                            <div class="row">
+                                Import a full <b>.sql</b> dump into the external MySQL database. Works on the <b>saved</b> connection settings.
+                            </div>
+                            <br/>
+                            <div class="row">
+                                <div class="span6">
+                                    <label class="radio">
+                                        <input type="radio" name="sqlImportMode" value="replace" data-bind="checked: sqlImportMode"> Replace external database
+                                    </label>
+                                    <label class="radio">
+                                        <input type="radio" name="sqlImportMode" value="append" data-bind="checked: sqlImportMode"> Append spools to external database
+                                    </label>
+                                </div>
+                                <div class="span6">
+                                    <div class="input-prepend">
+                                        <span class="btn fileinput-button">
+                                            <span>Browse...</span>
+                                            <input id="settings-spool-importsql-upload"
+                                                   type="file"
+                                                   name="file"
+                                                   accept=".sql"
+                                                   data-bind="event: {change: sqlDumpFileChanged}">
+                                        </span>
+                                        <span class="add-on" data-bind="text: sqlDumpFileName"></span>
+                                    </div>
+                                    <button class="btn btn-primary"
+                                            data-bind="disable: (sqlImportInProgress() || sqlDumpFileName() == undefined), click: performSQLImportFromUpload">
+                                        <i class="fa fa-spinner fa-spin"
+                                           data-bind="visible: sqlImportInProgress"></i> Upload & import
+                                    </button>
+                                    <div class="help-block" data-bind="visible: sqlImportResultText">
+                                        <div class="alert alert-success">
+                                            <font color="green"><b><span data-bind="text: sqlImportResultText"></span></b></font>
+                                        </div>
+                                    </div>
+                                    <div class="help-block" data-bind="visible: showExternalDatabaseErrorMessage">
+                                        <div class="alert alert-error">
+                                            <span style="color: red;"><b><span data-bind="text: externalDatabaseErrorMessage"></span></b></span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="controls">
+                        <div>
+                            The CSV data will be added into or totally replace the current database.
+                        </div>
+                        <div data-bind="hidden: pluginSettings.useExternal">
+                            HINT: Before importing, a backup file of the database will be automatically created. See Storage tab for more details.<!-- <a href="#tab-pjh-Storage" data-toggle="tab">storage folder</a>. -->
+                        </div>
+                        <br>
+                        <div>
+                            Format:
+                            <ul>
+                                <li>CSV-Delimiter is a comma</li>
+                                <li>You need a header row and value rows</li>
+                                <li>The order of the columns doesn't matter</li>
+                                <li>Use allowed header names for importing values (see below). Other column names will be skipped</li>
+                            </ul>
+                            Mandatory column names:
+                            <ul>
+                                <li><code>Spool Name</code></li>
+                            </ul>
+                            <br>
+                            Other column names:
+                            <ul>
+                                <li><code>Color Name</code></li>
+                                <li><code>Color Code [hex]</code></li>
+                                <li><code>Vendor</code></li>
+                                <li><code>Material</code></li>
+                                <li><code>...</code></li>
+                            </ul>
+                        </div>
+                        <div>
+                            Download a <a target="_newTab" href="#" data-bind="attr: {href: $root.apiClient.getSampleCSVUrl()}">sample csv</a> for a full list of all columns
+                        </div>
+                    </div>
+                </div>
+
+
+            </div>
+
+            <!-- STORAGE - TAB -->
+            <div class="tab-pane" id="tab-spool-Storage">
+                <div class="control-group">
+
+<!-- Instance name is not needed for SpoolManager
+                    <h4>Instance Name</h4>
+                    <div class="control-group" >
+                        <label class="control-label" >OctoPrint Name</label>
+                        <div class="controls">
+                            <input type="text" class="input-large" >
+                            <span class="help-block">The instance name is used to identified the print jobs in an external database. <br/>
+                            <div class="alert">If you change this name, you can't read the print jobs from the dabase anymore. You need to manually replace the name in the external database. TODO implement renaming function.</div>
+                            </span>
+                        </div>
+                    </div>
+-->
+
+                    <!-- LOCAL DATABASE -->
+                    <h4>Local SQLite3 Database <i class="fa fa-spinner fa-spin" data-bind="visible: showLocalBusyIndicator"></i></h4>
+                    <label class="radio">
+                        <input type="radio" name="externalDatabaseGroup" data-bind="checked: pluginSettings.useExternal, checkedValue: false"> Use local SqLite3 database
+                    </label>
+
+                    <div class="control-group">
+                        <div class="controls">
+                            <div style="margin-top: 20px">
+                                <span class="badge rounded-pill badge-success" style="padding: 5px;">Spool Count - <span data-bind="text: databaseMetaData.localSpoolItemCount"></span></span>
+                                <span class="badge rounded-pill badge-info" style="padding: 5px;">Schema Version - <span data-bind="text: databaseMetaData.localSchemeVersionFromDatabaseModel"></span></span>
+                                <span class="badge rounded-pill badge-info" style="padding: 5px;">Plugin Version - <span data-bind="text: databaseMetaData.schemeVersionFromPlugin"></span></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <label class="control-label">Database file location</label>
+                    <div class="controls">
+                        <div class="input-append">
+                            <input type="text" disabled class="input-xlarge text-right" data-bind="value: pluginSettings.databaseFileLocation"/>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">Database Backupname</label>
+                    <div class="controls">
+                        e.g.<code>spoolmanager-backup-20200812-0924.db</code>
+                    </div>
+                </div>
+
+                <div class="control-group" data-bind="hidden: pluginSettings.useExternal">
+                    <div class="controls">
+                        <button class="btn btn-info" title="Test Connection" data-bind="click: testDatabaseConnection" style="margin-right: 5px;">Test Connection</button>
+                        <button class="btn btn-danger" title="ReCreate Database" data-bind="click: function() {deleteDatabaseAction('internal');}" style="margin-right: 5px;"><i class="icon-trash"></i></button>
+                        <a href="#" class="btn btn-primary" title="Download Database" data-bind="attr: {href: downloadDatabaseUrl}" target="_blank" style="margin-right: 5px;"><i class="icon-download"></i></a>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="controls">
+                        <div class="help-block" data-bind="visible: showInternalSuccessMessage">
+                            <div class="alert">
+                                <font color="green"><b>Database connection successful</b></font>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="controls">
+                        <div class="help-block" data-bind="visible: showInternalDatabaseErrorMessage">
+                            <div class="alert">
+                                <span style="color: red; "><b><div data-bind="text: internalDatabaseErrorMessage"></div></b></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <h4>External Database <i class="fa fa-spinner fa-spin" data-bind="visible: showExternalBusyIndicator"></i></h4>
+                <label class="radio">
+                    <input type="radio" name="externalDatabaseGroup" data-bind="checked: pluginSettings.useExternal, checkedValue: true"> Use external database<br>
+                    <span class="help-inline" style="color: red;">
+                        When using an external database, you will be responsible for performing your own backups
+                    </span>
+                </label>
+
+
+                <div class="control-group">
+                    <div class="controls">
+                        <div style="margin-top: 20px">
+                            <span class="badge rounded-pill badge-success" style="padding: 5px;">Spool Count - <span data-bind="text: databaseMetaData.externalSpoolItemCount"></span></span>
+                            <span class="badge rounded-pill badge-info" style="padding: 5px;">Schema Version - <span data-bind="text: databaseMetaData.externalSchemeVersionFromDatabaseModel"></span></span>
+                            <span class="badge rounded-pill badge-info" style="padding: 5px;">Plugin Version - <span data-bind="text: databaseMetaData.schemeVersionFromPlugin"></span></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">Type</label>
+                    <div class="controls">
+                        <select class="input-medium" data-bind="value: pluginSettings.databaseType">
+                                <option value="postgres">PostgreSQL</option>
+                                <option value="mysql">mySQL</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Host</label>
+                    <div class="controls">
+                        <input type="text" data-bind="value: pluginSettings.databaseHost"/>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Port</label>
+                    <div class="controls">
+                        <input type="text" data-bind="value: pluginSettings.databasePort"/>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Database Name</label>
+                    <div class="controls">
+                        <input type="text" data-bind="value: pluginSettings.databaseName"/>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">User</label>
+                    <div class="controls">
+                        <input type="text" data-bind="value: pluginSettings.databaseUser"/>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Password</label>
+                    <div class="controls">
+                        <input type="password" data-bind="value: pluginSettings.databasePassword"/>
+                    </div>
+                </div>
+
+                <div class="control-group" data-bind="visible: pluginSettings.useExternal">
+                    <div class="controls">
+                        <button class="btn btn-info" title="Test Connection" data-bind="click: testDatabaseConnection" style="margin-right: 5px;">Test Connection</button>
+                        <button class="btn btn-danger" title="ReCreate Database" data-bind="click: function() {deleteDatabaseAction('external');}" style="margin-right: 5px;"><i class="icon-trash"></i></button>
+                        <button class="btn btn-primary" title="Copy Spools from Internal DB" data-bind="enable: showExternalSuccessMessage, click: copySpools" style="margin-right: 5px;">Copy Spools from Internal DB</button>
+                    </div>
+                </div>
+
+                <!-- MySQL dump export/import moved to the Export/Import tab (external DB view).
+                     Only "Copy Spools from Internal DB" remains here for the external database. -->
+
+                <div class="control-group">
+                    <div class="controls">
+                        <div class="help-block" data-bind="visible: showExternalDatabaseErrorMessage">
+                            <div class="alert">
+                                <span style="color: red;"><b><div data-bind="text: externalDatabaseErrorMessage"></div></b></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="controls">
+                        <div class="help-block" data-bind="visible: showExternalSuccessMessage">
+                            <div class="alert">
+                                <font color="green"><b>Database connection successful</b></font>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Database scheme upgrade (local SQLite and external database) -->
+                <div class="control-group" data-bind="visible: isSchemeUpgradeAvailable">
+                    <div class="controls">
+                        <div class="help-block">
+                            <font color="orange"><b>The database scheme doesn't match the required scheme version. Please perform an upgrade!</b></font>
+                        </div>
+                        <button class="btn btn-warning"
+                                data-bind="disable: schemeUpgradeInProgress, click: upgradeDatabaseSchemeAction">
+                            <i class="fa fa-spinner fa-spin" data-bind="visible: schemeUpgradeInProgress"></i> Upgrade database scheme
+                        </button>
+                        <span class="help-inline" data-bind="visible: isExternalSchemeUpgradeAvailable">A SQL dump backup is downloaded first.</span>
+                        <span class="help-inline" data-bind="visible: isLocalSchemeUpgradeAvailable">A backup of the database file is downloaded.</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <div class="controls">
+                        <div class="help-block" data-bind="visible: schemeUpgradeResultText().length > 0">
+                            <div class="alert alert-success">
+                                <font color="green"><b><span data-bind="text: schemeUpgradeResultText"></span></b></font>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- U1 RFID - TAB -->
+            <div class="tab-pane" id="tab-spool-U1RFID">
+                <p>
+                    <small>
+                        A <strong>Snapmaker U1</strong> running the paxx12 Extended Firmware reads RFID tags in
+                        each of its four channels and can report them to SpoolManager. Channel N loads the spool
+                        into tool N of <em>this</em> instance - it is not a hand scanner for other printers.
+                        Read-only: nothing is ever written back to the printer.
+                    </small>
+                </p>
+
+                <!-- detection chain, stage by stage, so a greyed-out toggle is self-explanatory -->
+                <div class="control-group">
+                    <label class="control-label">Detection</label>
+                    <div class="controls">
+                        <table class="table table-condensed" style="margin-bottom: 6px;">
+                            <tbody>
+                                <tr>
+                                    <td style="width: 24px;">
+                                        <i data-bind="css: u1RfidStatus().chain && u1RfidStatus().chain.connector ? 'icon-ok text-success' : 'icon-remove text-error'"></i>
+                                    </td>
+                                    <td>MoonrakerConnector plugin available</td>
+                                </tr>
+                                <tr>
+                                    <td>
+                                        <i data-bind="css: u1RfidStatus().chain && u1RfidStatus().chain.moonraker ? 'icon-ok text-success' : 'icon-remove text-error'"></i>
+                                    </td>
+                                    <td>
+                                        Active printer is a Moonraker printer
+                                        <span data-bind="visible: u1RfidStatus().host">
+                                            &mdash; <code data-bind="text: u1RfidStatus().host + ':' + u1RfidStatus().port"></code>
+                                        </span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>
+                                        <i data-bind="css: u1RfidStatus().chain && u1RfidStatus().chain.printer ? 'icon-ok text-success' : 'icon-minus muted'"></i>
+                                    </td>
+                                    <td>
+                                        Printer identified
+                                        <span data-bind="visible: u1RfidStatus().printerInfo && u1RfidStatus().printerInfo.machineType">
+                                            &mdash; <span data-bind="text: u1RfidStatus().printerInfo.machineType"></span>
+                                            (<span data-bind="text: u1RfidStatus().printerInfo.deviceName"></span>,
+                                            firmware <span data-bind="text: u1RfidStatus().printerInfo.firmwareVersion"></span>)
+                                        </span>
+                                        <br><small class="muted">Informational only - the model does not gate the feature.</small>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>
+                                        <i data-bind="css: u1RfidStatus().chain && u1RfidStatus().chain.filamentDetect ? 'icon-ok text-success' : 'icon-remove text-error'"></i>
+                                    </td>
+                                    <td>
+                                        RFID support (<code>filament_detect</code>) present
+                                        <br><small class="muted">This is what unlocks the feature. Requires the Extended Firmware.</small>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div class="alert" data-bind="visible: u1RfidStatus().chainMessage, text: u1RfidStatus().chainMessage"></div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.u1RfidEnabled, enable: u1RfidStatus().supported"> Read RFID tags from the Snapmaker U1
+                        </label>
+                        <span class="help-block">
+                            <small data-bind="visible: !u1RfidStatus().supported">
+                                Disabled because the detection above did not complete. The printer host is derived
+                                automatically from the Moonraker connection - there is nothing to enter by hand.
+                            </small>
+                            <small data-bind="visible: u1RfidStatus().supported">
+                                Inserting a spool makes the U1 read its tag; a tag known to SpoolManager (matched by
+                                its UID in the spool's <em>Code</em> field) is loaded into the matching tool.
+                            </small>
+                        </span>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="controls">
+                        <button class="btn" data-bind="click: testU1RfidConnection, enable: !u1RfidTesting()">
+                            <i class="icon-refresh" data-bind="css: {'icon-spin': u1RfidTesting}"></i> Test connection
+                        </button>
+                        <span style="margin-left: 8px;" data-bind="visible: u1RfidStatus().connected">
+                            <span class="label label-success">connected</span>
+                        </span>
+                        <span class="help-block">
+                            <small>Re-runs the detection and lists all four channels with the tags currently
+                            detected - the quickest way to see whether tags are read at all.</small>
+                        </span>
+                    </div>
+                </div>
+
+                <div class="control-group" data-bind="visible: u1RfidTestMessage">
+                    <div class="controls">
+                        <div class="alert" data-bind="text: u1RfidTestMessage, css: {'alert-success': u1RfidTestOk(), 'alert-error': !u1RfidTestOk()}"></div>
+                    </div>
+                </div>
+
+                <div class="control-group" data-bind="visible: u1RfidChannels().length > 0">
+                    <label class="control-label">Channels</label>
+                    <div class="controls">
+                        <table class="table table-condensed">
+                            <thead>
+                                <tr><th>Channel</th><th>Tag UID</th><th>Type</th><th>Spool</th></tr>
+                            </thead>
+                            <tbody data-bind="foreach: u1RfidChannels">
+                                <tr>
+                                    <td data-bind="text: channel"></td>
+                                    <td><code data-bind="text: uid ? uid : '-'"></code></td>
+                                    <td data-bind="text: cardType ? cardType : '-'"></td>
+                                    <td>
+                                        <span data-bind="visible: spoolName, text: spoolName"></span>
+                                        <span class="muted" data-bind="visible: !spoolName() && uid()">not assigned yet</span>
+                                        <span class="muted" data-bind="visible: !uid()">-</span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- DEBUGGING - TAB -->
+            <!-- MQTT - TAB -->
+            <div class="tab-pane" id="tab-spool-MQTT">
+                <div class="alert alert-warning" data-bind="visible: !isMqttPluginAvailable()">
+                    The <a href="https://plugins.octoprint.org/plugins/mqtt/" target="_blank">OctoPrint-MQTT plugin</a> is not installed or not enabled. It is required for this feature.
+                </div>
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.mqttEnabled" > Publish spool information via MQTT
+                        </label>
+                        <span class="help-block">
+                            <small>Read-only: the selected spool per tool (name, material, color, remaining weight) is published to the MQTT broker
+                            configured in the OctoPrint-MQTT plugin. Spools can <strong>not</strong> be changed via MQTT.</small>
+                        </span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.mqttDiscoveryEnabled" > Home Assistant autodiscovery
+                        </label>
+                        <span class="help-block">
+                            <small>Publishes retained discovery configs, so the spool sensors appear automatically as a device in Home Assistant.</small>
+                        </span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Discovery prefix</label>
+                    <div class="controls">
+                        <input type="text" class="input-medium" data-bind="value: pluginSettings.mqttDiscoveryPrefix">
+                        <span class="help-inline">Default: <code>homeassistant</code></span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Topic base</label>
+                    <div class="controls">
+                        <input type="text" class="input-xlarge" data-bind="value: pluginSettings.mqttTopicBase">
+                        <span class="help-inline">Default: <code>octoprint/plugin/SpoolManagerExtended</code></span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Instance name</label>
+                    <div class="controls">
+                        <input type="text" class="input-medium" data-bind="value: pluginSettings.mqttInstanceName">
+                        <span class="help-block">
+                            <small>Must be unique per OctoPrint instance when several instances share one broker.
+                            Defaults to the title from OctoPrint Settings &rarr; Appearance (hostname if not set).</small>
+                        </span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.mqttRetain" > Retain state messages
+                        </label>
+                        <span class="help-block">
+                            <small>Keeps the last spool state on the broker, so Home Assistant shows values right after a restart.</small>
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- OCTOSCALE - TAB -->
+            <div class="tab-pane" id="tab-spool-OctoScale">
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.octoScaleEnabled" > {{ _('Use an OctoScale device') }}
+                        </label>
+                        <span class="help-block">
+                            <small>{{ _('OctoScale is a WiFi scale with an NFC reader. When enabled, the spool dialog and the Add Spool Wizard can read the weight directly from the scale and write the spool id onto an NFC tag.') }}</small>
+                        </span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">{{ _('Address') }}</label>
+                    <div class="controls">
+                        <input type="text" class="input-xlarge" placeholder="{{ _('IP address or hostname') }}" data-bind="value: pluginSettings.octoScaleUrl">
+                        <span class="help-block">
+                            <small>{{ _('IP address of the device, e.g. 192.168.0.50 - "http://" is added automatically. Prefer the IP address over a .local name: resolving mDNS can add several seconds to every request.') }}</small>
+                        </span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <div class="controls">
+                        <button class="btn" data-bind="click: testOctoScaleConnection, enable: !octoScaleTestBusy()">
+                            <i class="fas fa-spinner fa-spin" data-bind="visible: octoScaleTestBusy"></i>
+                            {{ _('Test connection') }}
+                        </button>
+                        <span class="help-inline text-success" data-bind="visible: octoScaleTestSuccess">
+                            <i class="fas fa-check"></i>
+                            {{ _('Connected') }} <span data-bind="text: octoScaleTestResultMessage"></span>
+                        </span>
+                        <span class="help-inline text-error" data-bind="visible: octoScaleTestFailed">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            <span data-bind="text: octoScaleTestResultMessage"></span>
+                        </span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">{{ _('NFC tag format (writing)') }}</label>
+                    <div class="controls">
+                        <span class="help-block">
+                            <small>
+                                {{ _('Applies to tags SpoolManager writes. Reading manufacturer tags is a separate feature - see "Read vendor RFID tags" below.') }}<br>
+                                {{ _('Chosen by tag type: Mifare Classic 1K always gets Extended, unknown tags the database id only. For NFC-V and NTAG213/215/216 you pick the format yourself, further down.') }}
+                            </small>
+                        </span>
+                        <table class="table table-condensed" style="margin-bottom: 6px; margin-top: 6px;">
+                            <thead>
+                                <tr>
+                                    <th>{{ _('Tag') }}</th>
+                                    <th>{{ _('Extended') }}</th>
+                                    <th>{{ _('OpenSpool') }}</th>
+                                    <th>{{ _('TigerTag') }}</th>
+                                    <th>{{ _('OpenPrintTag') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>{{ _('Mifare Classic 1K') }}</td>
+                                    <td>{{ _('everything') }}</td>
+                                    <td>{{ _('not supported') }}</td>
+                                    <td>{{ _('not supported') }}</td>
+                                    <td>{{ _('not supported') }}</td>
+                                </tr>
+                                <tr>
+                                    <td>{{ _('NTAG215 / NTAG216') }}</td>
+                                    <td>{{ _('everything') }}</td>
+                                    <td>{{ _('everything') }}</td>
+                                    <td>{{ _('material, brand, aspect, diameter, color, weight, temperatures - no database id') }}</td>
+                                    <td>{{ _('not supported') }}</td>
+                                </tr>
+                                <tr>
+                                    <td>{{ _('NTAG213') }}</td>
+                                    <td>{{ _('write fails (tag too small)') }}</td>
+                                    <td>{{ _('no temperatures, no diameter') }}</td>
+                                    <td>{{ _('material, brand, aspect, diameter, color, weight, temperatures - no database id') }}</td>
+                                    <td>{{ _('not supported') }}</td>
+                                </tr>
+                                <tr>
+                                    <td>{{ _('NFC-V, small (SLI-X, 112 B)') }}</td>
+                                    <td>{{ _('everything') }}</td>
+                                    <td>{{ _('ID + material only') }}</td>
+                                    <td>{{ _('not supported (NTAG only)') }}</td>
+                                    <td>{{ _('write fails (tag too small)') }}</td>
+                                </tr>
+                                <tr>
+                                    <td>{{ _('NFC-V, large (SLIX2, ST25DV, 316 B+)') }}</td>
+                                    <td>{{ _('everything') }}</td>
+                                    <td>{{ _('everything') }}</td>
+                                    <td>{{ _('not supported (NTAG only)') }}</td>
+                                    <td>{{ _('everything') }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <span class="help-block">
+                            <small>
+                                {{ _('"Everything" means every field that format defines - OpenSpool has no field for color name, density or spool/used weight, so those are never written whatever the tag size. On small NFC-V tags, prefer Extended.') }}
+                            </small>
+                        </span>
+                        <a href="#" data-bind="click: function () { nfcFormatFieldsExpanded(!nfcFormatFieldsExpanded()); return false; }" style="font-size: 12px;">
+                            <i class="fas" data-bind="css: nfcFormatFieldsExpanded() ? 'fa-caret-down' : 'fa-caret-right'"></i>
+                            {{ _('What each format actually writes') }}
+                        </a>
+                        <div data-bind="visible: nfcFormatFieldsExpanded" style="display: none; margin-top: 8px; padding-top: 10px; border-top: 1px solid #eee;">
+                            <div class="row-fluid">
+                                <div class="span4">
+                                    <strong style="font-size: 12px;">{{ _('Extended') }}</strong><br>
+                                    <small class="muted">{{ _('Mifare Classic 1K, NFC-V & NTAG215/216, OctoScale-specific') }}</small>
+                                    <ul style="padding-left: 16px; margin: 6px 0 0; font-size: 12px;">
+                                        <li>{{ _('Database ID') }}</li>
+                                        <li>{{ _('Material') }}</li>
+                                        <li>{{ _('Vendor') }}</li>
+                                        <li>{{ _('Color (hex + name)') }}</li>
+                                        <li>{{ _('Diameter') }}</li>
+                                        <li>{{ _('Density') }}</li>
+                                        <li>{{ _('Total / spool / used weight / remaining weight') }}</li>
+                                        <li>{{ _('Total / used length') }}</li>
+                                        <li>{{ _('Nozzle temp (target + min/max)') }}</li>
+                                        <li>{{ _('Bed temp (target + min/max)') }}</li>
+                                        <li>{{ _('Serial / barcode') }}</li>
+                                        <li>{{ _('Batch number') }}</li>
+                                        <li>{{ _('Purchased from / on, cost') }}</li>
+                                        <li>{{ _('Finish') }}</li>
+                                        <li>{{ _('Display name') }}</li>
+                                        <li>{{ _('First / last use date') }}</li>
+                                        <li>{{ _('Drying temp / time') }}</li>
+                                        <li>{{ _('TD') }}</li>
+                                    </ul>
+                                </div>
+                                <div class="span4">
+                                    <strong style="font-size: 12px;">{{ _('OpenSpool') }}</strong><br>
+                                    <small class="muted">{{ _('NDEF/JSON, NTAG & NFC-V, phone-readable') }}</small>
+                                    <ul style="padding-left: 16px; margin: 6px 0 0; font-size: 12px;">
+                                        <li>{{ _('Database ID') }}</li>
+                                        <li>{{ _('Material') }}</li>
+                                        <li>{{ _('Vendor') }}</li>
+                                        <li>{{ _('Color (hex)') }}</li>
+                                        <li>{{ _('Diameter') }}</li>
+                                        <li>{{ _('Nozzle / bed temp (min/max)') }}</li>
+                                        <li class="muted">{{ _('Color name - not written') }}</li>
+                                        <li class="muted">{{ _('Density - not written') }}</li>
+                                        <li class="muted">{{ _('Spool / used weight - not written') }}</li>
+                                        <li class="muted">{{ _('Nozzle / bed target temp - not written') }}</li>
+                                        <li class="muted">{{ _('Enclosure temp - not written') }}</li>
+                                        <li class="muted">{{ _('Drying temp / time - not written') }}</li>
+                                        <li class="muted">{{ _('TD - not written') }}</li>
+                                    </ul>
+                                    <small class="help-block" style="margin-top: 4px; border-left: 2px solid #ddd; padding-left: 8px;">
+                                        {{ _('These have no equivalent in the OpenSpool specification - true for every tag size.') }}
+                                    </small>
+                                </div>
+                                <div class="span4">
+                                    <strong style="font-size: 12px;">{{ _('OpenPrintTag') }}</strong><br>
+                                    <small class="muted">{{ _('CBOR/NDEF, NFC-V only, vendor-neutral spec') }}</small>
+                                    <ul style="padding-left: 16px; margin: 6px 0 0; font-size: 12px;">
+                                        <li>{{ _('Material (name + class + type)') }}</li>
+                                        <li>{{ _('Vendor') }}</li>
+                                        <li>{{ _('Color (RGB)') }}</li>
+                                        <li>{{ _('Diameter') }}</li>
+                                        <li>{{ _('Density') }}</li>
+                                        <li>{{ _('Full / empty weight') }}</li>
+                                        <li>{{ _('Print temp (min/max + preheat)') }}</li>
+                                        <li>{{ _('Bed temp (min/max)') }}</li>
+                                        <li>{{ _('Drying temp / time') }}</li>
+                                        <li>{{ _('TD (transmission distance)') }}</li>
+                                        <li class="muted">{{ _('Database ID - not written') }}</li>
+                                        <li class="muted">{{ _('Color name - not written') }}</li>
+                                        <li class="muted">{{ _('Used weight - not written') }}</li>
+                                        <li class="muted">{{ _('Batch number, serial, purchase date - not written') }}</li>
+                                    </ul>
+                                    <small class="help-block" style="margin-top: 4px; border-left: 2px solid #ddd; padding-left: 8px;">
+                                        {{ _('The spec has no database id field - a scanned tag is matched by its own UID instead.') }}
+                                    </small>
+                                </div>
+                            </div>
+                            <div class="row-fluid" style="margin-top: 10px;">
+                                <div class="span4">
+                                    <strong style="font-size: 12px;">{{ _('TigerTag') }}</strong><br>
+                                    <small class="muted">{{ _('Raw page layout, NTAG213/215/216, open spec (unsigned/Standard only)') }}</small>
+                                    <ul style="padding-left: 16px; margin: 6px 0 0; font-size: 12px;">
+                                        <li>{{ _('Material, brand, aspect, diameter, weight unit (TigerTag\'s own numeric ids)') }}</li>
+                                        <li>{{ _('Color (RGB)') }}</li>
+                                        <li>{{ _('Total weight') }}</li>
+                                        <li>{{ _('Nozzle temp (min/max)') }}</li>
+                                        <li>{{ _('Bed temp (min/max)') }}</li>
+                                        <li>{{ _('Drying temp / time') }}</li>
+                                        <li class="muted">{{ _('Database ID - not written') }}</li>
+                                        <li class="muted">{{ _('Color name, density, used weight - not written') }}</li>
+                                        <li class="muted">{{ _('Serial, batch number, purchase info, finish, display name, dates, TD - not written') }}</li>
+                                    </ul>
+                                    <small class="help-block" style="margin-top: 4px; border-left: 2px solid #ddd; padding-left: 8px;">
+                                        {{ _('No database id field, same as OpenPrintTag - matched back to a spool by the tag\'s own UID. A field whose value cannot be matched to a TigerTag id (e.g. an unlisted vendor) is left off the tag rather than guessed. Total weight and total length share one slot on the tag - weight wins if both are set.') }}
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">{{ _('NFC-V / ISO15693 tag format') }}</label>
+                    <div class="controls">
+                        <select data-bind="value: pluginSettings.octoScaleNfcvFormat">
+                            <option value="extended">{{ _('Extended (all fields, OctoScale-specific)') }}</option>
+                            <option value="openSpool">{{ _('OpenSpool (NDEF/JSON, phone-readable, fewer fields)') }}</option>
+                            <option value="openPrintTag">{{ _('OpenPrintTag (open standard, cross-vendor, needs a large tag)') }}</option>
+                        </select>
+                        <span class="help-block">
+                            <small>
+                                <strong>{{ _('Extended') }}</strong> {{ _('writes every field OctoScale knows.') }}<br>
+                                <strong>{{ _('OpenSpool') }}</strong> {{ _('writes a standard NDEF/JSON record any phone NFC app can read, with fewer fields (no color name, density, spool/used weight).') }}<br>
+                                <strong>{{ _('OpenPrintTag') }}</strong> {{ _('writes a vendor-neutral CBOR/NDEF record other OpenPrintTag tools can read. A spool that does not fit fails the write outright instead of dropping fields.') }}
+                            </small>
+                        </span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">{{ _('NTAG213/215/216 tag format') }}</label>
+                    <div class="controls">
+                        <select data-bind="value: pluginSettings.octoScaleNtagFormat">
+                            <option value="openSpool">{{ _('OpenSpool (NDEF/JSON, phone-readable, fewer fields)') }}</option>
+                            <option value="extended">{{ _('Extended (all fields, OctoScale-specific, NTAG215/216 only)') }}</option>
+                            <option value="tigerTag">{{ _('TigerTag (Standard, open spec)') }}</option>
+                        </select>
+                        <span class="help-block">
+                            <small>
+                                <strong>{{ _('Extended') }}</strong> {{ _('writes every field OctoScale knows, but needs NTAG215/216 - on NTAG213 the write fails outright rather than falling back.') }}<br>
+                                <strong>{{ _('OpenSpool') }}</strong> {{ _('writes a standard NDEF/JSON record readable by generic phone NFC apps.') }}<br>
+                                <strong>{{ _('TigerTag') }}</strong> {{ _('writes TigerTag Standard (unsigned, open spec) - material, brand, aspect, diameter and weight unit as TigerTag\'s own ids, plus color, weight, and nozzle/bed temperature range. No database id (matched back to a spool by the tag\'s own UID, like OpenPrintTag). TigerTag+ (signed) is not supported.') }}
+                            </small>
+                        </span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.tigerTagIdsAutoUpdateEnabled"> {{ _('Auto-update TigerTag id tables') }}
+                        </label>
+                        <span class="help-block"><small>{{ _('TigerTag material/brand/aspect/type/diameter/unit tables are downloaded from TigerTag-SDK-Python and cached locally, refreshed roughly every 7 days. When disabled, only the small set shipped with the plugin is used - most vendor/material combinations will not resolve to a TigerTag id.') }}</small></span>
+                        <button class="btn" data-bind="click: refreshTigerTagIds, enable: pluginSettings.tigerTagIdsAutoUpdateEnabled() && !tigerTagIdsRefreshBusy()" style="margin-top: 6px;">
+                            <i class="fas fa-spinner fa-spin" data-bind="visible: tigerTagIdsRefreshBusy"></i>
+                            {{ _('Refresh now') }}
+                        </button>
+                        <span class="help-inline" data-bind="visible: tigerTagIdsRefreshResult">
+                            <span data-bind="text: tigerTagIdsRefreshResult() && tigerTagIdsRefreshResult().status"></span>
+                        </span>
+                        <span class="help-block" data-bind="visible: tigerTagIdsRefreshResult()">
+                            <small>
+                                {{ _('Materials:') }}
+                                <span data-bind="text: tigerTagIdsRefreshResult() && tigerTagIdsRefreshResult().section_counts && tigerTagIdsRefreshResult().section_counts.id_material"></span>
+                                &nbsp;{{ _('Brands:') }}
+                                <span data-bind="text: tigerTagIdsRefreshResult() && tigerTagIdsRefreshResult().section_counts && tigerTagIdsRefreshResult().section_counts.id_brand"></span>
+                            </small>
+                        </span>
+                        <span class="help-block" data-bind="visible: tigerTagIdsRefreshResult()">
+                            <small>
+                                {{ _('Last fetch:') }}
+                                <span data-bind="text: tigerTagIdsRefreshResult() && tigerTagIdsRefreshResult().last_fetch ? tigerTagIdsRefreshResult().last_fetch.replace('T', ' ').split('.')[0] : ''"></span>
+                            </small>
+                        </span>
+                        <span class="help-block"><small>{{ _('Source: TigerTag-SDK-Python (Apache-2.0). Data is fetched at runtime, cached locally, and not shipped with this plugin beyond a small offline fallback.') }}</small></span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.octoScaleTagReadingEnabled, enable: pluginSettings.octoScaleEnabled"> {{ _('Read vendor RFID tags') }}
+                        </label>
+                        <span class="help-block">
+                            <small>
+                                {{ _('Reads manufacturer tags on spools you own and offers to create a spool from them. Reading only - no tag is ever modified.') }}<br>
+                                {{ _('Independent of this setting, SpoolManager always warns before overwriting a tag that looks like a manufacturer tag.') }}
+                            </small>
+                        </span>
+                        <a href="#" data-bind="click: function () { vendorTagFormatsExpanded(!vendorTagFormatsExpanded()); return false; }" style="font-size: 12px;">
+                            <i class="fas" data-bind="css: vendorTagFormatsExpanded() ? 'fa-caret-down' : 'fa-caret-right'"></i>
+                            {{ _('Which tags can be read, and what is read from them') }}
+                        </a>
+                        <div data-bind="visible: vendorTagFormatsExpanded" style="display: none; margin-top: 8px; padding-top: 10px; border-top: 1px solid #eee;">
+                            <table class="table table-condensed" style="margin-bottom: 6px;">
+                                <thead>
+                                    <tr>
+                                        <th>{{ _('Vendor format') }}</th>
+                                        <th>{{ _('Tag type') }}</th>
+                                        <th>{{ _('Status') }}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>{{ _('OpenSpool') }}</td>
+                                        <td>NTAG</td>
+                                        <td>{{ _('supported') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>{{ _('SpoolEase') }}</td>
+                                        <td>NTAG</td>
+                                        <td>{{ _('supported') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>{{ _('Anycubic') }}</td>
+                                        <td>NTAG</td>
+                                        <td>{{ _('supported') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>{{ _('Elegoo') }}</td>
+                                        <td>NTAG</td>
+                                        <td>{{ _('supported') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>{{ _('TigerTag') }}</td>
+                                        <td>NTAG</td>
+                                        <td>{{ _('supported') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>{{ _('Snapmaker') }}</td>
+                                        <td>{{ _('Mifare Classic') }}</td>
+                                        <td>{{ _('supported') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>{{ _('Qidi') }}</td>
+                                        <td>{{ _('Mifare Classic') }}</td>
+                                        <td>{{ _('supported') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>{{ _('Bambu Lab') }}</td>
+                                        <td>{{ _('Mifare Classic') }}</td>
+                                        <td>{{ _('needs a key you supply') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="muted">{{ _('Creality') }}</td>
+                                        <td class="muted">{{ _('Mifare Classic') }}</td>
+                                        <td class="muted">{{ _('not supported') }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <small class="help-block" style="margin-bottom: 8px; border-left: 2px solid #ddd; padding-left: 8px;">
+                                {{ _('The supported formats need no configuration - place the tag on the reader and read it. Snapmaker tags are encrypted, but their keys come from each tag\'s own id plus published values; Qidi uses the factory default key.') }}<br>
+                                {{ _('Bambu uses a key that is not published, and none ships with this plugin - that format stays off until you enter one below. Creality is not supported: its published format describes neither weight, diameter nor temperatures.') }}
+                            </small>
+                            <div class="row-fluid">
+                                <div class="span6">
+                                    <strong style="font-size: 12px;">{{ _('Read from the tag') }}</strong>
+                                    <ul style="padding-left: 16px; margin: 6px 0 0; font-size: 12px;">
+                                        <li>{{ _('Vendor') }}</li>
+                                        <li>{{ _('Material (+ variant, e.g. Silk, Matte)') }}</li>
+                                        <li>{{ _('Color') }}</li>
+                                        <li>{{ _('Diameter') }}</li>
+                                        <li>{{ _('Nominal weight') }}</li>
+                                        <li>{{ _('Nozzle temp (min/max)') }}</li>
+                                        <li>{{ _('Bed temp (min/max)') }}</li>
+                                        <li>{{ _('Drying temp / time - Snapmaker, TigerTag, Bambu') }}</li>
+                                    </ul>
+                                </div>
+                                <div class="span6">
+                                    <strong style="font-size: 12px;">{{ _('Not on any vendor tag') }}</strong>
+                                    <ul style="padding-left: 16px; margin: 6px 0 0; font-size: 12px;">
+                                        <li class="muted">{{ _('Empty spool weight - needed for the scale, comes from a template') }}</li>
+                                        <li class="muted">{{ _('Remaining filament - a tag says nothing about use') }}</li>
+                                        <li class="muted">{{ _('Display name - suggested from vendor + material') }}</li>
+                                        <li class="muted">{{ _('Density - looked up from the material name') }}</li>
+                                        <li class="muted">{{ _('TD - no vendor format stores it') }}</li>
+                                        <li class="muted">{{ _('Cost, purchase date, batch number') }}</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            <small class="help-block" style="margin-top: 8px; border-left: 2px solid #ddd; padding-left: 8px;">
+                                {{ _('Values only prefill the dialog, never overwrite what you entered, and nothing is saved until you confirm.') }}<br>
+                                {{ _('OpenSpool and SpoolEase store no drying values, so a typical one is derived from the material name - a starting point, not a manufacturer specification.') }}
+                            </small>
+                        </div>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.octoScaleVendorTagWriteEnabled, enable: pluginSettings.octoScaleEnabled"> {{ _('Allow overwriting vendor RFID tags') }}
+                        </label>
+                        <span class="help-block">
+                            <small>
+                                {{ _('Off by default: SpoolManager always warns before writing over a tag that looks like a manufacturer tag (Bambu, Snapmaker, ...), destroying it irreversibly. With this off, that warning has no "Overwrite anyway" option - the write is refused outright. Independent of "Read vendor RFID tags" above.') }}
+                            </small>
+                        </span>
+                    </div>
+                </div>
+                <div class="control-group" data-bind="visible: pluginSettings.octoScaleTagReadingEnabled" style="display: none;">
+                    <label class="control-label">{{ _('Vendor keys') }}</label>
+                    <div class="controls">
+                        <span class="help-block" style="margin-bottom: 8px;">
+                            <small>
+                                {{ _('Bambu tags need a key this plugin does not ship. If you have one, enter it here to read tags on spools you own. It stays in your settings, is never sent anywhere, and is only used for reading.') }}<br>
+                                {{ _('A stored key is never shown here. Leave a field empty to keep what is saved; type a new key to replace it, or the word "clear" to delete it.') }}
+                            </small>
+                        </span>
+                        <div class="row-fluid" style="margin-bottom: 6px;">
+                            <div class="span5">
+                                <label style="font-size: 12px; margin-bottom: 2px;">{{ _('Bambu salt key') }}</label>
+                                <input type="password" class="input-block-level" autocomplete="off"
+                                       data-bind="value: octoScaleTagKeyBambuSalt, valueUpdate: 'afterkeydown'">
+                            </div>
+                            <div class="span7">
+                                <span class="help-block" style="margin-top: 18px;">
+                                    <small data-bind="text: octoScaleTagKeyStatusText('bambuSalt'), css: octoScaleTagKeyStatusCss('bambuSalt')"></small>
+                                </span>
+                            </div>
+                        </div>
+                        <span class="help-block" style="margin-top: 8px;">
+                            <small class="muted">
+                                {{ _('Snapmaker and Qidi need no key: Snapmaker derives one per tag from public values, Qidi uses the factory default.') }}
+                            </small>
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-pane" id="tab-spool-SpoolmanDB">
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.spoolmanDbEnabled"> {{ _('Use SpoolmanDB-Community temperature suggestions') }}
+                        </label>
+                        <span class="help-block"><small>{{ _('When enabled, product lists and temperature suggestions are downloaded from SpoolmanDB-Community and cached locally. Suggestions never replace values you entered yourself.') }}</small></span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">{{ _('Cache interval') }}</label>
+                    <div class="controls">
+                        <div class="input-append">
+                            <input type="number" min="1" max="30" step="1" class="input-mini" data-bind="value: pluginSettings.spoolmanDbCacheTtlDays">
+                            <span class="add-on">{{ _('days') }}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <div class="controls">
+                        <button class="btn" data-bind="click: refreshSpoolmanDb, enable: pluginSettings.spoolmanDbEnabled() && !spoolmanDbRefreshBusy()">
+                            <i class="fas fa-spinner fa-spin" data-bind="visible: spoolmanDbRefreshBusy"></i>
+                            {{ _('Refresh now') }}
+                        </button>
+                        <span class="help-inline" data-bind="visible: spoolmanDbRefreshResult">
+                            <span data-bind="text: spoolmanDbRefreshResult() && spoolmanDbRefreshResult().status"></span>
+                            <span data-bind="text: spoolmanDbRefreshResult() && spoolmanDbRefreshResult().vendor_count"></span> {{ _('vendors') }}
+                        </span>
+                        <span class="help-block" data-bind="visible: spoolmanDbRefreshResult()">
+                            <small>
+                                {{ _('Materials:') }}
+                                <span data-bind="text: spoolmanDbRefreshResult() && spoolmanDbRefreshResult().material_count"></span>
+                            </small>
+                        </span>
+                        <span class="help-block" data-bind="visible: spoolmanDbRefreshResult()">
+                            <small>
+                                {{ _('Last fetch:') }}
+                                <span data-bind="text: spoolmanDbRefreshResult() && spoolmanDbRefreshResult().last_fetch ? spoolmanDbRefreshResult().last_fetch.replace('T', ' ').split('.')[0] : ''"></span>
+                            </small>
+                        </span>
+                        <span class="help-block" data-bind="visible: spoolmanDbRefreshResult()">
+                            <small>
+                                {{ _('Next refresh after:') }}
+                                <span data-bind="text: spoolmanDbRefreshResult() && spoolmanDbRefreshResult().next_refresh_at ? spoolmanDbRefreshResult().next_refresh_at.replace('T', ' ').split('.')[0] : ''"></span>
+                            </small>
+                        </span>
+                        <span class="help-block"><small>{{ _('Source: SpoolmanDB-Community (MIT). Data is fetched at runtime, cached locally, and not shipped with this plugin. Verify temperatures against the filament manufacturer documentation before printing.') }}</small></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-pane" id="tab-spool-Debugging">
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.sqlLoggingEnabled" > SQL Logging enabled
+                        </label>
+                        <span class="help-inline">Hint: You need to restart your server after you changed the checkbox value.</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <div class="controls">
+                        <label class="checkbox">
+                            <input type="checkbox" data-bind="checked: pluginSettings.extrusionDebuggingEnabled" > Extrusion debugging enabled
+                        </label>
+                        <span class="help-inline">Hint: Could slow down your print.</span>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+</form>
