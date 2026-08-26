@@ -2260,9 +2260,12 @@ $(function () {
                         "(missing spool-fields - edit your spool).<br><br>";
                 }
 
-                var buildSpoolLabel = function (item) {
-                    var label =
-                        item.toolIndex + ": '" + item.material + " - " + item.spoolName;
+                // `withToolPrefix` defaults to true so the existing "<tool>: '<spool>'" callers
+                // stay untouched; the unused-tool hint names the tool in its own sentence and
+                // would otherwise repeat it.
+                var buildSpoolLabel = function (item, withToolPrefix) {
+                    var prefix = withToolPrefix === false ? "" : item.toolIndex + ": ";
+                    var label = prefix + "'" + item.material + " - " + item.spoolName;
 
                     if (
                         item.remainingWeight != null &&
@@ -2310,6 +2313,27 @@ $(function () {
                         question =
                             "Do you want to start the print without selected spools?";
                     }
+
+                    // A slicer may map a single-colour job to a tool the spool is not selected
+                    // for (e.g. Orca slicing to T0 while the spool sits in slot 4 = tool 3).
+                    // The warning above is then technically right but reads like a missing
+                    // selection instead of a slot mix-up. Only hint in the unambiguous 1:1
+                    // case - anything else would be guessing which spool belongs where.
+                    // Older backends do not send the field at all.
+                    var spoolsOnUnusedTools = result.spoolsOnUnusedTools || [];
+                    if (itemList.length === 1 && spoolsOnUnusedTools.length === 1) {
+                        var unusedItem = spoolsOnUnusedTools[0];
+                        message =
+                            message +
+                            "<br><br>Note: " +
+                            buildSpoolLabel(unusedItem, false) +
+                            " is selected for Tool " +
+                            SPOOLMANAGER_DIALOGS.escapeHtml(unusedItem.toolIndex) +
+                            ", which this print does not use. If that spool is loaded in " +
+                            itemList[0] +
+                            ", select it there in the sidebar.";
+                    }
+
                     return SPOOLMANAGER_DIALOGS.confirm({
                         title: "No spool selected",
                         message: message,
