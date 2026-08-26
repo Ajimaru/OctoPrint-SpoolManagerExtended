@@ -1,8 +1,122 @@
+# coding=utf-8
+
+# This file has two halves:
+#
+# 1. TestLoadSpool - real, self-contained tests for DatabaseManager.loadSpool(), run by
+#    the suite. They use an in-memory SQLite database, the same way test_loadSpoolByCode.py
+#    does, and need nothing from the environment.
+#
+# 2. TestDatabase - manual developer scripts against real postgres/mysql/sqlite instances,
+#    kept from the original project. Every method there is deliberately prefixed with
+#    `_test_` so pytest does NOT collect it: setUp() connects to a hardcoded absolute path
+#    from another machine and the settings carry plaintext credentials. Do not "fix" those
+#    underscores - dropping one is what made test_loadSingleSpool fail in every checkout
+#    since upstream commit 998822b.
+
 import logging
 import unittest
 
+import peewee
+
 from octoprint_SpoolManagerExtended import DatabaseManager
+from octoprint_SpoolManagerExtended.DatabaseManager import MODELS
 from octoprint_SpoolManagerExtended.models.SpoolModel import SpoolModel
+
+
+class _RecordingHandler(logging.Handler):
+    """
+    Captures ERROR records so a test can tell "loadSpool() returned None because the
+    spool does not exist" from "loadSpool() returned None because it swallowed an
+    exception" - _handleReusableConnection() returns defaultReturnValue for both.
+    """
+
+    def __init__(self):
+        logging.Handler.__init__(self)
+        self.records = []
+
+    def emit(self, record):
+        if record.levelno >= logging.ERROR:
+            self.records.append(record)
+
+
+class TestLoadSpool(unittest.TestCase):
+    def setUp(self):
+        self.database = peewee.SqliteDatabase(":memory:")
+        self.database.bind(MODELS)
+        self.database.create_tables(MODELS)
+
+        self.logger = logging.getLogger("test.loadSpool")
+        self.logHandler = _RecordingHandler()
+        self.logger.addHandler(self.logHandler)
+
+        self.databaseManager = DatabaseManager(self.logger, False)
+        # Bypass connectoToDatabase() (postgres/mysql/sqlite-file branching, unrelated to
+        # what's under test) and hand the manager an already-open connection, the way
+        # _handleReusableConnection()'s withReusedConnection=True path expects.
+        self.databaseManager._database = self.database
+        self.databaseManager._isConnected = True
+
+    def tearDown(self):
+        self.logger.removeHandler(self.logHandler)
+        self.database.drop_tables(MODELS)
+        self.database.close()
+
+    def _create(self, **fields):
+        defaults = {"displayName": "Test Spool", "isActive": True}
+        defaults.update(fields)
+        return SpoolModel.create(**defaults)
+
+    def _assertNothingLogged(self):
+        self.assertEqual(
+            [record.getMessage() for record in self.logHandler.records],
+            [],
+            "loadSpool() logged an error - the None it returned is a swallowed "
+            "exception, not a clean 'not found'",
+        )
+
+    def test_existingSpoolIsLoadedById(self):
+        spool = self._create(displayName="Kingroon White PLA")
+
+        result = self.databaseManager.loadSpool(
+            spool.databaseId, withReusedConnection=True
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.databaseId, spool.databaseId)
+        self.assertEqual(result.displayName, "Kingroon White PLA")
+
+    def test_unknownDatabaseIdReturnsNoneWithoutError(self):
+        # loadSpool() catches DoesNotExist and returns None. Guarded explicitly because
+        # _handleReusableConnection() also returns None on an unexpected exception, so
+        # the return value alone cannot tell the two apart.
+        self._create(displayName="The Only Spool")
+
+        result = self.databaseManager.loadSpool(999999, withReusedConnection=True)
+
+        self.assertIsNone(result)
+        self._assertNothingLogged()
+
+    def test_databaseIdMayBeAString(self):
+        # SpoolManagerAPI passes ids straight through from URL parameters, so they arrive
+        # as strings - the original script called loadSpool("9") for exactly that reason.
+        spool = self._create(displayName="String Id Spool")
+
+        result = self.databaseManager.loadSpool(
+            str(spool.databaseId), withReusedConnection=True
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.databaseId, spool.databaseId)
+
+    def test_deletedSpoolReturnsNone(self):
+        spool = self._create(displayName="Doomed Spool")
+        deletedId = spool.databaseId
+        spool.delete_instance()
+
+        result = self.databaseManager.loadSpool(deletedId, withReusedConnection=True)
+
+        self.assertIsNone(result)
+        self._assertNothingLogged()
 
 
 class TestDatabase(unittest.TestCase):
@@ -44,17 +158,6 @@ class TestDatabase(unittest.TestCase):
         self.testLogger = logging.getLogger("testLogger")
         logging.info("Start Database-Test")
         self.databaseManager = DatabaseManager(self.testLogger, True)
-
-        # databaseSettings = {
-        # 	"type": "postgres",
-        # 	"host": "localhost",
-        # 	"port": 5432,
-        # 	"databaseName": "spoolmanagerdb",
-        # 	"user": "Olli",
-        # 	"password": "illO"
-        # }
-        #
-        # self.databaseManager.initDatabase(self.databaselocation, databaseSettings, self._clientOutput)
 
     ##################################################################################################   SQLITE CONNECTION
     def _test_connectToSQLite(self):
@@ -146,7 +249,8 @@ class TestDatabase(unittest.TestCase):
         self.databaseManager.closeDatabase()
 
     ##################################################################################################   LOAD SINGLE SPOOL
-    def test_loadSingleSpool(self):
+    # Superseded by TestLoadSpool above; kept as a manual script like its siblings.
+    def _test_loadSingleSpool(self):
 
         self.databaseManager.initDatabase(
             self.sqliteDatabaseSettings, self._clientOutput
