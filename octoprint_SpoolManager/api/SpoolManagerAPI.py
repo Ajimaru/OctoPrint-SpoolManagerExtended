@@ -790,6 +790,11 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             "noSpoolSelected": [],
             "filamentNotEnough": [],
             "reminderSpoolSelection": [],
+            # Spools selected for tools this print does not touch at all. A slicer may map a
+            # single-colour job to extruder 1 (T0) while the spool physically sits in another
+            # slot and is selected there - the "no spool selected" warning is then correct but
+            # useless on its own, because the spool is visibly assigned somewhere else.
+            "spoolsOnUnusedTools": [],
         }
 
         filamentLengthPresentInMeta = self._readingFilamentMetaData()
@@ -801,6 +806,23 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             if filamentLengthPresentInMeta:
                 if toolIndex >= len(self.metaDataFilamentLengths):
                     # if this tool is not used (no filaLenght) in this print, everything is fine
+                    # ... but remember a spool selected here, so the frontend can point out that
+                    # the spool sits on a tool this print never uses. No checkRemainingFilament()
+                    # for these tools: the print does not consume from them.
+                    unusedToolSpoolModel = (
+                        spoolModels[toolIndex]
+                        if toolIndex < len(spoolModels)
+                        else None
+                    )
+                    if unusedToolSpoolModel is not None:
+                        result["spoolsOnUnusedTools"].append(
+                            {
+                                "toolIndex": toolIndex,
+                                "spoolName": unusedToolSpoolModel.displayName,
+                                "material": unusedToolSpoolModel.material,
+                                "remainingWeight": unusedToolSpoolModel.remainingWeight,
+                            }
+                        )
                     continue
 
             spoolModel = (
@@ -895,6 +917,11 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # check if the user want a popup
         if not checkForFilamentLength:
             result["filamentNotEnough"] = []
+
+        if not checkForSelectedSpool:
+            # the hint only ever decorates the "no spool selected" popup - without that
+            # popup there is nothing to decorate
+            result["spoolsOnUnusedTools"] = []
 
         if not reminderSelectingSpool:
             # no popup, because turned off by user

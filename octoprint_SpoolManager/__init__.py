@@ -7,12 +7,17 @@ import time
 import xml.etree.ElementTree as ET
 import zipfile
 from datetime import datetime
+from urllib.parse import quote
 
 import flask
 import octoprint.plugin
 from octoprint.access.permissions import Permissions
 from octoprint.events import Events
 from octoprint.filemanager.destinations import FileDestinations
+
+# FileDestinations.PRINTER only exists on OctoPrint 2.0; on 1.x the attribute is absent and
+# reading it raises. The wire value is "printer" in both, so resolve it once here.
+PRINTER_DESTINATION = getattr(FileDestinations, "PRINTER", "printer")
 
 from octoprint_SpoolManager.api import Transformer
 from octoprint_SpoolManager.api.SpoolManagerAPI import SpoolManagerAPI
@@ -49,6 +54,8 @@ class SpoolmanagerPlugin(
 
         # cache for filament usage parsed from printer-storage 3mf files: (path, plate) -> (fingerprint, filament)
         self._printer3mfFilamentCache = {}
+        # cache for per-tool filament usage read from Moonraker: (host, port, path) -> (filament,)
+        self._moonrakerFilamentCache = {}
         # guards against booking the sliced usage twice (connectors may fire PRINT_DONE multiple times)
         self._slicedUsageAlreadyBooked = False
         # own wall clock per print job - connectors may report time=0.0 in the PRINT_DONE payload
@@ -395,6 +402,16 @@ class SpoolmanagerPlugin(
         return result if result else None
 
     def _getFilamentMetaData(self, origin, path, plate=1):
+        # Printer-storage jobs on a Moonraker printer come with per-tool usage that the
+        # connector throws away, so ask Moonraker directly before trusting the metadata
+        # below - see _getFilamentFromMoonraker() for why, and
+        # https://github.com/OctoPrint/OctoPrint-MoonrakerConnector/issues/4 for when this
+        # workaround can be dropped again.
+        if origin == PRINTER_DESTINATION and path is not None:
+            filament = self._getFilamentFromMoonraker(path)
+            if filament is not None:
+                return filament
+
         candidates = [(origin, path)]
         if origin != FileDestinations.LOCAL and path is not None:
             # gcode analysis results only exist in local storage; printer-storage jobs
@@ -451,9 +468,96 @@ class SpoolmanagerPlugin(
                 return filament
 
         # last resort: no local copy at all, fetch the 3mf from the printer storage
-        if origin == FileDestinations.PRINTER and path.endswith(".3mf"):
+        if origin == PRINTER_DESTINATION and path.endswith(".3mf"):
             return self._getFilamentFromPrinter3mf(path, plate)
         return None
+
+    def _getFilamentFromMoonraker(self, path):
+        """
+        Per-tool filament usage for a printer-storage job, read straight from Moonraker.
+
+        OctoPrint-MoonrakerConnector maps a job's filament usage onto tool0 unconditionally
+        (`connector.py: {"tool0": AnalysisFilamentUse(length=f.filament_total)}`) and never
+        reads Moonraker's per-extruder breakdown - its InternalFile only carries
+        `filament_total`. On a multi-tool printer every job therefore looks like it prints
+        from tool 0: an Orca job sliced for the Snapmaker U1's slot 4 emits `T3` and
+        `filament used [mm] = 0.00, 0.00, 0.00, 21872.80`, yet arrives here as
+        `{"tool0": 21872.8}` - so the spool selected for tool 3 reads as "not selected"
+        while tool 0 reads as "in use".
+
+        Moonraker itself has the split all along, as `filament_used_mm` in the file
+        metadata, so fetch it from there. Returns None whenever anything is missing or
+        unusable, which leaves the existing metadata path (and its tool0 value) in charge.
+
+        Reported upstream as
+        https://github.com/OctoPrint/OctoPrint-MoonrakerConnector/issues/4 - once the
+        connector reports per-tool usage itself, this whole method and its call in
+        _getFilamentMetaData() can go: the normal metadata path then already returns the
+        right tools. Check the connector version before removing it, since users on an
+        older release still need this.
+        """
+        connectorParams = self._u1RfidManager._getConnectorParams()
+        if connectorParams is None:
+            # not a Moonraker printer (or OctoPrint 1.x without connection_state)
+            return None
+
+        payload = self._u1RfidManager._httpGet(
+            connectorParams["host"],
+            connectorParams["port"],
+            "/server/files/metadata?filename=%s" % quote(path),
+        )
+        result = (payload or {}).get("result")
+        if not isinstance(result, dict):
+            return None
+
+        # The request itself always runs - it is a local call and it is what detects a
+        # re-slice. Cached is only the parsed result, keyed by the file's identity so
+        # re-slicing to the same name invalidates the entry instead of serving stale tools.
+        cacheKey = (connectorParams["host"], connectorParams["port"], path)
+        fingerprint = (result.get("modified"), result.get("size"))
+        cached = self._moonrakerFilamentCache.get(cacheKey)
+        if cached is not None and cached[0] == fingerprint:
+            return cached[1]
+
+        usedPerTool = result.get("filament_used_mm")
+        if not isinstance(usedPerTool, list) or not usedPerTool:
+            # single-extruder slicers omit the breakdown - nothing gained over the
+            # connector's own value, so let the normal path handle it
+            return None
+
+        # a per-tool diameter list is what turns length into volume; Moonraker reports
+        # `filament_diameter` either per tool or as a single value
+        diameters = result.get("filament_diameter")
+        if not isinstance(diameters, list):
+            diameters = [diameters] * len(usedPerTool)
+
+        filament = {}
+        for toolIndex, usedLength in enumerate(usedPerTool):
+            try:
+                usedLength = float(usedLength)
+            except (TypeError, ValueError):
+                continue
+            if usedLength <= 0:
+                # tools this job never touches must stay absent, not be reported as 0 -
+                # that distinction is what tells allowedToPrint() which tools are in use
+                continue
+            toolData = {"length": usedLength}
+            try:
+                radius = float(diameters[toolIndex]) / 2.0
+                toolData["volume"] = math.pi * radius * radius * usedLength / 1000.0
+            except (TypeError, ValueError, IndexError, ZeroDivisionError):
+                pass
+            filament["tool%d" % toolIndex] = toolData
+
+        if not filament:
+            return None
+
+        self._moonrakerFilamentCache[cacheKey] = (fingerprint, filament)
+        self._logger.info(
+            "filament usage for job 'printer:%s' read per-tool from Moonraker: %s"
+            % (path, {tool: data["length"] for tool, data in filament.items()})
+        )
+        return filament
 
     def _getFilamentFromPrinter3mf(self, path, plate):
         connection = getattr(self._printer, "_connection", None)
