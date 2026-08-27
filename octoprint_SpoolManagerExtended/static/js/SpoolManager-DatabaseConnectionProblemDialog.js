@@ -1,4 +1,4 @@
-function DatabaseConnectionProblemDialog() {
+function SpoolManagerExtendedDatabaseConnectionProblemDialog() {
     var self = this;
 
     self.apiClient = null;
@@ -16,7 +16,7 @@ function DatabaseConnectionProblemDialog() {
     self.init = function (apiClient) {
         self.apiClient = apiClient;
 
-        self.problemDialog = $("#dialog_spoolManager_databaseConnectionProblem");
+        self.problemDialog = $("#spmx-dialog_spoolManager_databaseConnectionProblem");
     };
 
     self.isInitialized = function () {

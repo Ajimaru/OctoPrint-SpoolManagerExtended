@@ -1,4 +1,4 @@
-function SpoolManagerImportDialog() {
+function SpoolManagerExtendedImportDialog() {
     const self = this;
 
     this.apiClient = null;
@@ -19,7 +19,7 @@ function SpoolManagerImportDialog() {
     this.init = function (apiClient) {
         self.apiClient = apiClient;
 
-        self.importSpoolItemDialog = $("#dialog_spoolManager_csvImportStatus");
+        self.importSpoolItemDialog = $("#spmx-dialog_spoolManager_csvImportStatus");
     };
 
     this.isInitialized = function () {

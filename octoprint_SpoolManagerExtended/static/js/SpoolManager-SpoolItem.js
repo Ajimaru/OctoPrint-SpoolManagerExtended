@@ -226,15 +226,15 @@ let SpoolItem;
             // "transparent without a base tint" is the "completely colorless" checkbox in the
             // dialog (bound to transparentUntinted); it used to be pick-a-color's translucent
             // swatch, which went away with the widget.
-            var colorViewModel = ComponentFactory.createColorPicker(
-                "filament-color-picker",
+            var colorViewModel = SpoolManagerExtendedComponentFactory.createColorPicker(
+                "spmx-filament-color-picker",
                 DEFAULT_COLOR
             );
-            var colorViewModel2 = ComponentFactory.createColorPicker(
+            var colorViewModel2 = SpoolManagerExtendedComponentFactory.createColorPicker(
                 "filament-color-picker2",
                 "#0000ff"
             );
-            var colorViewModel3 = ComponentFactory.createColorPicker(
+            var colorViewModel3 = SpoolManagerExtendedComponentFactory.createColorPicker(
                 "filament-color-picker3",
                 "#ffff00"
             );
@@ -325,10 +325,10 @@ let SpoolItem;
             pickerColors[2]("#ffff00");
 
             var firstUseViewModel =
-                ComponentFactory.createDateTimePicker("firstUse-date-picker");
+                SpoolManagerExtendedComponentFactory.createDateTimePicker("firstUse-date-picker");
             var lastUseViewModel =
-                ComponentFactory.createDateTimePicker("lastUse-date-picker");
-            var purchasedOnViewModel = ComponentFactory.createDateTimePicker(
+                SpoolManagerExtendedComponentFactory.createDateTimePicker("lastUse-date-picker");
+            var purchasedOnViewModel = SpoolManagerExtendedComponentFactory.createDateTimePicker(
                 "purchasedOn-date-picker",
                 false
             );

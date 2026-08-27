@@ -3416,6 +3416,102 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
         return flask.jsonify({"result": upgradeResult, "metadata": metaDataResult})
 
+    #######################################################################################   MIGRATE FROM LEGACY SPOOLMANAGER
+    @octoprint.plugin.BlueprintPlugin.route(
+        "/migrateFromLegacySpoolManager", methods=["PUT"]
+    )
+    @no_firstrun_access
+    def migrateFromLegacySpoolManager(self):
+        # Adopts data/settings of a previous "SpoolManager" install. Explicitly user
+        # triggered from the settings - the plugin never migrates on its own.
+        jsonData = request.json if request.is_json else {}
+        # set by the frontend only after the user confirmed replacing an existing database
+        overwriteExisting = (
+            self._getValueFromJSONOrNone("overwriteExisting", jsonData) == True
+        )
+
+        # the settings travel through their own comparison dialog, so this route only
+        # ever copies the data folder
+        fileNames = self._getValueFromJSONOrNone("fileNames", jsonData)
+
+        migrationResult = self._performLegacyMigration(
+            overwriteExisting=overwriteExisting,
+            includeSettings=False,
+            fileNames=fileNames,
+        )
+
+        if migrationResult["success"]:
+            # refresh spool table and sidebar in all connected clients of this instance
+            self._sendDataToClient(dict(action="reloadTable and sidebarSpools"))
+
+        return flask.jsonify({"result": migrationResult})
+
+    #######################################################################################   LEGACY DATABASE PREVIEW
+    @octoprint.plugin.BlueprintPlugin.route("/legacyDatabasePreview", methods=["GET"])
+    @no_firstrun_access
+    def legacyDatabasePreview(self):
+        # What the old install holds, shown before anything is copied.
+        legacyDataFolder = self._getLegacyDataFolder()
+        if legacyDataFolder is None:
+            return flask.jsonify(
+                {"hasDatabase": False, "preview": None, "files": []}
+            )
+
+        databaseFile = os.path.join(
+            legacyDataFolder, DatabaseManager.DATABASE_FILE_NAME
+        )
+        hasDatabase = os.path.isfile(databaseFile)
+        preview = (
+            self._readLegacyDatabasePreview(databaseFile) if hasDatabase else None
+        )
+
+        return flask.jsonify(
+            {
+                "hasDatabase": hasDatabase,
+                "preview": preview,
+                "files": self._getLegacyFileEntries(),
+            }
+        )
+
+    #######################################################################################   LEGACY SETTINGS COMPARISON
+    @octoprint.plugin.BlueprintPlugin.route("/legacySettingsComparison", methods=["GET"])
+    @no_firstrun_access
+    def legacySettingsComparison(self):
+        rows = self._getLegacySettingsComparison()
+        return flask.jsonify({"rows": rows, "available": len(rows) > 0})
+
+    #######################################################################################   APPLY LEGACY SETTINGS
+    @octoprint.plugin.BlueprintPlugin.route("/applyLegacySettings", methods=["PUT"])
+    @no_firstrun_access
+    def applyLegacySettings(self):
+        jsonData = request.json if request.is_json else {}
+        keys = self._getValueFromJSONOrNone("keys", jsonData) or []
+
+        applyResult = self._applyLegacySettings(keys)
+
+        if applyResult["success"]:
+            self._sendDataToClient(dict(action="reloadTable and sidebarSpools"))
+
+        return flask.jsonify({"result": applyResult})
+
+    #######################################################################################   UNDO LEGACY MIGRATION
+    # One endpoint per migration kind: the database and the settings are migrated from
+    # separate tabs, so each has to be reversible on its own.
+    @octoprint.plugin.BlueprintPlugin.route(
+        "/undoLegacyMigration/<string:undoKind>", methods=["PUT"]
+    )
+    @no_firstrun_access
+    def undoLegacyMigration(self, undoKind):
+        if undoKind not in ("database", "settings"):
+            return flask.make_response("Unknown undo kind: " + str(undoKind), 400)
+
+        undoResult = self._undoLegacyMigration(undoKind)
+
+        if undoResult["success"]:
+            self._sendDataToClient(dict(action="reloadTable and sidebarSpools"))
+
+        return flask.jsonify({"result": undoResult})
+
     #######################################################################################   TEST DATABASE CONNECTION
     @octoprint.plugin.BlueprintPlugin.route("/testDatabaseConnection", methods=["PUT"])
     @no_firstrun_access

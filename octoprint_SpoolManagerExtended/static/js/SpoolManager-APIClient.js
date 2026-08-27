@@ -1,4 +1,4 @@
-function SpoolManagerAPIClient(pluginId, baseUrl) {
+function SpoolManagerExtendedAPIClient(pluginId, baseUrl) {
     this.pluginId = pluginId;
     this.baseUrl = baseUrl;
 
@@ -278,6 +278,62 @@ function SpoolManagerAPIClient(pluginId, baseUrl) {
         _callApi(
             _buildPluginUrl("upgradeDatabaseScheme"),
             {method: "PUT", body: JSON.stringify(payload || {})},
+            function (data) {
+                responseHandler(data);
+            }
+        );
+    };
+
+    //////////////////////////////////////////////////////////// MIGRATE from legacy SpoolManager install
+    this.callMigrateFromLegacySpoolManager = function (payload, responseHandler) {
+        _callApi(
+            _buildPluginUrl("migrateFromLegacySpoolManager"),
+            {method: "PUT", body: JSON.stringify(payload || {})},
+            function (data) {
+                responseHandler(data);
+            }
+        );
+    };
+
+    //////////////////////////////////////////////////////// LEGACY migration: database preview
+    this.callLegacyDatabasePreview = function (responseHandler) {
+        _callApi(
+            _buildPluginUrl("legacyDatabasePreview"),
+            {method: "GET"},
+            function (data) {
+                responseHandler(data);
+            }
+        );
+    };
+
+    //////////////////////////////////////////////////////// LEGACY migration: settings comparison
+    this.callLegacySettingsComparison = function (responseHandler) {
+        _callApi(
+            _buildPluginUrl("legacySettingsComparison"),
+            {method: "GET"},
+            function (data) {
+                responseHandler(data);
+            }
+        );
+    };
+
+    //////////////////////////////////////////////////////// LEGACY migration: apply selected settings
+    this.callApplyLegacySettings = function (payload, responseHandler) {
+        _callApi(
+            _buildPluginUrl("applyLegacySettings"),
+            {method: "PUT", body: JSON.stringify(payload || {})},
+            function (data) {
+                responseHandler(data);
+            }
+        );
+    };
+
+    //////////////////////////////////////////////////////// LEGACY migration: undo
+    // undoKind is "database" or "settings" - each migration is reversible on its own
+    this.callUndoLegacyMigration = function (undoKind, responseHandler) {
+        _callApi(
+            _buildPluginUrl("undoLegacyMigration/" + undoKind),
+            {method: "PUT", body: JSON.stringify({})},
             function (data) {
                 responseHandler(data);
             }

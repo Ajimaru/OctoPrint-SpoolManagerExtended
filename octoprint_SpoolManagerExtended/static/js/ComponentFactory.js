@@ -1,20 +1,20 @@
 // Static factory methods adopted from mdziekon/OctoPrint-SpoolManager PR #11 (GH-10):
-// the component creators are stateless, so they live on ComponentFactory itself and the
+// the component creators are stateless, so they live on SpoolManagerExtendedComponentFactory itself and the
 // constructor only delegates (prevents needless instantiation & coupling). The method
 // bodies are our own (extended color palette, translucent swatch, datetimepicker stub).
-function ComponentFactory(pluginId) {
+function SpoolManagerExtendedComponentFactory(pluginId) {
     this.pluginId = pluginId;
 
-    this.createDateTimePicker = ComponentFactory.createDateTimePicker;
-    this.createColorPicker = ComponentFactory.createColorPicker;
-    this.createNoteEditor = ComponentFactory.createNoteEditor;
+    this.createDateTimePicker = SpoolManagerExtendedComponentFactory.createDateTimePicker;
+    this.createColorPicker = SpoolManagerExtendedComponentFactory.createColorPicker;
+    this.createNoteEditor = SpoolManagerExtendedComponentFactory.createNoteEditor;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////// DATETIME - PICKER
 // jQuery datetimepicker removal authored by @mdziekon, adopted via mdziekon/OctoPrint-SpoolManager PR #21.
 // The dialog uses native date/datetime-local inputs; this only provides the observables
 // the edit dialog binds against.
-ComponentFactory.createDateTimePicker = function (elementId, showTimePicker) {
+SpoolManagerExtendedComponentFactory.createDateTimePicker = function (elementId, showTimePicker) {
     var componentViewModel = {
         currentDateTime: ko.observable(),
         isEnabled: ko.observable(true)
@@ -31,7 +31,7 @@ ComponentFactory.createDateTimePicker = function (elementId, showTimePicker) {
 // The returned model is the same one the widget version returned - consumers only ever used
 // componentViewModel.selectedColor, and that observable now carries "#rrggbb" consistently
 // (pick-a-color stored the hex without the "#", hence the prefixing this used to do).
-ComponentFactory.createColorPicker = function (elementId, initialColor) {
+SpoolManagerExtendedComponentFactory.createColorPicker = function (elementId, initialColor) {
     var picker = SPOOLMANAGER_COLOR_PICKER.create("#" + elementId, {
         initialColor: initialColor
     });
@@ -81,7 +81,7 @@ var _addGetHtmlHelper = function (noteEditor) {
 
 // Adopted from mdziekon/OctoPrint-SpoolManager PR #11 (GH-10): returns the raw Quill instance
 // (plus a getHtml helper) instead of a wrapper, so callers can use the full Quill API.
-ComponentFactory.createNoteEditor = function (elementId) {
+SpoolManagerExtendedComponentFactory.createNoteEditor = function (elementId) {
     var elementSelector = "#" + elementId;
     var noteEditor = new Quill(elementSelector, {
         modules: {

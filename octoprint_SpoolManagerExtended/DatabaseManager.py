@@ -32,6 +32,10 @@ FORCE_CREATE_TABLES = False
 
 CURRENT_DATABASE_SCHEME_VERSION = 12
 
+# Filename of the local SQLite database inside the plugin's data folder. Fixed, not
+# derived from the plugin identifier - the legacy migration relies on that.
+DATABASE_FILE_NAME = "spoolmanager.db"
+
 # List all Models
 MODELS = [PluginMetaDataModel, SpoolModel]
 
@@ -798,7 +802,7 @@ class DatabaseManager(object):
     ################################################################################################### public functions
     @staticmethod
     def buildDefaultDatabaseFileLocation(pluginDataBaseFolder):
-        databaseFileLocation = os.path.join(pluginDataBaseFolder, "spoolmanager.db")
+        databaseFileLocation = os.path.join(pluginDataBaseFolder, DATABASE_FILE_NAME)
         return databaseFileLocation
 
     def initDatabase(self, databaseSettings, sendMessageToClient):
@@ -1938,7 +1942,7 @@ class DatabaseManager(object):
                     "error",
                     "DatabaseManager",
                     "The database scheme is outdated. "
-                    "Open Plugin Settings -> SpoolManager -> Storage and press 'Upgrade database scheme'!",
+                    "Open Plugin Settings -> Spool Manager Extended -> Storage and press 'Upgrade database scheme'!",
                 )
             else:
                 self._passMessageToClient(

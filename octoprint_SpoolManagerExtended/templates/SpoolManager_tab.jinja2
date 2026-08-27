@@ -2,7 +2,7 @@
 {% include "SpoolManager_tab_dialogs.jinja2" %}
 {% import 'SpoolManager_tab_macros.jinja2' as forms %}
 
-<div id="tab_spoolOverview">
+<div id="spmx-tab_spoolOverview">
     <!-- Filter / Sorting -->
     <div data-bind="visible: pluginNotWorking()==true">
         <div class="row-fluid">
@@ -11,7 +11,14 @@
     </div>
     <div data-bind="visible: schemeUpgradeNeeded()==true">
         <div class="row-fluid">
-            <font color="orange"><b>The database scheme is outdated. Open Plugin Settings &rarr; SpoolManager &rarr; Storage and press 'Upgrade database scheme'!</b></font>
+            <font color="orange"><b>The database scheme is outdated. Open Plugin Settings &rarr; Spool Manager Extended &rarr; Storage and press 'Upgrade database scheme'!</b></font>
+        </div>
+    </div>
+    <!-- Unlike the scheme banner this does not disable anything: the plugin works fine,
+         the legacy data is an offer, not a blocker. -->
+    <div data-bind="visible: legacyMigrationPending()==true">
+        <div class="row-fluid">
+            <font color="orange"><b>Data from a previous SpoolManager installation was found. Open Plugin Settings &rarr; Spool Manager Extended &rarr; Storage to migrate it.</b></font>
         </div>
     </div>
     <div data-bind="visible: pluginNotWorking()==false">

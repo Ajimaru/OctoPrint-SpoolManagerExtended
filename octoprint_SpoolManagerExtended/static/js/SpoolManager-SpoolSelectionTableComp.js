@@ -1,11 +1,11 @@
-function SpoolSelectionTableComp() {
+function SpoolManagerExtendedSpoolSelectionTableComp() {
     let self = this;
     //////////////////////////////////////////////////////////////////// browser storage
 
     //////////////////////////////////////////////////////////////////// public functions
     self.registerSpoolSelectionTableComp = function () {
-        var spoolSelectionTableCompHTMLTemplate = $("#spm-select-spool-table").html();
-        ko.components.register("spm-select-spool-table", {
+        var spoolSelectionTableCompHTMLTemplate = $("#spmx-spm-select-spool-table").html();
+        ko.components.register("spmx-select-spool-table", {
             viewModel: self._viewModelFunction,
             template: spoolSelectionTableCompHTMLTemplate
         });
@@ -83,10 +83,10 @@ function SpoolSelectionTableComp() {
         );
         // Suppresses the selected*ForFilter subscriptions' _executeFilter()/storage-write
         // while the shared catalog arrays (allMaterials/allVendors/allColors, owned by
-        // TableItemHelper) grow and this component re-selects "all" into its own selection.
+        // SpoolManagerExtendedTableItemHelper) grow and this component re-selects "all" into its own selection.
         // This component has no updateCatalogs() of its own - it observes the same catalog
-        // KO arrays TableItemHelper.updateCatalogs() writes to (see the allCatalogsKO
-        // subscription below) - so it needs its own guard, mirroring TableItemHelper's
+        // KO arrays SpoolManagerExtendedTableItemHelper.updateCatalogs() writes to (see the allCatalogsKO
+        // subscription below) - so it needs its own guard, mirroring SpoolManagerExtendedTableItemHelper's
         // isUpdatingCatalogs. Adopted from mdziekon PR #15, extended for this component.
         self.isUpdatingCatalogs = false;
 
@@ -185,7 +185,7 @@ function SpoolSelectionTableComp() {
         });
 
         // This component doesn't own allMaterials/allVendors/allColors - it receives the
-        // same KO arrays TableItemHelper.updateCatalogs() populates (params.all*KOArray),
+        // same KO arrays SpoolManagerExtendedTableItemHelper.updateCatalogs() populates (params.all*KOArray),
         // but keeps its own independent selected*ForFilter. So a catalog refresh (e.g. a
         // newly added filament color) must be mirrored into THIS component's selection
         // separately, or the new entry stays silently excluded while "select all" is active.

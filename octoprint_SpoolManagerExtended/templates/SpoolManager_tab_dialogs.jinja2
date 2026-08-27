@@ -1,19 +1,25 @@
 {% import 'SpoolManager_tab_macros.jinja2' as forms %}
 
-<span id="modal-dialogs-spoolManager" style="display:none" >
+<span id="spmx-modal-dialogs-spoolManager" style="display:none" >
 
-    <!--###############################################################  CSV Import Status-Dialog: id="dialog_spoolManager_csvImportStatus" -->
+    <!--###############################################################  CSV Import Status-Dialog: id="spmx-dialog_spoolManager_csvImportStatus" -->
     {% include "SpoolManager_dialog_csvImportStatus.jinja2" %}
 
-    <!--###############################################################  Spool EDIT Dialog: id="dialog_spool_edit" -->
+    <!--###############################################################  Spool EDIT Dialog: id="spmx-dialog_spool_edit" -->
     {% include "SpoolManager_dialog_editSpool.jinja2" %}
 
     <!--###############################################################  Add Spool WIZARD Dialog: id="dialog_addSpoolWizard" -->
     {% include "SpoolManager_dialog_addSpoolWizard.jinja2" %}
 
-    <!--###############################################################  Spool SELECTION Dialog: id="dialog_spool_selection" -->
+    <!--###############################################################  Spool SELECTION Dialog: id="spmx-dialog_spool_selection" -->
     {% include "SpoolManager_dialog_selectSpool.jinja2" %}
 
-    <!--###############################################################  DatabaseConnectionProblem-Dialog: id="dialog_spoolManager_databaseConnectionProblem" -->
+    <!--###############################################################  DatabaseConnectionProblem-Dialog: id="spmx-dialog_spoolManager_databaseConnectionProblem" -->
     {% include "SpoolManager_dialog_databaseConnectionProblem.jinja2" %}
+
+    <!--###############################################################  Legacy database migration: id="spmx-dialog_legacy_database" -->
+    {% include "SpoolManager_dialog_legacyDatabase.jinja2" %}
+
+    <!--###############################################################  Legacy settings comparison: id="spmx-dialog_legacy_settings" -->
+    {% include "SpoolManager_dialog_legacySettings.jinja2" %}
 </span>

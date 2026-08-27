@@ -1,0 +1,83 @@
+<!--###############################################################  Legacy database migration: id="spmx-dialog_legacy_database" -->
+<div id="spmx-dialog_legacy_database" class="modal hide fade">
+    <div class="modal-header">
+        <a href="#" class="close" aria-hidden="true"
+           data-bind="click: closeLegacyDatabaseDialog">&times;</a>
+        <h3 class="modal-title"><i class="fas fa-database"></i>&nbsp; Migrate database from SpoolManager</h3>
+    </div>
+    <div class="modal-body">
+        <!-- ko if: legacyDatabasePreview() != null && legacyDatabasePreview().readable -->
+        <div class="alert alert-info">
+            <b>Found in the previous installation:</b>
+            <span data-bind="text: legacyDatabasePreview().spoolCount"></span> spool(s),
+            <span data-bind="text: legacyDatabasePreview().templateCount"></span> template(s),
+            <span data-bind="text: legacyDatabaseRemainingWeightText"></span> remaining
+            <!-- ko if: legacyDatabasePreview().schemeVersion != null -->
+            &mdash; database scheme <span data-bind="text: legacyDatabasePreview().schemeVersion"></span>
+            <!-- /ko -->
+            <!-- ko if: legacyDatabasePreview().spools.length > 0 -->
+            <ul style="margin-top: 6px; margin-bottom: 0;" data-bind="foreach: legacyDatabasePreview().spools">
+                <li>
+                    <small>
+                        <span data-bind="text: displayName"></span>
+                        <!-- ko if: material --><span data-bind="text: ' - ' + material"></span><!-- /ko -->
+                        <!-- ko if: remainingWeight != null --><span data-bind="text: ' - ' + remainingWeight + ' g'"></span><!-- /ko -->
+                    </small>
+                </li>
+            </ul>
+            <!-- /ko -->
+            <!-- ko if: legacyDatabasePreview().moreSpools > 0 -->
+            <small data-bind="text: '... and ' + legacyDatabasePreview().moreSpools + ' more'"></small>
+            <!-- /ko -->
+        </div>
+        <!-- /ko -->
+        <!-- ko if: legacyDatabasePreview() != null && legacyDatabasePreview().readable === false -->
+        <div class="alert">
+            <i class="fas fa-info-circle"></i>
+            The previous database could not be read, so there is no preview. It can still be copied.
+        </div>
+        <!-- /ko -->
+
+        <p>
+            <small>Files are <b>copied</b> - the previous installation is left untouched and stays usable.
+            Disable the old SpoolManager plugin afterwards: with both active they work on the same data.
+            A database scheme upgrade may be required once the migration is done.</small>
+        </p>
+
+        <!-- ko if: legacyDatabaseFiles().length > 0 -->
+        <table class="table table-condensed">
+            <thead>
+                <tr>
+                    <th style="width: 24px;">
+                        <input type="checkbox"
+                               data-bind="checked: legacyDatabaseAllSelected, click: toggleAllLegacyFiles">
+                    </th>
+                    <th>File</th>
+                    <th>Type</th>
+                    <th>Size</th>
+                </tr>
+            </thead>
+            <tbody data-bind="foreach: legacyDatabaseFiles">
+                <tr>
+                    <td>
+                        <input type="checkbox" data-bind="checked: selected">
+                    </td>
+                    <td><small data-bind="text: name"></small></td>
+                    <td><small data-bind="text: kind"></small></td>
+                    <td><small data-bind="text: sizeText"></small></td>
+                </tr>
+            </tbody>
+        </table>
+        <!-- /ko -->
+        <!-- ko if: legacyDatabaseFiles().length === 0 -->
+        <p><small class="text-warning"><i class="fas fa-info-circle"></i> The previous data folder is empty.</small></p>
+        <!-- /ko -->
+    </div>
+    <div class="modal-footer">
+        <button type="button" class="btn" data-bind="click: selectAllLegacyFiles" style="float: left;">Select all</button>
+        <button type="button" class="btn" data-bind="click: deselectAllLegacyFiles" style="float: left;">Deselect all</button>
+        <button type="button" class="btn" data-bind="click: closeLegacyDatabaseDialog">Cancel</button>
+        <button type="button" class="btn btn-primary"
+                data-bind="click: applySelectedLegacyFiles, enable: legacyDatabaseFiles().length > 0">Copy selected</button>
+    </div>
+</div>

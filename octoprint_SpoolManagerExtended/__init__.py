@@ -1,14 +1,17 @@
 # coding=utf-8
 
+import json
 import math
 import os
 import shutil
 import socket
+import sqlite3
 import time
 import xml.etree.ElementTree as ET
 import zipfile
 from datetime import datetime
 from urllib.parse import quote
+from urllib.request import pathname2url
 
 import flask
 import octoprint.plugin
@@ -30,7 +33,10 @@ from octoprint_SpoolManagerExtended.common.FilamentDatabaseService import (
 from octoprint_SpoolManagerExtended.common import FilamentTagConstants
 from octoprint_SpoolManagerExtended.common.TigerTagIdService import TigerTagIdService
 from octoprint_SpoolManagerExtended.common.SettingsKeys import SettingsKeys
-from octoprint_SpoolManagerExtended.DatabaseManager import DatabaseManager
+from octoprint_SpoolManagerExtended.DatabaseManager import (
+    DATABASE_FILE_NAME,
+    DatabaseManager,
+)
 from octoprint_SpoolManagerExtended.MqttManager import MqttManager
 from octoprint_SpoolManagerExtended.U1RfidManager import U1RfidManager
 from octoprint_SpoolManagerExtended.newodometer import NewFilamentOdometer
@@ -38,6 +44,28 @@ from octoprint_SpoolManagerExtended.newodometer import NewFilamentOdometer
 # sentinel distinguishing "never announced" from "known to be empty (None)" in
 # _lastAnnouncedSpoolIds, so the very first deselect of a tool is not swallowed
 _SPOOL_SELECTION_NOT_YET_ANNOUNCED = object()
+
+# Identifier this plugin used before it was renamed to "SpoolManagerExtended". Both the
+# data folder (~/.octoprint/data/<identifier>/) and the settings namespace
+# (plugins.<identifier>) are derived from it, so an existing install is only reachable
+# under the old name - see _performLegacyMigration().
+LEGACY_IDENTIFIER = "SpoolManager"
+
+# Records what a migration overwrote, so it can be taken back. One file per migration
+# kind, so the database and the settings can be undone independently - they are separate
+# actions in separate tabs, and undoing one must not silently drop the other's record.
+# Their presence is what enables the respective "Undo" button.
+LEGACY_UNDO_FILE_NAMES = {
+    "database": "legacy-migration-undo-database.json",
+    "settings": "legacy-migration-undo-settings.json",
+}
+
+# Settings that must not be offered in the comparison dialog: the selected spool ids point
+# at database rows and only make sense together with the database itself, and the version
+# describes the installed plugin rather than a user choice.
+LEGACY_SETTINGS_NOT_MIGRATABLE = frozenset(
+    ["selectedSpoolsDatabaseIds", "installed_version"]
+)
 
 
 class SpoolmanagerPlugin(
@@ -61,11 +89,6 @@ class SpoolmanagerPlugin(
         self._slicedUsageAlreadyBooked = False
         # own wall clock per print job - connectors may report time=0.0 in the PRINT_DONE payload
         self._printJobStartedTimestamp = None
-
-        # Legacy install migration: this plugin was renamed from "SpoolManager" to
-        # "SpoolManagerExtended". Existing data folder/settings live under the old
-        # identifier and must be adopted before the database is opened at the new path.
-        self._migrateFromLegacyIdentifier()
 
         # DATABASE
         self.databaseConnectionProblemConfirmed = False
@@ -123,49 +146,613 @@ class SpoolmanagerPlugin(
         self._logger.info("Done initializing")
         pass
 
-    def _migrateFromLegacyIdentifier(self):
+    def _getLegacyDataFolder(self):
         """
-        One-time adoption of data/settings left behind under the plugin's previous
-        identifier "SpoolManager" (before the rename to "SpoolManagerExtended").
-        No-op once the new data folder already has its own database file.
+        Path of the data folder left behind under the plugin's previous identifier
+        "SpoolManager" (before the rename to "SpoolManagerExtended"), or None if
+        there is none. Pure lookup, no side effects.
         """
-        LEGACY_IDENTIFIER = "SpoolManager"
-
-        newDataFolder = self.get_plugin_data_folder()
-        if os.path.isfile(os.path.join(newDataFolder, "spoolmanager.db")):
-            # already migrated (or a fresh install that created its own DB)
-            return
-
         legacyDataFolder = os.path.join(
             self._settings.getBaseFolder("data"), LEGACY_IDENTIFIER
         )
         if not os.path.isdir(legacyDataFolder):
-            return
+            return None
+        return legacyDataFolder
 
-        self._logger.info(
-            "Legacy data folder '%s' found, migrating to '%s'"
-            % (legacyDataFolder, newDataFolder)
-        )
-        os.makedirs(newDataFolder, exist_ok=True)
-        for entryName in os.listdir(legacyDataFolder):
-            shutil.move(
-                os.path.join(legacyDataFolder, entryName),
-                os.path.join(newDataFolder, entryName),
-            )
-        try:
-            os.rmdir(legacyDataFolder)
-        except OSError:
-            pass
+    def _isLegacyMigrationAvailable(self):
+        """
+        Whether there is anything worth migrating from a previous SpoolManager install.
+
+        Deliberately ignores a legacy folder that only holds the SpoolmanDB/TigerTag
+        caches: the old plugin recreates those on its own, so treating them as
+        "migratable" would show the migration hint forever with nothing to adopt.
+        """
+        legacyDataFolder = self._getLegacyDataFolder()
+        if legacyDataFolder is not None:
+            if os.path.isfile(os.path.join(legacyDataFolder, DATABASE_FILE_NAME)):
+                return True
 
         legacySettings = self._settings.global_get(["plugins", LEGACY_IDENTIFIER])
         if legacySettings:
-            for key, value in legacySettings.items():
-                self._settings.set([key], value)
-            self._settings.save()
-            self._logger.info(
-                "Migrated settings from 'plugins.%s' to 'plugins.SpoolManagerExtended'"
-                % LEGACY_IDENTIFIER
+            return True
+
+        return False
+
+    def _databaseHoldsSpools(self, databaseFile):
+        """
+        Whether the SQLite file at databaseFile contains at least one spool.
+
+        Read directly via sqlite3 rather than through the DatabaseManager: the plugin
+        keeps its own database open, and this has to inspect a file that may not be the
+        one currently connected. Anything unreadable counts as "no spools" - an
+        unusable file is not worth guarding against being replaced.
+        """
+        if not os.path.isfile(databaseFile):
+            return False
+        try:
+            connection = sqlite3.connect(databaseFile)
+            try:
+                cursor = connection.execute("SELECT COUNT(*) FROM spo_spoolmodel")
+                return cursor.fetchone()[0] > 0
+            finally:
+                connection.close()
+        except Exception:
+            self._logger.exception(
+                "Could not read '%s', treating it as empty" % databaseFile
             )
+            return False
+
+    def _readLegacyDatabasePreview(self, databaseFile, spoolLimit=10):
+        """
+        Summary of what a legacy database holds, for the confirmation dialog: counts,
+        scheme version, total remaining weight and the first few spools by name.
+
+        Opened read-only (sqlite3 URI mode=ro): the file still belongs to the old plugin,
+        which may well be running, and a preview must not create a journal next to it or
+        touch the file in any way.
+        """
+        preview = {
+            "readable": False,
+            "spoolCount": 0,
+            "templateCount": 0,
+            "schemeVersion": None,
+            "totalRemainingWeight": 0.0,
+            "spools": [],
+            "moreSpools": 0,
+        }
+        if not os.path.isfile(databaseFile):
+            return preview
+
+        try:
+            uri = "file:%s?mode=ro" % pathname2url(databaseFile)
+            connection = sqlite3.connect(uri, uri=True)
+            try:
+                # regular spools store NULL in isTemplate, not False - see loadSpoolByCode()
+                preview["spoolCount"] = connection.execute(
+                    "SELECT COUNT(*) FROM spo_spoolmodel WHERE isTemplate IS NULL OR isTemplate = 0"
+                ).fetchone()[0]
+                preview["templateCount"] = connection.execute(
+                    "SELECT COUNT(*) FROM spo_spoolmodel WHERE isTemplate = 1"
+                ).fetchone()[0]
+                preview["totalRemainingWeight"] = (
+                    connection.execute(
+                        "SELECT COALESCE(SUM(remainingWeight), 0) FROM spo_spoolmodel "
+                        "WHERE isTemplate IS NULL OR isTemplate = 0"
+                    ).fetchone()[0]
+                    or 0.0
+                )
+                for row in connection.execute(
+                    "SELECT displayName, material, remainingWeight FROM spo_spoolmodel "
+                    "WHERE isTemplate IS NULL OR isTemplate = 0 "
+                    "ORDER BY databaseId LIMIT ?",
+                    (spoolLimit,),
+                ):
+                    preview["spools"].append(
+                        {
+                            "displayName": row[0],
+                            "material": row[1],
+                            "remainingWeight": row[2],
+                        }
+                    )
+                preview["moreSpools"] = max(
+                    0, preview["spoolCount"] - len(preview["spools"])
+                )
+                try:
+                    schemeRow = connection.execute(
+                        "SELECT value FROM spo_pluginmetadatamodel "
+                        "WHERE key = 'databaseSchemeVersion'"
+                    ).fetchone()
+                    if schemeRow is not None:
+                        preview["schemeVersion"] = schemeRow[0]
+                except Exception:
+                    # a database without the metadata table is still worth previewing
+                    pass
+                preview["readable"] = True
+            finally:
+                connection.close()
+        except Exception:
+            # Not an error worth failing on: an unreadable file simply cannot be
+            # summarised, and the dialog says so while still offering the copy.
+            self._logger.exception("Could not read legacy database '%s'" % databaseFile)
+
+        return preview
+
+    def _classifyLegacyFile(self, entryName):
+        """
+        What kind of file an entry in the legacy data folder is, which decides whether the
+        dialog preselects it: the database is the point of the exercise, caches rebuild
+        themselves (the SpoolmanDB index alone is ~10 MB), backups are the user's call.
+        """
+        if entryName == DATABASE_FILE_NAME:
+            return "database"
+        if entryName.endswith("_index.json") or entryName.endswith("_installation_id"):
+            return "cache"
+        if (
+            entryName.startswith("spoolmanager-backup")
+            or entryName.startswith("spoolmanager_external_backup")
+            or entryName.startswith("SpoolManager-backup")
+            or entryName.endswith(".sql")
+            or entryName.endswith(".csv")
+        ):
+            return "backup"
+        return "other"
+
+    def _getLegacyFileEntries(self):
+        """Entries of the legacy data folder, annotated for the migration dialog."""
+        legacyDataFolder = self._getLegacyDataFolder()
+        if legacyDataFolder is None:
+            return []
+
+        entries = []
+        for entryName in sorted(os.listdir(legacyDataFolder)):
+            path = os.path.join(legacyDataFolder, entryName)
+            kind = self._classifyLegacyFile(entryName)
+            try:
+                size = (
+                    sum(
+                        os.path.getsize(os.path.join(root, name))
+                        for root, _dirs, files in os.walk(path)
+                        for name in files
+                    )
+                    if os.path.isdir(path)
+                    else os.path.getsize(path)
+                )
+            except OSError:
+                size = 0
+            entries.append(
+                {
+                    "name": entryName,
+                    "kind": kind,
+                    "size": size,
+                    "isDirectory": os.path.isdir(path),
+                    # only the database is worth taking by default
+                    "preselected": kind == "database",
+                }
+            )
+        return entries
+
+    def _getUndoFilePath(self, undoKind):
+        return os.path.join(
+            self.get_plugin_data_folder(), LEGACY_UNDO_FILE_NAMES[undoKind]
+        )
+
+    def _isLegacyMigrationUndoAvailable(self, undoKind):
+        return os.path.isfile(self._getUndoFilePath(undoKind))
+
+    def _writeUndoRecord(self, undoKind, replacedFiles, previousSettings):
+        """
+        Records what a migration overwrote so it can be taken back. One step per kind:
+        the previous database migration and the previous settings migration can each be
+        undone, but not a whole chain - more levels would just litter the data folder,
+        and the legacy folder itself is the real way back.
+        """
+        record = {
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "replacedFiles": replacedFiles,
+            "previousSettings": previousSettings,
+        }
+        try:
+            with open(self._getUndoFilePath(undoKind), "w") as undoFile:
+                json.dump(record, undoFile, indent=2)
+        except Exception:
+            # Losing the undo record must not fail the migration itself - the data is
+            # already copied at this point, and the legacy folder is still intact.
+            self._logger.exception("Could not write the migration undo record")
+
+    def _isLegacyMigrationDone(self):
+        """
+        Whether a migration has already run. Used to retire the banner: the legacy folder
+        is deliberately kept (we copy, never move), so its mere presence would keep the
+        hint up forever - even for someone who migrated everything on day one.
+
+        An undo brings the banner back, which is the point: at that moment there really
+        is something left to migrate again.
+        """
+        return any(
+            self._isLegacyMigrationUndoAvailable(undoKind)
+            for undoKind in LEGACY_UNDO_FILE_NAMES
+        )
+
+    def _hasLegacySettings(self):
+        """
+        Whether the old install has a settings namespace at all - the settings migration
+        button is pointless without one, even when a legacy database is present.
+        """
+        return bool(self._settings.global_get(["plugins", LEGACY_IDENTIFIER]))
+
+    def _performLegacyMigration(
+        self, overwriteExisting=False, includeSettings=True, fileNames=None
+    ):
+        """
+        Copies data and (optionally) settings of a previous SpoolManager install into this
+        plugin's own data folder / settings namespace. Triggered by the user from the
+        settings, never automatically - it touches user data.
+
+        The legacy folder is left untouched (copy, not move), so the old install stays
+        usable as a fallback. Files that would be overwritten are kept as
+        "<name>.pre-migration-<timestamp>" and recorded for undoLegacyMigration().
+
+        fileNames=None copies every entry; a list restricts it to those names.
+
+        Returns a result dict mirroring the shape used by upgradeDatabaseScheme():
+        {"success": bool, "errorMessage": str, "conflict": bool, "copiedFiles": int,
+         "settingsMigrated": bool, "schemeUpgradeNeeded": bool}
+        """
+
+        def failure(errorMessage, conflict=False):
+            return {
+                "success": False,
+                "errorMessage": errorMessage,
+                "conflict": conflict,
+                "copiedFiles": 0,
+                "settingsMigrated": False,
+            }
+
+        legacyDataFolder = self._getLegacyDataFolder()
+        legacySettings = self._settings.global_get(["plugins", LEGACY_IDENTIFIER])
+
+        if legacyDataFolder is None and not legacySettings:
+            return failure(
+                "No previous SpoolManager installation found. Nothing to migrate."
+            )
+
+        newDataFolder = self.get_plugin_data_folder()
+        legacyDatabaseFile = (
+            os.path.join(legacyDataFolder, DATABASE_FILE_NAME)
+            if legacyDataFolder is not None
+            else None
+        )
+        hasLegacyDatabase = legacyDatabaseFile is not None and os.path.isfile(
+            legacyDatabaseFile
+        )
+        # a database only moves when it is actually part of the selection
+        databaseIsSelected = hasLegacyDatabase and (
+            fileNames is None or DATABASE_FILE_NAME in fileNames
+        )
+
+        # Only a database holding actual spools is worth protecting. The plugin creates an
+        # empty one on first start, so testing for the file alone would confront every
+        # existing user with a data-loss warning that does not apply to them.
+        targetDatabaseFile = os.path.join(newDataFolder, DATABASE_FILE_NAME)
+        if (
+            databaseIsSelected
+            and self._databaseHoldsSpools(targetDatabaseFile)
+            and not overwriteExisting
+        ):
+            return failure(
+                "This installation already has its own database with spools in it. "
+                "Migrating would replace it with the one from the previous "
+                "SpoolManager install.",
+                conflict=True,
+            )
+
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        replacedFiles = []
+        copiedFiles = 0
+        try:
+            if legacyDataFolder is not None:
+                os.makedirs(newDataFolder, exist_ok=True)
+                for entryName in os.listdir(legacyDataFolder):
+                    if fileNames is not None and entryName not in fileNames:
+                        continue
+                    sourcePath = os.path.join(legacyDataFolder, entryName)
+                    targetPath = os.path.join(newDataFolder, entryName)
+                    # keep whatever is about to be replaced, so the undo has something
+                    # to put back
+                    if os.path.exists(targetPath) and not os.path.isdir(targetPath):
+                        backupName = "%s.pre-migration-%s" % (entryName, timestamp)
+                        os.rename(targetPath, os.path.join(newDataFolder, backupName))
+                        replacedFiles.append(
+                            {"name": entryName, "backupName": backupName}
+                        )
+                    if os.path.isdir(sourcePath):
+                        shutil.copytree(sourcePath, targetPath, dirs_exist_ok=True)
+                    else:
+                        shutil.copy2(sourcePath, targetPath)
+                    copiedFiles += 1
+                self._logger.info(
+                    "Migrated %s entries from '%s' to '%s' (originals kept)"
+                    % (copiedFiles, legacyDataFolder, newDataFolder)
+                )
+        except Exception as e:
+            self._logger.exception("Legacy data migration failed")
+            return failure("Could not copy the data folder: " + str(e))
+
+        settingsMigrated = False
+        previousSettings = {}
+        try:
+            if includeSettings and legacySettings:
+                previousSettings = self._captureSettingsForUndo(legacySettings.keys())
+                for key, value in legacySettings.items():
+                    self._settings.set([key], value)
+                self._settings.save()
+                settingsMigrated = True
+                self._logger.info(
+                    "Migrated settings from 'plugins.%s' to 'plugins.%s'"
+                    % (LEGACY_IDENTIFIER, self._identifier)
+                )
+        except Exception as e:
+            self._logger.exception("Legacy settings migration failed")
+            return failure("Data was copied, but the settings could not be migrated: " + str(e))
+
+        # Written whenever something was actually migrated, not only when files were
+        # replaced: migrating into an empty install overwrites nothing, but it still has
+        # to count as done - otherwise the banner would never retire for exactly the
+        # users the migration is meant for.
+        if copiedFiles or replacedFiles or previousSettings:
+            self._writeUndoRecord("database", replacedFiles, previousSettings)
+
+        # The migrated database predates this plugin's scheme version, so an upgrade is
+        # the expected next step - reported so the UI can say so instead of looking broken.
+        schemeUpgradeNeeded = False
+        try:
+            if databaseIsSelected:
+                schemeUpgradeNeeded = self._databaseManager.isSchemeUpgradeNeeded()
+        except Exception:
+            self._logger.exception(
+                "Could not determine whether a scheme upgrade is needed after migration"
+            )
+
+        return {
+            "success": True,
+            "errorMessage": None,
+            "conflict": False,
+            "copiedFiles": copiedFiles,
+            "settingsMigrated": settingsMigrated,
+            "schemeUpgradeNeeded": schemeUpgradeNeeded,
+        }
+
+    def _captureSettingsForUndo(self, keys):
+        """
+        Current value of each key before it is overwritten. A key that has no value of its
+        own yet is recorded as None, so the undo removes it again rather than writing a
+        value the user never had.
+        """
+        captured = {}
+        for key in keys:
+            try:
+                captured[key] = self._settings.get([key])
+            except Exception:
+                captured[key] = None
+        return captured
+
+    def _getLegacySettingsKeys(self):
+        """
+        Every setting the old plugin knows, not just the ones it has stored.
+
+        OctoPrint only writes settings that differ from their default, so a plugin the
+        user barely touched stores a handful of keys while knowing dozens - listing only
+        the stored ones would hide most of the comparison (currencySymbol and friends
+        simply would not appear).
+
+        Read from the old plugin's own SettingsKeys when it is installed; otherwise fall
+        back to ours, which is a superset - the old plugin has no key we lack.
+        """
+        try:
+            from octoprint_SpoolManager.common.SettingsKeys import (
+                SettingsKeys as LegacySettingsKeys,
+            )
+
+            source = LegacySettingsKeys
+        except Exception:
+            source = SettingsKeys
+
+        return {
+            getattr(source, name)
+            for name in dir(source)
+            if name.startswith("SETTINGS_KEY_")
+            and isinstance(getattr(source, name), str)
+        }
+
+    def _getLegacySettingsComparison(self):
+        """
+        Rows for the settings comparison dialog: what the old install has, what this one
+        has, and what would apply where nothing is stored.
+        """
+        legacySettings = self._settings.global_get(["plugins", LEGACY_IDENTIFIER]) or {}
+        defaults = self.get_settings_defaults()
+
+        # stored values first, then everything else the old plugin knows - a value it
+        # never stored still applies over there, and may well differ from ours
+        candidateKeys = set(legacySettings.keys()) | self._getLegacySettingsKeys()
+
+        rows = []
+        for key in sorted(candidateKeys):
+            if key in LEGACY_SETTINGS_NOT_MIGRATABLE:
+                continue
+
+            legacyIsStored = key in legacySettings
+            # the shared defaults are identical between both plugins, so ours stand in
+            # for what the old install actually applies
+            legacyValue = (
+                legacySettings.get(key) if legacyIsStored else defaults.get(key)
+            )
+
+            try:
+                currentValue = self._settings.get([key])
+            except Exception:
+                currentValue = None
+            defaultValue = defaults.get(key)
+            effectiveValue = currentValue if currentValue is not None else defaultValue
+
+            # a key neither side knows a value for carries no information
+            if legacyValue is None and effectiveValue is None:
+                continue
+
+            rows.append(
+                {
+                    "key": key,
+                    "legacyValueText": self._formatSettingValue(legacyValue),
+                    "legacyIsDefault": not legacyIsStored,
+                    "currentValueText": self._formatSettingValue(effectiveValue),
+                    "currentIsDefault": currentValue is None,
+                    "differs": legacyValue != effectiveValue,
+                }
+            )
+        return rows
+
+    @staticmethod
+    def _formatSettingValue(value):
+        """Settings as display text, so the dialog does not have to format anything."""
+        if value is None:
+            return ""
+        if isinstance(value, bool):
+            return "yes" if value else "no"
+        if isinstance(value, (list, dict)):
+            try:
+                return json.dumps(value, separators=(", ", ": "))
+            except Exception:
+                return str(value)
+        return str(value)
+
+    def _applyLegacySettings(self, keys):
+        """Writes only the named keys from the legacy namespace into this plugin's own."""
+        legacySettings = self._settings.global_get(["plugins", LEGACY_IDENTIFIER]) or {}
+        defaults = self.get_settings_defaults()
+        knownKeys = self._getLegacySettingsKeys()
+
+        # A key the old plugin knows but never stored still has a value over there - its
+        # default - and the dialog offers it, so applying it has to work too.
+        selectedValues = {}
+        for key in keys:
+            if key in LEGACY_SETTINGS_NOT_MIGRATABLE:
+                continue
+            if key in legacySettings:
+                selectedValues[key] = legacySettings[key]
+            elif key in knownKeys and key in defaults:
+                selectedValues[key] = defaults[key]
+
+        selected = sorted(selectedValues.keys())
+        if not selected:
+            return {
+                "success": False,
+                "errorMessage": "No settings were selected.",
+                "appliedCount": 0,
+            }
+
+        try:
+            previousSettings = self._captureSettingsForUndo(selected)
+            for key in selected:
+                self._settings.set([key], selectedValues[key])
+            self._settings.save()
+            self._writeUndoRecord("settings", [], previousSettings)
+        except Exception as e:
+            self._logger.exception("Applying legacy settings failed")
+            return {
+                "success": False,
+                "errorMessage": "Could not apply the settings: " + str(e),
+                "appliedCount": 0,
+            }
+
+        self._logger.info(
+            "Applied %s setting(s) from 'plugins.%s'" % (len(selected), LEGACY_IDENTIFIER)
+        )
+        return {"success": True, "errorMessage": None, "appliedCount": len(selected)}
+
+    def _undoLegacyMigration(self, undoKind):
+        """
+        Puts back what the named migration replaced: the saved files and the settings
+        values it overwrote. Keys that had no value before are removed again.
+
+        The two kinds are independent - undoing the settings migration leaves a database
+        migration untouched, and the other way round.
+        """
+        undoFilePath = self._getUndoFilePath(undoKind)
+        if not os.path.isfile(undoFilePath):
+            return {
+                "success": False,
+                "errorMessage": "There is nothing to undo.",
+                "restoredFiles": 0,
+                "restoredSettings": 0,
+            }
+
+        try:
+            with open(undoFilePath) as undoFile:
+                record = json.load(undoFile)
+        except Exception as e:
+            self._logger.exception("Could not read the migration undo record")
+            return {
+                "success": False,
+                "errorMessage": "Could not read the undo record: " + str(e),
+                "restoredFiles": 0,
+                "restoredSettings": 0,
+            }
+
+        dataFolder = self.get_plugin_data_folder()
+        restoredFiles = 0
+        try:
+            for entry in record.get("replacedFiles", []):
+                backupPath = os.path.join(dataFolder, entry["backupName"])
+                targetPath = os.path.join(dataFolder, entry["name"])
+                if not os.path.isfile(backupPath):
+                    continue
+                if os.path.exists(targetPath):
+                    os.remove(targetPath)
+                os.rename(backupPath, targetPath)
+                restoredFiles += 1
+        except Exception as e:
+            self._logger.exception("Restoring the replaced files failed")
+            return {
+                "success": False,
+                "errorMessage": "Could not restore the files: " + str(e),
+                "restoredFiles": restoredFiles,
+                "restoredSettings": 0,
+            }
+
+        restoredSettings = 0
+        try:
+            previousSettings = record.get("previousSettings", {})
+            for key, value in previousSettings.items():
+                # None means "had no value of its own" - set(None) makes OctoPrint drop
+                # the key again, which is exactly the state we are restoring
+                self._settings.set([key], value)
+                restoredSettings += 1
+            if previousSettings:
+                self._settings.save()
+        except Exception as e:
+            self._logger.exception("Restoring the previous settings failed")
+            return {
+                "success": False,
+                "errorMessage": "Files were restored, but the settings were not: " + str(e),
+                "restoredFiles": restoredFiles,
+                "restoredSettings": restoredSettings,
+            }
+
+        try:
+            os.remove(undoFilePath)
+        except OSError:
+            self._logger.exception("Could not remove the migration undo record")
+
+        self._logger.info(
+            "Undid the last migration: %s file(s), %s setting(s) restored"
+            % (restoredFiles, restoredSettings)
+        )
+        return {
+            "success": True,
+            "errorMessage": None,
+            "restoredFiles": restoredFiles,
+            "restoredSettings": restoredSettings,
+        }
 
     ################################################################################################### public functions
 
@@ -1192,6 +1779,20 @@ class SpoolmanagerPlugin(
                 isFilamentManagerPluginAvailable=self._filamentManagerPluginImplementation
                 is not None,
                 pluginNotWorking=pluginNotWorking,
+                # the settings keep their buttons as long as anything is migratable; the
+                # banner listens to legacyMigrationPending instead
+                legacyMigrationAvailable=self._isLegacyMigrationAvailable(),
+                legacyMigrationPending=(
+                    self._isLegacyMigrationAvailable()
+                    and not self._isLegacyMigrationDone()
+                ),
+                legacyDatabaseUndoAvailable=self._isLegacyMigrationUndoAvailable(
+                    "database"
+                ),
+                legacySettingsUndoAvailable=self._isLegacyMigrationUndoAvailable(
+                    "settings"
+                ),
+                legacySettingsAvailable=self._hasLegacySettings(),
             )
         )
         # data for the sidebar

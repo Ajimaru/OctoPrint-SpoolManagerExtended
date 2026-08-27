@@ -24,6 +24,31 @@ Install via OctoPrint's Plugin Manager using this repository's release archive U
 pip install https://github.com/Ajimaru/OctoPrint-SpoolManagerExtended/archive/main.zip
 ```
 
+## Migrating from SpoolManager
+
+Because this plugin has its own identifier, OctoPrint treats it as a separate plugin: it
+starts with an empty database and default settings, and an existing SpoolManager install
+is left completely untouched. Nothing is migrated automatically — you decide what to take
+over, and when.
+
+Both migrations are found in the plugin settings, each behind a dialog that shows what
+would happen before anything is written:
+
+- **Spools** — *Storage* → *Migrate database from SpoolManager*. Previews the spools in
+  the old database, then lets you pick which files to copy.
+- **Settings** — *General* → *Migrate settings*. Compares every setting side by side and
+  preselects the ones that differ, so you tick off exactly what to adopt.
+
+Files are **copied**, never moved, so the old installation stays intact and usable as a
+fallback. Each migration can be reversed with its own *Undo* button.
+
+Two things worth knowing:
+
+- Afterwards, **disable the old SpoolManager plugin** — with both active they work on the
+  same data.
+- The migrated database uses an older scheme, so *Storage* will ask for a scheme upgrade.
+  That is expected, and a separate step with its own backup.
+
 ## License
 
 AGPLv3 — see [LICENSE.txt](LICENSE.txt).
