@@ -200,16 +200,21 @@ $(function () {
 
             var source = "";
             if (showHtmlView == "htmlView") {
+                // built from PLUGIN_ID, not spelled out: these two were missed by the
+                // rename because the identifier only appears as a path fragment here,
+                // which left the QR preview and every spool's QR code pointing at 404
                 source =
                     PLUGIN_BASEURL +
-                    "SpoolManager/generateQRCodeView/" +
+                    PLUGIN_ID +
+                    "/generateQRCodeView/" +
                     databaseId +
                     "" +
                     requestParameters;
             } else {
                 source =
                     PLUGIN_BASEURL +
-                    "SpoolManager/generateQRCode/" +
+                    PLUGIN_ID +
+                    "/generateQRCode/" +
                     databaseId +
                     "" +
                     requestParameters;
