@@ -2,6 +2,13 @@
 
 An OctoPrint plugin that manages spool information (filament type, color, remaining weight, RFID/QR tagging, and more) and stores it in a database (SQLite by default; MySQL/PostgreSQL supported experimentally).
 
+## Requirements
+
+- **OctoPrint 2.0.0 or newer** — at the time of writing only available as a release
+  candidate. The OctoPrint 1.x branch is **not supported**: installation is refused by pip,
+  and the plugin will not load on a 1.x core.
+- **Python 3.11 or newer** (up to 3.14).
+
 ## Origin
 
 This plugin is a fork descending from:

@@ -15,14 +15,14 @@ plugin_name = "OctoPrint-SpoolManagerExtended"
 
 # The plugin's version. Can be overwritten within OctoPrint's internal data via __plugin_version__ in the plugin module
 #
-plugin_version = "1.8.0a3.dev300"
+plugin_version = "1.8.0a3.dev301"
 
 # The plugin's description. Can be overwritten within OctoPrint's internal data via __plugin_description__ in the plugin
 # module
 plugin_description = """Plugin to manage Spools"""
 
 # The plugin's author. Can be overwritten within OctoPrint's internal data via __plugin_author__ in the plugin module
-plugin_author = "Ajimaru"
+plugin_author = "Ajimaru, based on work of OllisGit"
 
 # The plugin's author's mail address.
 plugin_author_email = "ajimaru_gdr@pm.me"
@@ -35,6 +35,9 @@ plugin_license = "AGPLv3"
 
 # Any additional requirements besides OctoPrint should be listed here
 plugin_requires = [
+    # OctoPrint 1.x is not supported; octoprint_setuptools would otherwise inject an
+    # unbounded OctoPrint requirement. ">=2.0.0" already admits 2.0.0 release candidates.
+    "OctoPrint>=2.0.0",
     "pillow",
     "qrcode",
     "reportlab",  # inventory report PDF export (issue #209)
@@ -71,7 +74,7 @@ plugin_ignored_packages = []
 # Example:
 #     plugin_requires = ["someDependency==dev"]
 #     additional_setup_parameters = {"dependency_links": ["https://github.com/someUser/someRepo/archive/master.zip#egg=someDependency-dev"]}
-additional_setup_parameters = {"python_requires": ">=3.9"}
+additional_setup_parameters = {"python_requires": ">=3.11,<3.15"}
 
 ########################################################################################################################
 
