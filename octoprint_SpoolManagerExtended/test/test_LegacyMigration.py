@@ -48,6 +48,12 @@ class FakeSettings(object):
     def get(self, keys):
         return self.ownSettings.get(keys[0])
 
+    def get_boolean(self, keys):
+        return bool(self.ownSettings.get(keys[0], False))
+
+    def set_boolean(self, keys, value):
+        self.ownSettings[keys[0]] = bool(value)
+
     def set(self, keys, value):
         # OctoPrint drops a key that is set back to None, which is what the undo relies
         # on to remove settings the user never had a value for
@@ -589,6 +595,22 @@ class TestLegacyMigration(unittest.TestCase):
 
         # undone, so there really is something left to migrate again
         self.assertFalse(plugin._isLegacyMigrationDone())
+
+    def test_dismissedHintStaysDismissed(self):
+        # Anyone already running this plugin when it was renamed still has a
+        # plugins.SpoolManager block, so "something is migratable" is true for them
+        # forever - without a way to say no the hint could never be got rid of.
+        plugin = self._plugin(legacySettings={"currencySymbol": "$"})
+
+        self.assertTrue(plugin._isLegacyMigrationAvailable())
+        self.assertFalse(plugin._isLegacyMigrationDone())
+
+        plugin._settings.set_boolean(["legacyMigrationDismissed"], True)
+
+        # still migratable and still not migrated - the offer stands, the hint does not
+        self.assertTrue(plugin._isLegacyMigrationAvailable())
+        self.assertFalse(plugin._isLegacyMigrationDone())
+        self.assertTrue(plugin._settings.get_boolean(["legacyMigrationDismissed"]))
 
     def test_undoWithoutRecordFailsCleanly(self):
         result = self._plugin()._undoLegacyMigration("database")

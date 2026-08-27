@@ -3494,6 +3494,18 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
         return flask.jsonify({"result": applyResult})
 
+    #######################################################################################   DISMISS LEGACY MIGRATION HINT
+    @octoprint.plugin.BlueprintPlugin.route("/dismissLegacyMigration", methods=["PUT"])
+    @no_firstrun_access
+    def dismissLegacyMigration(self):
+        # "no thanks" - the hint is about an offer, and an offer has to be refusable.
+        # The migration buttons stay in the settings for anyone who changes their mind.
+        self._settings.set_boolean(
+            [SettingsKeys.SETTINGS_KEY_LEGACY_MIGRATION_DISMISSED], True
+        )
+        self._settings.save()
+        return flask.jsonify({"result": {"success": True}})
+
     #######################################################################################   UNDO LEGACY MIGRATION
     # One endpoint per migration kind: the database and the settings are migrated from
     # separate tabs, so each has to be reversible on its own.

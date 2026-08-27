@@ -139,3 +139,8 @@ class SettingsKeys:
     SETTINGS_KEY_MQTT_TOPIC_BASE = "mqttTopicBase"
     SETTINGS_KEY_MQTT_INSTANCE_NAME = "mqttInstanceName"
     SETTINGS_KEY_MQTT_RETAIN = "mqttRetain"
+
+    # Set when the user dismisses the migration hint. Anyone who was already running this
+    # plugin when it was renamed still has a plugins.SpoolManager block, so "something is
+    # migratable" stays true for them forever - they need a way to say no.
+    SETTINGS_KEY_LEGACY_MIGRATION_DISMISSED = "legacyMigrationDismissed"
