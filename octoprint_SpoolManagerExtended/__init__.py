@@ -1,6 +1,7 @@
 # coding=utf-8
 
 import json
+import logging
 import math
 import os
 import shutil
@@ -18,10 +19,10 @@ import octoprint.plugin
 from octoprint.access.permissions import Permissions
 from octoprint.events import Events
 from octoprint.filemanager.destinations import FileDestinations
-
-# FileDestinations.PRINTER only exists on OctoPrint 2.0; on 1.x the attribute is absent and
-# reading it raises. The wire value is "printer" in both, so resolve it once here.
-PRINTER_DESTINATION = getattr(FileDestinations, "PRINTER", "printer")
+from octoprint.util.version import (
+    get_octoprint_version_string,
+    is_octoprint_compatible,
+)
 
 from octoprint_SpoolManagerExtended.api import Transformer
 from octoprint_SpoolManagerExtended.api.SpoolManagerAPI import SpoolManagerAPI
@@ -1046,7 +1047,7 @@ class SpoolmanagerPlugin(
         # below - see _getFilamentFromMoonraker() for why, and
         # https://github.com/OctoPrint/OctoPrint-MoonrakerConnector/issues/4 for when this
         # workaround can be dropped again.
-        if origin == PRINTER_DESTINATION and path is not None:
+        if origin == FileDestinations.PRINTER and path is not None:
             filament = self._getFilamentFromMoonraker(path)
             if filament is not None:
                 return filament
@@ -1107,7 +1108,7 @@ class SpoolmanagerPlugin(
                 return filament
 
         # last resort: no local copy at all, fetch the 3mf from the printer storage
-        if origin == PRINTER_DESTINATION and path.endswith(".3mf"):
+        if origin == FileDestinations.PRINTER and path.endswith(".3mf"):
             return self._getFilamentFromPrinter3mf(path, plate)
         return None
 
@@ -2312,7 +2313,26 @@ class SpoolmanagerPlugin(
 # ("OctoPrint-PluginSkeleton"), you may define that here. Same goes for the other metadata derived from setup.py that
 # can be overwritten via __plugin_xyz__ control properties. See the documentation for that.
 __plugin_name__ = "SpoolManagerExtended Plugin"
-__plugin_pythoncompat__ = ">=3.9,<4"
+__plugin_pythoncompat__ = ">=3.11,<3.15"
+
+# OctoPrint has no __plugin_octoprintcompat__ control property - only Python compatibility
+# is gated automatically. The 1.x branch is not supported, so check the core version here
+# instead: __plugin_check__ is called before the plugin is loaded and refuses the load when
+# it returns False. Note ">=2.0.0" already accepts 2.0.0 release candidates.
+OCTOPRINT_COMPAT = ">=2.0.0"
+
+
+def __plugin_check__():
+    if is_octoprint_compatible(OCTOPRINT_COMPAT):
+        return True
+
+    logging.getLogger("octoprint.plugins." + __name__).error(
+        "SpoolManagerExtended requires OctoPrint %s, but this is OctoPrint %s. "
+        "The plugin will not be loaded. Please update OctoPrint.",
+        OCTOPRINT_COMPAT,
+        get_octoprint_version_string(),
+    )
+    return False
 
 
 def __plugin_load__():
