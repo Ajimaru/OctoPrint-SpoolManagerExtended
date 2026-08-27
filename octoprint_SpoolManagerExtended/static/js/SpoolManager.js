@@ -948,6 +948,14 @@ $(function () {
             return true;
         };
 
+        // "no thanks" from the banner. Anyone who was already running this plugin when it
+        // was renamed still has a plugins.SpoolManager block, so there is genuinely
+        // something migratable - they just do not want it, and saying so has to stick.
+        self.dismissLegacyMigrationAction = function () {
+            self.legacyMigrationPending(false);
+            self.apiClient.callDismissLegacyMigration(function () {});
+        };
+
         ////////////////////////////////////////////////////////////// database dialog
 
         self.migrateFromLegacyAction = function () {

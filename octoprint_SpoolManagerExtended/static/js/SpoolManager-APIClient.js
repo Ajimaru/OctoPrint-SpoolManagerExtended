@@ -328,6 +328,17 @@ function SpoolManagerExtendedAPIClient(pluginId, baseUrl) {
         );
     };
 
+    //////////////////////////////////////////////////////// LEGACY migration: dismiss the hint
+    this.callDismissLegacyMigration = function (responseHandler) {
+        _callApi(
+            _buildPluginUrl("dismissLegacyMigration"),
+            {method: "PUT", body: JSON.stringify({})},
+            function (data) {
+                responseHandler(data);
+            }
+        );
+    };
+
     //////////////////////////////////////////////////////// LEGACY migration: undo
     // undoKind is "database" or "settings" - each migration is reversible on its own
     this.callUndoLegacyMigration = function (undoKind, responseHandler) {

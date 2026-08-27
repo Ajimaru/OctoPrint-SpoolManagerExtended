@@ -1785,6 +1785,9 @@ class SpoolmanagerPlugin(
                 legacyMigrationPending=(
                     self._isLegacyMigrationAvailable()
                     and not self._isLegacyMigrationDone()
+                    and not self._settings.get_boolean(
+                        [SettingsKeys.SETTINGS_KEY_LEGACY_MIGRATION_DISMISSED]
+                    )
                 ),
                 legacyDatabaseUndoAvailable=self._isLegacyMigrationUndoAvailable(
                     "database"
@@ -2163,6 +2166,7 @@ class SpoolmanagerPlugin(
         # self._settings is injected; the effective default is filled in on_settings_load
         settings[SettingsKeys.SETTINGS_KEY_MQTT_INSTANCE_NAME] = ""
         settings[SettingsKeys.SETTINGS_KEY_MQTT_RETAIN] = True
+        settings[SettingsKeys.SETTINGS_KEY_LEGACY_MIGRATION_DISMISSED] = False
 
         ## Database
         ## nested settings are not working, because if only a few attributes are changed it only returns these few attributes, instead the default values + adjusted values

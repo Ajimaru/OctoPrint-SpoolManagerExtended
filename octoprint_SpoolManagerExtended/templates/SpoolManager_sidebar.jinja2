@@ -5,7 +5,8 @@
     </div>
 
     <div data-bind="visible: legacyMigrationPending()==true">
-        <font color="orange"><b>Data from a previous SpoolManager installation was found. Open Plugin Settings &rarr; Spool Manager Extended &rarr; Storage to migrate it.</b></font>
+        <font color="orange"><b>Data from a previous SpoolManager installation was found. Open Plugin Settings &rarr; Spool Manager Extended to migrate it.</b></font>
+        <a href="#" data-bind="click: dismissLegacyMigrationAction" title="{{ _('The migration stays available in the plugin settings') }}"><small>{{ _('Don\'t show again') }}</small></a>
     </div>
 
     <div id="spmx-selectedSpools" data-bind="foreach: selectedSpoolsForSidebar">
