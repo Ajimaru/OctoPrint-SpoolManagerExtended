@@ -10,7 +10,7 @@
  * edit dialog (and vice versa).
  *
  * That item is built with isEditable:false on purpose. The editable variant wires vendor,
- * material, labels and the color pickers to fixed DOM ids inside #spool-form (see SpoolItem):
+ * material, labels and the color pickers to fixed DOM ids inside #spmx-spool-form (see SpoolItem):
  * a second editable item would hijack the edit dialog's widgets. The wizard therefore uses plain
  * inputs and composes the color value itself (see composeColor below).
  *

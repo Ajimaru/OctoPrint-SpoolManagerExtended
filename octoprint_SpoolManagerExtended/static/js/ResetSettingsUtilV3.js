@@ -10,7 +10,7 @@
 //
 // Trying to use OctoPrint's showConfirmationDialog() here instead of the PR's plain confirm()
 // does not work — see the comment at the reset button's click handler below.
-function ResetSettingsUtilV3(pluginSettings) {
+function SpoolManagerExtendedResetSettingsUtilV3(pluginSettings) {
     const pluginSettingsFromPlugin = pluginSettings;
 
     const RESET_BUTTON_ID = "resetSettingsButton";

@@ -93,7 +93,7 @@ SPOOLMANAGER_CONSTANTS = {
         SPOOL: "spool"
     },
     DOM_SELECTORS: {
-        SPOOL_DIALOG: "#dialog_spool_edit"
+        SPOOL_DIALOG: "#spmx-dialog_spool_edit"
     },
     // Finish dropdown entries, shared by the edit dialog and the Add Spool Wizard so a new
     // finish only has to be added once. "custom" switches the UI to a free-text input; the

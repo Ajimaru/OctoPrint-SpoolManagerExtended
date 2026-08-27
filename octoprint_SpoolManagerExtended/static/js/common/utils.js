@@ -25,7 +25,7 @@ SPOOLMANAGER_UTILS = {
 
     // Returns the filter-selection counter label for a catalog: "all" when every catalog
     // option is selected, otherwise the number of selected options. Consolidated from the
-    // duplicated _evalFilterLabel() in SpoolSelectionTableComp and TableItemHelper
+    // duplicated _evalFilterLabel() in SpoolManagerExtendedSpoolSelectionTableComp and SpoolManagerExtendedTableItemHelper
     // (adopted from mdziekon PR #23, adapted to the SPOOLMANAGER_UTILS object convention).
     buildFilterSelectionsCounter: function (allArray, selectionArray) {
         var selectionCount = 0;

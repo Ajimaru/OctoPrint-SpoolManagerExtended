@@ -4,7 +4,7 @@
  * defaultSortColumn,
  * defaultFilterName
  */
-function TableItemHelper(
+function SpoolManagerExtendedTableItemHelper(
     loadItemsFunction,
     defaultPageSize,
     defaultSortColumn,

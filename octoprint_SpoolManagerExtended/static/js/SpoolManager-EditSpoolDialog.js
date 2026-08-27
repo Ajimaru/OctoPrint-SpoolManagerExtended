@@ -133,7 +133,7 @@ ko.bindingHandlers.numberField = {
 };
 
 // Dialog functionality
-function SpoolManagerEditSpoolDialog() {
+function SpoolManagerExtendedEditSpoolDialog() {
     var self = this;
 
     // keys of number inputs currently holding an invalid value (see ko.bindingHandlers.numberField)
@@ -1184,7 +1184,7 @@ function SpoolManagerEditSpoolDialog() {
     // <defs> and returns the url(#..) reference. tintColor (optional) is layered
     // half-transparent over the checkerboard to render "tinted translucent".
     this._ensureTranslucentPattern = function (tintColor) {
-        var svgRoot = $("#svg-filament").closest("svg");
+        var svgRoot = $("#spmx-svg-filament").closest("svg");
         var svgNS = "http://www.w3.org/2000/svg";
         var defs = svgRoot.children("defs");
         if (defs.length === 0) {
@@ -1247,7 +1247,7 @@ function SpoolManagerEditSpoolDialog() {
             // translucent: render the filament as a checkerboard, optionally tinted
             var tint = colorParts.isUntinted ? "" : colorParts.colors[0];
             var patternRef = self._ensureTranslucentPattern(tint || null);
-            var svgIconT = $("#svg-filament");
+            var svgIconT = $("#spmx-svg-filament");
             svgIconT.children("rect").each(function () {
                 $(this).attr("fill", patternRef);
             });
@@ -1265,7 +1265,7 @@ function SpoolManagerEditSpoolDialog() {
             }
             strokeColor = colors[0];
         }
-        var svgIcon = $("#svg-filament");
+        var svgIcon = $("#spmx-svg-filament");
         svgIcon.children("rect").each(function (loopIndex) {
             $(this).attr("fill", rectColors[loopIndex % rectColors.length]);
         });
@@ -1290,8 +1290,8 @@ function SpoolManagerEditSpoolDialog() {
         // apply configured "Default view mode" when no per-browser choice was stored yet (issue #1)
         self._applyDefaultViewMode();
 
-        self.spoolDialog = $("#dialog_spool_edit");
-        self.templateSpoolDialog = $("#dialog_template_spool_selection");
+        self.spoolDialog = $("#spmx-dialog_spool_edit");
+        self.templateSpoolDialog = $("#spmx-dialog_template_spool_selection");
 
         // OctoScale: weighing and NFC tag writing straight from the dialog, so a spool can be
         // weighed or tagged without going through the wizard. Shared implementation, see
@@ -1439,7 +1439,7 @@ function SpoolManagerEditSpoolDialog() {
 
         // Adopted from mdziekon/OctoPrint-SpoolManager PR #11 (GH-10): note editor is created
         // via the static factory instead of instantiating Quill inline
-        self.noteEditor = ComponentFactory.createNoteEditor("spool-note-editor");
+        self.noteEditor = SpoolManagerExtendedComponentFactory.createNoteEditor("spmx-spool-note-editor");
 
         // initial coloring
         self._createSpoolItemForEditing();

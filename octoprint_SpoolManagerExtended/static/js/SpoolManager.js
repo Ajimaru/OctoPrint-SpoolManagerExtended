@@ -63,7 +63,7 @@ window.spmSpoolColorCss = function (color) {
 
 $(function () {
     ///////////////////////////////////////////////////////////////////////////////////////////////////////// VIEW MODEL
-    function SpoolManagerViewModel(parameters) {
+    function SpoolManagerExtendedViewModel(parameters) {
         var PLUGIN_ID = "SpoolManagerExtended"; // from setup.py plugin_identifier
 
         var self = this;
@@ -78,8 +78,8 @@ $(function () {
 
         self.pluginSettings = null;
 
-        self.apiClient = new SpoolManagerAPIClient(PLUGIN_ID, BASEURL);
-        self.spoolDialog = new SpoolManagerEditSpoolDialog();
+        self.apiClient = new SpoolManagerExtendedAPIClient(PLUGIN_ID, BASEURL);
+        self.spoolDialog = new SpoolManagerExtendedEditSpoolDialog();
         self.addSpoolWizard = new SpoolManagerAddSpoolWizard();
 
         //////////////////////////////////////////////////////////////////////////////////////////////// HELPER FUNCTION
@@ -164,7 +164,7 @@ $(function () {
         };
 
         self.reloadQRCodePreviewImage = function () {
-            var imageDom = $("#settings-qrimage-preview");
+            var imageDom = $("#spmx-settings-qrimage-preview");
             var currentSrc = imageDom.attr("src");
             currentSrc = currentSrc + "&" + new Date().getTime();
             imageDom.attr("src", currentSrc);
@@ -228,7 +228,7 @@ $(function () {
         self.schemeUpgradeNeeded = ko.observable(false);
 
         self.downloadDatabaseUrl = ko.observable();
-        self.databaseConnectionProblemDialog = new DatabaseConnectionProblemDialog();
+        self.databaseConnectionProblemDialog = new SpoolManagerExtendedDatabaseConnectionProblemDialog();
 
         self.databaseMetaData = {
             localSchemeVersionFromDatabaseModel: ko.observable(),
@@ -248,6 +248,22 @@ $(function () {
         self.showExternalBusyIndicator = ko.observable(false);
         self.databaseInUse = ko.observable("Internal");
 
+        // Migration from a previous "SpoolManager" install (before the rename). Set from
+        // the backend's initialData push; drives the hint in the settings and the banners.
+        self.legacyMigrationAvailable = ko.observable(false);
+        // drives the sidebar/tab banner: true only while nothing has been migrated yet.
+        // The settings buttons stay on legacyMigrationAvailable, so the second migration
+        // can still be started after the first one retired the banner.
+        self.legacyMigrationPending = ko.observable(false);
+        // one per migration kind - each is reversible on its own, from its own tab
+        self.legacyDatabaseUndoAvailable = ko.observable(false);
+        self.legacySettingsUndoAvailable = ko.observable(false);
+        // the settings button lives in the General tab and greys out without a legacy
+        // settings namespace, which can happen even when a legacy database exists
+        self.legacySettingsAvailable = ko.observable(false);
+        self.legacyMigrationInProgress = ko.observable(false);
+        self.legacyMigrationResultText = ko.observable("");
+
         self.resetDatabaseMessages = function () {
             self.showInternalSuccessMessage(false);
             self.showInternalDatabaseErrorMessage(false);
@@ -257,6 +273,7 @@ $(function () {
             self.externalDatabaseErrorMessage("");
             self.internalDatabaseErrorMessage("");
             self.schemeUpgradeResultText("");
+            self.legacyMigrationResultText("");
         };
 
         self.handleDatabaseMetaDataResponse = function (metaDataResponse) {
@@ -837,6 +854,400 @@ $(function () {
                 .catch(handleDownloadError);
         };
 
+        // - Migration from a previous "SpoolManager" install (before the rename).
+        // Split in two: the database dialog copies files, the settings dialog compares
+        // values field by field. Each button does exactly one thing.
+        self.legacyDatabasePreview = ko.observable(null);
+        self.legacyDatabaseFiles = ko.observableArray([]);
+        self.legacySettingsRows = ko.observableArray([]);
+
+        self.legacyDatabaseRemainingWeightText = ko.pureComputed(function () {
+            var preview = self.legacyDatabasePreview();
+            if (preview == null || preview.totalRemainingWeight == null) {
+                return "";
+            }
+            return Math.round(preview.totalRemainingWeight * 100) / 100 + " g";
+        });
+
+        var formatFileSize = function (bytes) {
+            if (bytes == null) {
+                return "";
+            }
+            if (bytes < 1024) {
+                return bytes + " B";
+            }
+            if (bytes < 1024 * 1024) {
+                return Math.round(bytes / 1024) + " KB";
+            }
+            return Math.round((bytes / (1024 * 1024)) * 10) / 10 + " MB";
+        };
+
+        // Both dialogs keep their selection as an observable ON each row (checked: selected).
+        // A data-bind that CALLS a function with an argument inside a table-based foreach
+        // loses its binding context once the row template is cloned - see the note on
+        // readTagImportRows in SpoolManager-EditSpoolDialog.js.
+        self.legacyDatabaseAllSelected = ko.pureComputed(function () {
+            var rows = self.legacyDatabaseFiles();
+            if (rows.length === 0) {
+                return false;
+            }
+            return rows.every(function (row) {
+                return row.selected() === true;
+            });
+        });
+
+        self.selectAllLegacyFiles = function () {
+            self.legacyDatabaseFiles().forEach(function (row) {
+                row.selected(true);
+            });
+        };
+
+        self.deselectAllLegacyFiles = function () {
+            self.legacyDatabaseFiles().forEach(function (row) {
+                row.selected(false);
+            });
+        };
+
+        self.toggleAllLegacyFiles = function () {
+            if (self.legacyDatabaseAllSelected()) {
+                self.deselectAllLegacyFiles();
+            } else {
+                self.selectAllLegacyFiles();
+            }
+            return true;
+        };
+
+        self.legacySettingsAllSelected = ko.pureComputed(function () {
+            var rows = self.legacySettingsRows();
+            if (rows.length === 0) {
+                return false;
+            }
+            return rows.every(function (row) {
+                return row.selected() === true;
+            });
+        });
+
+        self.selectAllLegacySettings = function () {
+            self.legacySettingsRows().forEach(function (row) {
+                row.selected(true);
+            });
+        };
+
+        self.deselectAllLegacySettings = function () {
+            self.legacySettingsRows().forEach(function (row) {
+                row.selected(false);
+            });
+        };
+
+        self.toggleAllLegacySettings = function () {
+            if (self.legacySettingsAllSelected()) {
+                self.deselectAllLegacySettings();
+            } else {
+                self.selectAllLegacySettings();
+            }
+            return true;
+        };
+
+        ////////////////////////////////////////////////////////////// database dialog
+
+        self.migrateFromLegacyAction = function () {
+            self.resetDatabaseMessages();
+            self.legacyMigrationInProgress(true);
+            self.apiClient.callLegacyDatabasePreview(function (responseData) {
+                self.legacyMigrationInProgress(false);
+                if (responseData == null) {
+                    self.showExternalDatabaseErrorMessage(true);
+                    self.externalDatabaseErrorMessage(
+                        "Could not read the previous installation. See octoprint.log for details."
+                    );
+                    return;
+                }
+                self.legacyDatabasePreview(responseData["preview"] || null);
+                // frozen at open time, not a live computed - the dialog must not re-render
+                // underneath the user while they are ticking boxes
+                var files = (responseData["files"] || []).map(function (file) {
+                    return {
+                        name: file.name,
+                        kind: file.kind,
+                        sizeText: formatFileSize(file.size),
+                        selected: ko.observable(file.preselected === true)
+                    };
+                });
+                self.legacyDatabaseFiles(files);
+                $("#spmx-dialog_legacy_database").modal("show");
+            });
+        };
+
+        self.closeLegacyDatabaseDialog = function () {
+            $("#spmx-dialog_legacy_database").modal("hide");
+        };
+
+        self.applySelectedLegacyFiles = function () {
+            var fileNames = self
+                .legacyDatabaseFiles()
+                .filter(function (row) {
+                    return row.selected() === true;
+                })
+                .map(function (row) {
+                    return row.name;
+                });
+
+            if (fileNames.length === 0) {
+                // nothing ticked is a legitimate "actually, not now", not an error
+                self.closeLegacyDatabaseDialog();
+                return;
+            }
+
+            self.closeLegacyDatabaseDialog();
+            self._runLegacyMigration(false, fileNames);
+        };
+
+        // Actual copy call, split off so both the initial run and the
+        // "overwrite existing database" retry can reuse it.
+        self._runLegacyMigration = function (overwriteExisting, fileNames) {
+            self.resetDatabaseMessages();
+            self.legacyMigrationInProgress(true);
+
+            self.apiClient.callMigrateFromLegacySpoolManager(
+                {overwriteExisting: overwriteExisting, fileNames: fileNames},
+                function (responseData) {
+                    self.legacyMigrationInProgress(false);
+                    var result = responseData != null ? responseData["result"] : null;
+
+                    // the new install already owns a database with spools - ask first
+                    if (result != null && result["conflict"] == true) {
+                        SPOOLMANAGER_DIALOGS.confirmDanger({
+                            title: "Replace existing database?",
+                            message:
+                                "This installation already has its own database with " +
+                                "spools in it. Migrating replaces it with the database " +
+                                "from the previous SpoolManager install.",
+                            question: "Replace the existing database?",
+                            cancel: "Cancel",
+                            proceed: "Replace"
+                        }).then(function (overwriteConfirmed) {
+                            if (overwriteConfirmed != true) {
+                                return;
+                            }
+                            self._runLegacyMigration(true, fileNames);
+                        });
+                        return;
+                    }
+
+                    if (result != null && result["success"] == true) {
+                        var resultText =
+                            "Migration finished: " +
+                            result["copiedFiles"] +
+                            " file(s) copied. The previous installation was left unchanged.";
+                        if (result["schemeUpgradeNeeded"] == true) {
+                            resultText +=
+                                " The migrated database uses an older scheme - please " +
+                                "run the database scheme upgrade above.";
+                        }
+                        self.legacyMigrationResultText(resultText);
+                        self.legacyDatabaseUndoAvailable(true);
+                        self.legacyMigrationPending(false);
+
+                        // a full reload makes sure sidebar/dialogs pick up the migrated database
+                        SPOOLMANAGER_DIALOGS.confirm({
+                            title: "Migration finished",
+                            message: SPOOLMANAGER_DIALOGS.escapeHtml(resultText),
+                            question: "A page reload is recommended. Reload now?",
+                            cancel: "Later",
+                            proceed: "Reload now"
+                        }).then(function (reloadConfirmed) {
+                            if (reloadConfirmed == true) {
+                                location.reload();
+                            }
+                        });
+                        return;
+                    }
+
+                    var errorMessage =
+                        result != null && result["errorMessage"] != null
+                            ? result["errorMessage"]
+                            : "Migration failed. See octoprint.log for details.";
+                    self.showExternalDatabaseErrorMessage(true);
+                    self.externalDatabaseErrorMessage(errorMessage);
+                }
+            );
+        };
+
+        ////////////////////////////////////////////////////////////// settings dialog
+
+        self.showLegacySettingsDialog = function () {
+            self.resetDatabaseMessages();
+            self.legacyMigrationInProgress(true);
+            self.apiClient.callLegacySettingsComparison(function (responseData) {
+                self.legacyMigrationInProgress(false);
+                if (responseData == null) {
+                    self.showExternalDatabaseErrorMessage(true);
+                    self.externalDatabaseErrorMessage(
+                        "Could not read the previous settings. See octoprint.log for details."
+                    );
+                    return;
+                }
+                // differing values are preselected: taking over settings that already
+                // match should not require unticking a screenful of identical rows
+                var rows = (responseData["rows"] || []).map(function (row) {
+                    return {
+                        key: row.key,
+                        legacyValueText: row.legacyValueText,
+                        legacyIsDefault: row.legacyIsDefault,
+                        currentValueText: row.currentValueText,
+                        currentIsDefault: row.currentIsDefault,
+                        differs: row.differs,
+                        selected: ko.observable(row.differs === true)
+                    };
+                });
+                self.legacySettingsRows(rows);
+                $("#spmx-dialog_legacy_settings").modal("show");
+            });
+        };
+
+        self.closeLegacySettingsDialog = function () {
+            $("#spmx-dialog_legacy_settings").modal("hide");
+        };
+
+        self.applySelectedLegacySettings = function () {
+            var keys = self
+                .legacySettingsRows()
+                .filter(function (row) {
+                    return row.selected() === true;
+                })
+                .map(function (row) {
+                    return row.key;
+                });
+
+            if (keys.length === 0) {
+                self.closeLegacySettingsDialog();
+                return;
+            }
+
+            self.closeLegacySettingsDialog();
+            self.legacyMigrationInProgress(true);
+            self.apiClient.callApplyLegacySettings({keys: keys}, function (responseData) {
+                self.legacyMigrationInProgress(false);
+                var result = responseData != null ? responseData["result"] : null;
+
+                if (result != null && result["success"] == true) {
+                    var resultText =
+                        result["appliedCount"] + " setting(s) migrated from SpoolManager.";
+                    self.legacyMigrationResultText(resultText);
+                    self.legacySettingsUndoAvailable(true);
+                    self.legacyMigrationPending(false);
+
+                    SPOOLMANAGER_DIALOGS.confirm({
+                        title: "Settings migrated",
+                        message: SPOOLMANAGER_DIALOGS.escapeHtml(resultText),
+                        question: "A page reload is recommended. Reload now?",
+                        cancel: "Later",
+                        proceed: "Reload now"
+                    }).then(function (reloadConfirmed) {
+                        if (reloadConfirmed == true) {
+                            location.reload();
+                        }
+                    });
+                    return;
+                }
+
+                var errorMessage =
+                    result != null && result["errorMessage"] != null
+                        ? result["errorMessage"]
+                        : "Could not migrate the settings. See octoprint.log for details.";
+                self.showExternalDatabaseErrorMessage(true);
+                self.externalDatabaseErrorMessage(errorMessage);
+            });
+        };
+
+        ////////////////////////////////////////////////////////////// undo
+
+        // undoKind is "database" or "settings" - the two migrations are undone separately,
+        // each from the tab it was started in
+        self.undoLegacyDatabaseAction = function () {
+            self._undoLegacyMigration(
+                "database",
+                "Undo database migration",
+                "Files replaced by the database migration are put back. Files copied " +
+                    "into empty slots stay, and the previous installation is untouched " +
+                    "either way."
+            );
+        };
+
+        self.undoLegacySettingsAction = function () {
+            self._undoLegacyMigration(
+                "settings",
+                "Undo settings migration",
+                "Settings the migration overwrote are restored to their previous values. " +
+                    "Settings that had no value of their own before are removed again."
+            );
+        };
+
+        self._undoLegacyMigration = function (undoKind, title, message) {
+            SPOOLMANAGER_DIALOGS.confirmDanger({
+                title: title,
+                message: message,
+                question: "Undo it now?",
+                cancel: "Cancel",
+                proceed: "Undo"
+            }).then(function (confirmed) {
+                if (confirmed != true) {
+                    return;
+                }
+                self.resetDatabaseMessages();
+                self.legacyMigrationInProgress(true);
+                self.apiClient.callUndoLegacyMigration(undoKind, function (responseData) {
+                    self.legacyMigrationInProgress(false);
+                    var result = responseData != null ? responseData["result"] : null;
+
+                    if (result != null && result["success"] == true) {
+                        var resultText =
+                            "Undo finished: " +
+                            result["restoredFiles"] +
+                            " file(s) and " +
+                            result["restoredSettings"] +
+                            " setting(s) restored.";
+                        self.legacyMigrationResultText(resultText);
+                        if (undoKind === "database") {
+                            self.legacyDatabaseUndoAvailable(false);
+                        } else {
+                            self.legacySettingsUndoAvailable(false);
+                        }
+                        // with nothing migrated any more there really is something left
+                        // to migrate again, so the banner comes back
+                        if (
+                            !self.legacyDatabaseUndoAvailable() &&
+                            !self.legacySettingsUndoAvailable()
+                        ) {
+                            self.legacyMigrationPending(
+                                self.legacyMigrationAvailable()
+                            );
+                        }
+
+                        SPOOLMANAGER_DIALOGS.confirm({
+                            title: "Undo finished",
+                            message: SPOOLMANAGER_DIALOGS.escapeHtml(resultText),
+                            question: "A page reload is recommended. Reload now?",
+                            cancel: "Later",
+                            proceed: "Reload now"
+                        }).then(function (reloadConfirmed) {
+                            if (reloadConfirmed == true) {
+                                location.reload();
+                            }
+                        });
+                        return;
+                    }
+
+                    var errorMessage =
+                        result != null && result["errorMessage"] != null
+                            ? result["errorMessage"]
+                            : "Undo failed. See octoprint.log for details.";
+                    self.showExternalDatabaseErrorMessage(true);
+                    self.externalDatabaseErrorMessage(errorMessage);
+                });
+            });
+        };
+
         // - MySQL dump export/import (Storage tab, external database only)
         self.isExternalMySQL = ko.pureComputed(function () {
             return (
@@ -1027,7 +1438,7 @@ $(function () {
             });
         };
 
-        $("#spoolmanger-settings-tab")
+        $("#spmx-spoolmanger-settings-tab")
             .find('a[data-toggle="tab"]')
             .on("shown", function (e) {
                 var activatedTab = e.target.hash; // activated tab
@@ -1038,7 +1449,7 @@ $(function () {
                     self.databaseInUse("Internal");
                 }
 
-                if ("#tab-spool-Storage" == activatedTab) {
+                if ("#spmx-tab-spool-Storage" == activatedTab) {
                     self.resetDatabaseMessages();
 
                     self.showLocalBusyIndicator(
@@ -1135,8 +1546,8 @@ $(function () {
         self.csvFileUploadName = ko.observable();
         self.csvImportInProgress = ko.observable(false);
 
-        self.csvImportDialog = new SpoolManagerImportDialog();
-        self.csvImportUploadButton = $("#settings-spool-importcsv-upload");
+        self.csvImportDialog = new SpoolManagerExtendedImportDialog();
+        self.csvImportUploadButton = $("#spmx-settings-spool-importcsv-upload");
         self.csvImportUploadData = undefined;
         self.csvImportUploadButton.fileupload({
             dataType: "json",
@@ -1256,24 +1667,14 @@ $(function () {
             });
         };
 
-        // overwrite save-button
-        const origSaveSettingsFunction = self.settingsViewModel.saveData;
-        const newSaveSettingsFunction = function confirmSpoolSelectionBeforeStartPrint(
-            data,
-            successCallback,
-            setAsSending
-        ) {
-            if (
-                self.pluginSettings.useExternal() == true &&
-                (self.showExternalDatabaseErrorMessage() == true ||
-                    self.showInternalDatabaseErrorMessage() == true ||
-                    self.showUpdateSchemeMessage() == true)
-            ) {
-                return origSaveSettingsFunction(data, successCallback, setAsSending);
-            }
-            return origSaveSettingsFunction(data, successCallback, setAsSending);
-        };
-        self.settingsViewModel.saveData = newSaveSettingsFunction;
+        // NOTE: this used to wrap settingsViewModel.saveData - OctoPrint's global save
+        // routine, shared by every plugin's settings. Both branches of its condition
+        // called the original unchanged, so it never did anything, but it read
+        // self.pluginSettings, which is still null while the constructor runs (it is
+        // assigned in onBeforeBinding). With the old SpoolManager installed alongside,
+        // both plugins wrapped saveData and the wrappers chained: one throwing on that
+        // null took the whole chain down, and NEITHER plugin could save its settings.
+        // Removed rather than guarded - a no-op has no business hooking a global.
 
         // QR-Code stuff
         self.generateQRCodeTestLink = function () {
@@ -1407,7 +1808,7 @@ $(function () {
         // dialog open instead of on OctoPrint page load.
         self.hasInitializedSpoolsSelector = false;
 
-        // Drives the spinner inside <spm-select-spool-table> while the selector query is
+        // Drives the spinner inside <spmx-select-spool-table> while the selector query is
         // in flight (Attribution @mdziekon, PR #42). Always reset in the response callback,
         // including on API failure, so the spinner can never hang.
         self.isLoadingSpoolsSelectorData = ko.observable(false);
@@ -1900,7 +2301,7 @@ $(function () {
             SPOOLMANAGER_DIALOGS.notify({
                 title: "Database scheme is outdated",
                 message:
-                    "Saving would fail. Open Plugin Settings &rarr; SpoolManager &rarr; Storage " +
+                    "Saving would fail. Open Plugin Settings &rarr; Spool Manager Extended &rarr; Storage " +
                     "and press 'Upgrade database scheme' first.",
                 type: "error"
             });
@@ -2108,7 +2509,7 @@ $(function () {
             e.stopPropagation();
         });
 
-        self.spoolItemTableHelper = new TableItemHelper(
+        self.spoolItemTableHelper = new SpoolManagerExtendedTableItemHelper(
             function (
                 tableQuery,
                 observableTableModel,
@@ -2544,7 +2945,7 @@ $(function () {
 
         self.onBeforeBinding = function () {
             // Register Knockout Components
-            new SpoolSelectionTableComp().registerSpoolSelectionTableComp();
+            new SpoolManagerExtendedSpoolSelectionTableComp().registerSpoolSelectionTableComp();
 
             // assign current pluginSettings
             self.pluginSettings = self.settingsViewModel.settings.plugins[PLUGIN_ID];
@@ -2563,7 +2964,7 @@ $(function () {
             loadSettingsFromBrowserStore();
 
             // resetSettings-Stuff
-            new ResetSettingsUtilV3(self.pluginSettings).assignResetSettingsFeature(
+            new SpoolManagerExtendedResetSettingsUtilV3(self.pluginSettings).assignResetSettingsFeature(
                 PLUGIN_ID,
                 function (data) {
                     // the reset writes straight into pluginSettings, so push the new values back into
@@ -2590,13 +2991,13 @@ $(function () {
             // Database connection problem dialog
             self.databaseConnectionProblemDialog.init(self.apiClient);
             // Select Spool Dialog (no special binding)
-            self.selectionSpoolDialog = $("#dialog_spool_selection");
+            self.selectionSpoolDialog = $("#spmx-dialog_spool_selection");
 
             // Settings - Color-Picker
             // (on self, not this: the reset-settings callback above reaches for them by that name)
-            self.componentFactory = new ComponentFactory();
+            self.componentFactory = new SpoolManagerExtendedComponentFactory();
             var fillColorViewModel = self.componentFactory.createColorPicker(
-                "qrcode-fill-color-picker",
+                "spmx-qrcode-fill-color-picker",
                 self.pluginSettings.qrCodeFillColor()
             );
             self.qrCodeFillColor = fillColorViewModel.selectedColor;
@@ -2605,7 +3006,7 @@ $(function () {
             });
 
             var backgroundColorViewModel = self.componentFactory.createColorPicker(
-                "qrcode-background-color-picker",
+                "spmx-qrcode-background-color-picker",
                 self.pluginSettings.qrCodeBackgroundColor()
             );
             self.qrCodeBackgroundColor = backgroundColorViewModel.selectedColor;
@@ -2708,6 +3109,21 @@ $(function () {
             // source for pluginNotWorking, so the typo had to be fixed.
             if ("initialData" == data.action) {
                 self.pluginNotWorking(data.pluginNotWorking);
+                if (data.legacyMigrationAvailable != null) {
+                    self.legacyMigrationAvailable(data.legacyMigrationAvailable);
+                }
+                if (data.legacyMigrationPending != null) {
+                    self.legacyMigrationPending(data.legacyMigrationPending);
+                }
+                if (data.legacyDatabaseUndoAvailable != null) {
+                    self.legacyDatabaseUndoAvailable(data.legacyDatabaseUndoAvailable);
+                }
+                if (data.legacySettingsUndoAvailable != null) {
+                    self.legacySettingsUndoAvailable(data.legacySettingsUndoAvailable);
+                }
+                if (data.legacySettingsAvailable != null) {
+                    self.legacySettingsAvailable(data.legacySettingsAvailable);
+                }
                 self.isFilamentManagerPluginAvailable(
                     data.isFilamentManagerPluginAvailable
                 );
@@ -2922,7 +3338,7 @@ $(function () {
      * and a full list of the available options.
      */
     OCTOPRINT_VIEWMODELS.push({
-        construct: SpoolManagerViewModel,
+        construct: SpoolManagerExtendedViewModel,
         // ViewModels your plugin depends on, e.g. loginStateViewModel, settingsViewModel, ...
         dependencies: [
             "loginStateViewModel",
@@ -2933,10 +3349,10 @@ $(function () {
         ],
         // Elements to bind to, e.g. #settings_plugin_SpoolManager, #tab_plugin_SpoolManager, ...
         elements: [
-            document.getElementById("settings_spoolmanager"),
-            document.getElementById("tab_spoolOverview"),
-            document.getElementById("modal-dialogs-spoolManager"),
-            document.getElementById("sidebar_spool_select")
+            document.getElementById("spmx-settings_spoolmanager"),
+            document.getElementById("spmx-tab_spoolOverview"),
+            document.getElementById("spmx-modal-dialogs-spoolManager"),
+            document.getElementById("spmx-sidebar_spool_select")
         ]
     });
 });

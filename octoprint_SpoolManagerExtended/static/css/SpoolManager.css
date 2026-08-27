@@ -25,50 +25,50 @@
 /*    overflow: visible;*/
 /*}*/
 
-#selectedSpools > div {
+#spmx-selectedSpools > div {
     display: flex;
     align-items: baseline;
     min-height: 1.8em;
     margin-top: 5px;
 }
-#selectedSpools > div > * {
+#spmx-selectedSpools > div > * {
     flex-grow: 0;
     /* the swatch sits in a wrapper div, which must not give up width to a long label */
     flex-shrink: 0;
 }
-#selectedSpools > div > .spool-label {
+#spmx-selectedSpools > div > .spool-label {
     flex-grow: 1;
     flex-shrink: 1;
     min-width: 0;
 }
-#selectedSpools .spool-remaining {
+#spmx-selectedSpools .spool-remaining {
     white-space: nowrap;
 }
-#selectedSpools > div > div > .color-preview {
+#spmx-selectedSpools > div > div > .color-preview {
     margin-right: 0;
     vertical-align: middle;
     margin-top: -3px;
     cursor: auto;
 }
-#selectedSpools > div > div > .btn-group {
+#spmx-selectedSpools > div > div > .btn-group {
     vertical-align: middle;
     margin-top: -4px;
 }
-#selectedSpools > div > :not(:last-child) {
+#spmx-selectedSpools > div > :not(:last-child) {
     padding-right: 5px;
 }
-#selectedSpools .dropdown-menu {
+#spmx-selectedSpools .dropdown-menu {
     max-height: 320px;
     overflow: auto;
 }
-#selectedSpools .dropdown-menu .filament-label {
+#spmx-selectedSpools .dropdown-menu .filament-label {
     white-space: normal;
     display: inline-block;
     vertical-align: top;
     max-width: 180px;
     overflow: hidden;
 }
-#selectedSpools .dropdown-menu .filament-label > span {
+#spmx-selectedSpools .dropdown-menu .filament-label > span {
     white-space: nowrap;
 }
 
@@ -160,34 +160,34 @@
 }
 
 /* styling for select dialog */
-#dialog_spool_selection .modal-body {
+#spmx-dialog_spool_selection .modal-body {
     display: flex;
     flex-direction: column;
 }
 
-#dialog_spool_selection .modal-body > *:nth-last-child(n + 2) {
+#spmx-dialog_spool_selection .modal-body > *:nth-last-child(n + 2) {
     margin-bottom: 0.5em;
 }
 
-#dialog_spool_selection .filter {
+#spmx-dialog_spool_selection .filter {
     display: flex;
 }
 
-#dialog_spool_selection .filter > *:nth-last-child(n + 2) {
+#spmx-dialog_spool_selection .filter > *:nth-last-child(n + 2) {
     margin-right: 1.5em;
 }
 
-#dialog_spool_selection .table {
+#spmx-dialog_spool_selection .table {
     margin-bottom: 0;
 }
 
-#dialog_spool_selection .spool-label {
+#spmx-dialog_spool_selection .spool-label {
     display: flex;
     align-items: center;
 }
 
 /* let the long label wrap inside the cell instead of pushing against the swatch */
-#dialog_spool_selection .spool-label > span:not(.color-preview) {
+#spmx-dialog_spool_selection .spool-label > span:not(.color-preview) {
     min-width: 0;
 }
 
@@ -441,12 +441,12 @@ input.spm-number-invalid {
    become transparent, and borders use a neutral grey that reads on light and dark alike.
    Deliberately NOT neutralised: .ql-color-* / .ql-bg-* content classes and the color-picker
    swatches - those carry the user's actual colour choice and must stay literal. */
-#dialog_spool_edit .ql-toolbar.ql-snow,
-#dialog_spool_edit .ql-container.ql-snow {
+#spmx-dialog_spool_edit .ql-toolbar.ql-snow,
+#spmx-dialog_spool_edit .ql-container.ql-snow {
     border-color: rgba(128, 128, 128, 0.35) !important;
 }
-#dialog_spool_edit .ql-container.ql-snow,
-#dialog_spool_edit .ql-editor {
+#spmx-dialog_spool_edit .ql-container.ql-snow,
+#spmx-dialog_spool_edit .ql-editor {
     background-color: transparent !important;
     color: inherit !important;
 }
@@ -454,104 +454,104 @@ input.spm-number-invalid {
    `!important` is required here, not a shortcut: other plugins (stickypad, PrintJobHistory)
    ship their own quill.snow.css into the same packed_plugins.css bundle. OctoPrint concatenates
    plugin CSS alphabetically, so SpoolManager's rules land BEFORE stickypad's and lose the
-   cascade at equal specificity. The #dialog_spool_edit scope keeps this off those plugins'
+   cascade at equal specificity. The #spmx-dialog_spool_edit scope keeps this off those plugins'
    own editors - we only override inside our dialog. */
-#dialog_spool_edit .ql-snow .ql-stroke {
+#spmx-dialog_spool_edit .ql-snow .ql-stroke {
     stroke: currentColor !important;
 }
-#dialog_spool_edit .ql-snow .ql-stroke-miter {
+#spmx-dialog_spool_edit .ql-snow .ql-stroke-miter {
     stroke: currentColor !important;
 }
-#dialog_spool_edit .ql-snow .ql-fill,
-#dialog_spool_edit .ql-snow .ql-stroke.ql-fill {
+#spmx-dialog_spool_edit .ql-snow .ql-fill,
+#spmx-dialog_spool_edit .ql-snow .ql-stroke.ql-fill {
     fill: currentColor !important;
 }
-#dialog_spool_edit .ql-snow .ql-empty {
+#spmx-dialog_spool_edit .ql-snow .ql-empty {
     fill: none !important;
 }
 /* Dropdown labels (colour/background pickers) */
-#dialog_spool_edit .ql-snow .ql-picker {
+#spmx-dialog_spool_edit .ql-snow .ql-picker {
     color: inherit;
 }
-#dialog_spool_edit .ql-snow .ql-picker-label {
+#spmx-dialog_spool_edit .ql-snow .ql-picker-label {
     color: inherit;
 }
 /* Placeholder shown while the note is empty */
-#dialog_spool_edit .ql-editor.ql-blank::before {
+#spmx-dialog_spool_edit .ql-editor.ql-blank::before {
     color: inherit;
     opacity: 0.55;
 }
 /* Popovers need real opacity - they overlap the text behind them. Bootstrap 2's dropdown
    background is the closest thing to a themed surface OctoPrint gives us here. */
-#dialog_spool_edit .ql-snow .ql-picker-options,
-#dialog_spool_edit .ql-snow .ql-tooltip {
+#spmx-dialog_spool_edit .ql-snow .ql-picker-options,
+#spmx-dialog_spool_edit .ql-snow .ql-tooltip {
     background-color: #2b2f33;
     color: #e6e6e6;
     border-color: rgba(128, 128, 128, 0.35);
     box-shadow: 0 5px 10px rgba(0, 0, 0, 0.35);
 }
-#dialog_spool_edit .ql-snow .ql-tooltip input[type="text"] {
+#spmx-dialog_spool_edit .ql-snow .ql-tooltip input[type="text"] {
     background-color: rgba(255, 255, 255, 0.08);
     color: inherit;
     border-color: rgba(128, 128, 128, 0.35);
 }
-#dialog_spool_edit .ql-snow .ql-tooltip a,
-#dialog_spool_edit .ql-snow .ql-tooltip a.ql-preview {
+#spmx-dialog_spool_edit .ql-snow .ql-tooltip a,
+#spmx-dialog_spool_edit .ql-snow .ql-tooltip a.ql-preview {
     color: #74b8ff;
 }
-#dialog_spool_edit .ql-snow .ql-tooltip a.ql-action::after {
+#spmx-dialog_spool_edit .ql-snow .ql-tooltip a.ql-action::after {
     border-right-color: rgba(128, 128, 128, 0.35);
 }
 /* Blockquote / inline code inside the note body */
-#dialog_spool_edit .ql-snow .ql-editor blockquote {
+#spmx-dialog_spool_edit .ql-snow .ql-editor blockquote {
     border-left-color: rgba(128, 128, 128, 0.45);
 }
-#dialog_spool_edit .ql-snow .ql-editor code,
-#dialog_spool_edit .ql-snow .ql-editor .ql-code-block-container {
+#spmx-dialog_spool_edit .ql-snow .ql-editor code,
+#spmx-dialog_spool_edit .ql-snow .ql-editor .ql-code-block-container {
     background-color: rgba(128, 128, 128, 0.18);
     color: inherit;
 }
 /* Active/hover state: snow uses #06c, which is too dark on a dark surface */
-#dialog_spool_edit .ql-snow.ql-toolbar button:hover,
-#dialog_spool_edit .ql-snow.ql-toolbar button:focus,
-#dialog_spool_edit .ql-snow.ql-toolbar button.ql-active,
-#dialog_spool_edit .ql-snow.ql-toolbar .ql-picker-label:hover,
-#dialog_spool_edit .ql-snow.ql-toolbar .ql-picker-label.ql-active,
-#dialog_spool_edit .ql-snow.ql-toolbar .ql-picker-item:hover,
-#dialog_spool_edit .ql-snow.ql-toolbar .ql-picker-item.ql-selected {
+#spmx-dialog_spool_edit .ql-snow.ql-toolbar button:hover,
+#spmx-dialog_spool_edit .ql-snow.ql-toolbar button:focus,
+#spmx-dialog_spool_edit .ql-snow.ql-toolbar button.ql-active,
+#spmx-dialog_spool_edit .ql-snow.ql-toolbar .ql-picker-label:hover,
+#spmx-dialog_spool_edit .ql-snow.ql-toolbar .ql-picker-label.ql-active,
+#spmx-dialog_spool_edit .ql-snow.ql-toolbar .ql-picker-item:hover,
+#spmx-dialog_spool_edit .ql-snow.ql-toolbar .ql-picker-item.ql-selected {
     color: #74b8ff;
 }
-#dialog_spool_edit .ql-snow.ql-toolbar button:hover .ql-stroke,
-#dialog_spool_edit .ql-snow.ql-toolbar button:focus .ql-stroke,
-#dialog_spool_edit .ql-snow.ql-toolbar button.ql-active .ql-stroke,
-#dialog_spool_edit .ql-snow.ql-toolbar button:hover .ql-stroke-miter,
-#dialog_spool_edit .ql-snow.ql-toolbar button:focus .ql-stroke-miter,
-#dialog_spool_edit .ql-snow.ql-toolbar button.ql-active .ql-stroke-miter,
-#dialog_spool_edit .ql-snow.ql-toolbar .ql-picker-label:hover .ql-stroke,
-#dialog_spool_edit .ql-snow.ql-toolbar .ql-picker-label.ql-active .ql-stroke {
+#spmx-dialog_spool_edit .ql-snow.ql-toolbar button:hover .ql-stroke,
+#spmx-dialog_spool_edit .ql-snow.ql-toolbar button:focus .ql-stroke,
+#spmx-dialog_spool_edit .ql-snow.ql-toolbar button.ql-active .ql-stroke,
+#spmx-dialog_spool_edit .ql-snow.ql-toolbar button:hover .ql-stroke-miter,
+#spmx-dialog_spool_edit .ql-snow.ql-toolbar button:focus .ql-stroke-miter,
+#spmx-dialog_spool_edit .ql-snow.ql-toolbar button.ql-active .ql-stroke-miter,
+#spmx-dialog_spool_edit .ql-snow.ql-toolbar .ql-picker-label:hover .ql-stroke,
+#spmx-dialog_spool_edit .ql-snow.ql-toolbar .ql-picker-label.ql-active .ql-stroke {
     stroke: #74b8ff !important;
 }
-#dialog_spool_edit .ql-snow.ql-toolbar button:hover .ql-fill,
-#dialog_spool_edit .ql-snow.ql-toolbar button:focus .ql-fill,
-#dialog_spool_edit .ql-snow.ql-toolbar button.ql-active .ql-fill,
-#dialog_spool_edit .ql-snow.ql-toolbar button:hover .ql-stroke.ql-fill,
-#dialog_spool_edit .ql-snow.ql-toolbar button.ql-active .ql-stroke.ql-fill {
+#spmx-dialog_spool_edit .ql-snow.ql-toolbar button:hover .ql-fill,
+#spmx-dialog_spool_edit .ql-snow.ql-toolbar button:focus .ql-fill,
+#spmx-dialog_spool_edit .ql-snow.ql-toolbar button.ql-active .ql-fill,
+#spmx-dialog_spool_edit .ql-snow.ql-toolbar button:hover .ql-stroke.ql-fill,
+#spmx-dialog_spool_edit .ql-snow.ql-toolbar button.ql-active .ql-stroke.ql-fill {
     fill: #74b8ff !important;
 }
 /* The expanded picker label goes #ccc in snow, which vanishes on light backgrounds */
-#dialog_spool_edit .ql-snow .ql-picker.ql-expanded .ql-picker-label {
+#spmx-dialog_spool_edit .ql-snow .ql-picker.ql-expanded .ql-picker-label {
     color: inherit;
     border-color: rgba(128, 128, 128, 0.35);
 }
-#dialog_spool_edit .ql-snow .ql-picker.ql-expanded .ql-picker-label .ql-stroke {
+#spmx-dialog_spool_edit .ql-snow .ql-picker.ql-expanded .ql-picker-label .ql-stroke {
     stroke: currentColor !important;
 }
-#dialog_spool_edit .ql-snow .ql-picker.ql-expanded .ql-picker-label .ql-fill {
+#spmx-dialog_spool_edit .ql-snow .ql-picker.ql-expanded .ql-picker-label .ql-fill {
     fill: currentColor !important;
 }
 /* Swatch grid: keep the literal colours, only the selection outline is themed */
-#dialog_spool_edit .ql-toolbar.ql-snow .ql-color-picker .ql-picker-item.ql-selected,
-#dialog_spool_edit .ql-toolbar.ql-snow .ql-color-picker .ql-picker-item:hover {
+#spmx-dialog_spool_edit .ql-toolbar.ql-snow .ql-color-picker .ql-picker-item.ql-selected,
+#spmx-dialog_spool_edit .ql-toolbar.ql-snow .ql-color-picker .ql-picker-item:hover {
     border-color: #74b8ff;
 }
 

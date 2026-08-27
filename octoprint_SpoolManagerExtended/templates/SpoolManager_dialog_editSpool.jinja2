@@ -1,6 +1,6 @@
 
 <!--###############################################################  Spool EDIT Dialog: id="dialog_spool_edit -->
-<div id="dialog_spool_edit" class="modal hide fade large modal-wide">
+<div id="spmx-dialog_spool_edit" class="modal hide fade large modal-wide">
     <div class="modal-header">
         <a href="#" class="close" data-dismiss="modal" aria-hidden="true">&times;</a>
         <h3 class="modal-title" data-bind="text: spoolDialog.isExistingSpool() ? 'Edit Spool' : 'Add Spool'"></h3>
@@ -11,14 +11,14 @@
                     <svg enable-background="new 0 0 512 512" height="64px" width="64px" version="1.1" viewBox="0 0 512 512"  xml:space="preserve"
                         xmlns="http://www.w3.org/2000/svg"
                         xmlns:xlink="http://www.w3.org/1999/xlink">
-                        <g id="svg-spool">
+                        <g id="spmx-svg-spool">
                             <rect fill="#282828" height="288" width="418" x="54" y="121"/>
                             <rect fill="#FFFFFF" height="113" width="5" x="54" y="216"/>
                             <rect fill="#FFFFFF" height="113" width="5" x="467" y="216"/>
                             <rect fill="#1E1E1E" height="494" width="31" x="64" y="18"/>
                             <rect fill="#1E1E1E" height="494" width="31" x="431" y="18"/>
                         </g>
-                        <g id="svg-filament">
+                        <g id="spmx-svg-filament">
                             <rect fill="#0071BC" height="374" width="14" x="95" y="81"/>
                             <rect fill="#0049BC" height="374" width="14" x="109" y="81"/>
                             <rect fill="#0071BC" height="374" width="14" x="123" y="81"/>
@@ -67,12 +67,12 @@
             <div class="span1">
 
 
-                <div id="configFields" class="btn-group" >
-                  <a id="openConfigFields" class="btn dropdown-toggle" onclick="machwas()"   href="#">
+                <div id="spmx-configFields" class="btn-group" >
+                  <a id="spmx-openConfigFields" class="btn dropdown-toggle" onclick="machwas()"   href="#">
                     Configure Fields
                     <span class="caret"></span>
                   </a>
-                  <ul id="configFieldsDropDown" class="dropdown-menu pull-right">
+                  <ul id="spmx-configFieldsDropDown" class="dropdown-menu pull-right">
                     <li>
                           <div class="container" style="max-width: 480px;">
                             <h3>TODO: needs to be implemented</h3>
@@ -143,7 +143,7 @@
     </div>
 
     <div class="modal-body hack-flowbreak"  >
-        <form  class="form-horizontal" id="spool-form" >
+        <form  class="form-horizontal" id="spmx-spool-form" >
             <input type="hidden" data-bind="value: spoolDialog.spoolItemForEditing.version" />
             <div class="row-fluid " >
 <!-- LEFT COLUMN -->
@@ -189,7 +189,7 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                             <div class="row controls" style="margin-top: 4px;" data-bind="visible: !spoolDialog.spoolItemForEditing.isRainbow()">
                                 {# Containers only - the color picker component renders itself into
                                    them (see common/colorPicker.js, wired up in SpoolItem). #}
-                                <span id="filament-color-picker"></span>
+                                <span id="spmx-filament-color-picker"></span>
                                 <span data-bind="visible: spoolDialog.spoolItemForEditing.colorCount() >= 2">
                                     <span id="filament-color-picker2"></span>
                                 </span>
@@ -229,7 +229,7 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                 {# Free text stays available; the grouped dropdown distinguishes local and
                                    SpoolmanDB suggestions without making group labels selectable. #}
                                 <div class="input-append dropdown">
-                                     <input id="spool-vendor-select" type="text" class="input-large"
+                                     <input id="spmx-spool-vendor-select" type="text" class="input-large"
                                          list="spool-vendor-list"
                                            autocomplete="off" placeholder="Choose or type..."
                                            data-bind="textInput: spoolDialog.spoolItemForEditing.vendor">
@@ -261,7 +261,7 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                         <div class="control-group no-bottom-gap" data-bind="css: {error: !spoolDialog.isMaterialPresent()}">
                             <label class="control-label">Material *</label>
                             <div class="controls">
-                                <input id="spool-material-select" type="text" class="input-large" list="spool-material-list"
+                                <input id="spmx-spool-material-select" type="text" class="input-large" list="spool-material-list"
                                        autocomplete="off" placeholder="Choose or type..."
                                        data-bind="textInput: spoolDialog.spoolItemForEditing.material">
                                 <datalist id="spool-material-list" data-bind="foreach: spoolDialog.allMaterials">
@@ -574,7 +574,7 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                 <div class="control-group  no-bottom-gap">
                                     <label class="control-label">First use</label>
                                     <div class="controls" >
-                                        <input id="my-firstuse" type="date"
+                                        <input id="spmx-my-firstuse" type="date"
                                                title="Format e.g. 2022-01-12"
                                                placeholder="YYYY-MM-DD"
                                                data-bind="value: spoolDialog.spoolItemForEditing.firstUseDateKO" />
@@ -632,7 +632,7 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                             <!-- Labels TODO FIXME
                             <div class="row">
                                 <div class="span6 text-center">
-                                    <select id="spool-labels-select" multiple="true" data-bind="options: spoolDialog.spoolItemForEditing.allLabels, selectedOptions: spoolDialog.spoolItemForEditing.labels">
+                                    <select id="spmx-spool-labels-select" multiple="true" data-bind="options: spoolDialog.spoolItemForEditing.allLabels, selectedOptions: spoolDialog.spoolItemForEditing.labels">
                                     </select>
                                 </div>
                             </div>
@@ -642,9 +642,9 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                             <div class="custom-divider" data-bind="visible: !spoolDialog.simpleMode()"></div>
                             <div>
                                 <div class="control-group no-bottom-gap" data-bind="visible: !spoolDialog.simpleMode()">
-                                    <label for="driven-scope" class="control-label"><h5>Auto calculation for:</h5></label>
+                                    <label for="spmx-driven-scope" class="control-label"><h5>Auto calculation for:</h5></label>
                                     <div class="controls">
-                                        <select id="driven-scope" class="input-large"
+                                        <select id="spmx-driven-scope" class="input-large"
                                                 data-bind="options: spoolDialog.spoolItemForEditing.drivenScopeOptions,
                                                            value: spoolDialog.spoolItemForEditing.drivenScope,
                                                            optionsText: 'text',
@@ -661,10 +661,10 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                     For automatic g to mm conversions, please enter <b>Density</b> and <b>Diameter</b>!
                                 </small></p>
                                 <div class="control-group no-bottom-gap" data-bind="visible: !spoolDialog.hideDetailedWeights()">
-                                    <label for="total-weight" class="control-label">Initial <sup>2</sup></label>
+                                    <label for="spmx-total-weight" class="control-label">Initial <sup>2</sup></label>
                                     <div class="controls">
                                         <div class="input-append">
-                                            <input id="total-weight" type="number" step="any" min="0"
+                                            <input id="spmx-total-weight" type="number" step="any" min="0"
                                                    class="input-mini text-right"
                                                    data-bind="value: spoolDialog.totalWeightDisplay,
                                                               numberField: {invalidFields: spoolDialog.invalidNumberFields, key: 'totalWeight', trackOnly: true},
@@ -682,12 +682,12 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                     <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('totalWeight') !== -1 || spoolDialog.invalidNumberFields().indexOf('totalLength') !== -1">Please enter a valid number</span>
                                 </div>
                                 <div class="control-group no-bottom-gap" data-bind="visible: !spoolDialog.hideDetailedWeights()">
-                                    <label for="usedWeight" class="control-label">Used <small
+                                    <label for="spmx-usedWeight" class="control-label">Used <small
                                             data-bind="visible: !isNaN(spoolDialog.spoolItemForEditing.usedPercentage())">(<span
                                             data-bind="text: spoolDialog.spoolItemForEditing.usedPercentage"></span>%)</small></label>
                                     <div class="controls">
                                         <div class="input-append">
-                                            <input id="usedWeight" type="number" step="any" min="0"
+                                            <input id="spmx-usedWeight" type="number" step="any" min="0"
                                                    class="input-mini text-right"
                                                    data-bind="value: spoolDialog.usedWeightDisplay,
                                                               numberField: {invalidFields: spoolDialog.invalidNumberFields, key: 'usedWeight', trackOnly: true},
@@ -705,12 +705,12 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                     <span class="spm-number-invalid-hint" data-bind="visible: spoolDialog.invalidNumberFields().indexOf('usedWeight') !== -1 || spoolDialog.invalidNumberFields().indexOf('usedLength') !== -1">Please enter a valid number</span>
                                 </div>
                                 <div class="control-group">
-                                    <label for="remainingWeight" class="control-label">Remaining <small
+                                    <label for="spmx-remainingWeight" class="control-label">Remaining <small
                                             data-bind="visible: !isNaN(spoolDialog.spoolItemForEditing.remainingPercentage())">(<span
                                             data-bind="text: spoolDialog.spoolItemForEditing.remainingPercentage"></span>%)</small></label>
                                     <div class="controls">
                                         <span class="input-append">
-                                            <input id="remainingWeight" type="number" step="any" min="0"
+                                            <input id="spmx-remainingWeight" type="number" step="any" min="0"
                                                    class="input-mini text-right"
                                                    disabled
                                                    data-bind="value: spoolDialog.remainingWeightDisplay,
@@ -732,10 +732,10 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                             <div data-bind="visible: !spoolDialog.hideDetailedWeights()">
                                 <h5>Spool Weight <small>(Without Filament)</small></h5>
                                 <div class="control-group no-bottom-gap">
-                                    <label for="spool-weight" class="control-label">Empty Spool Weight</label>
+                                    <label for="spmx-spool-weight" class="control-label">Empty Spool Weight</label>
                                     <div class="controls">
                                         <div class="input-append">
-                                            <input id="spool-weight" type="number" step="any" min="0"
+                                            <input id="spmx-spool-weight" type="number" step="any" min="0"
                                                    class="input-mini text-right"
                                                    data-bind="value: spoolDialog.spoolWeightDisplay,
                                                               numberField: {invalidFields: spoolDialog.invalidNumberFields, key: 'spoolWeight', trackOnly: true},
@@ -992,7 +992,7 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                     <div style="margin-top:10px">
                                         <div>
 <!--                                                <div class="spool-note-editor-container">-->
-                                                <div id="spool-note-editor" style="min-height:120px;"></div>
+                                                <div id="spmx-spool-note-editor" style="min-height:120px;"></div>
 <!--                                                </div>-->
                                         </div>
                                     </div>
@@ -1091,22 +1091,22 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
     </div>
 </div>
 
-<!--###############################################################  Spool TEMPLATE SELECTION-Dialog: id="dialog_template_spool_selection" -->
+<!--###############################################################  Spool TEMPLATE SELECTION-Dialog: id="spmx-dialog_template_spool_selection" -->
 
 
 
-<div id="dialog_template_spool_selection" class="modal hide fade">
+<div id="spmx-dialog_template_spool_selection" class="modal hide fade">
     <div class="modal-header">
         <a href="#" class="close" data-dismiss="modal" aria-hidden="true">&times;</a>
         <h3 class="modal-title">Select Template Spool</h3>
     </div>
     <div class="modal-body">
-        <spm-select-spool-table params="allSpoolsKOArray: spoolDialog.templateSpools,
+        <spmx-select-spool-table params="allSpoolsKOArray: spoolDialog.templateSpools,
                                         allMaterialsKOArray: spoolDialog.allMaterials,
                                         allVendorsKOArray: spoolDialog.allVendors,
                                         allColorsKOArray: spoolDialog.allColors,
                                         selectSpoolFunction: spoolDialog.copySpoolItemFromTemplate
-                                        "></spm-select-spool-table>
+                                        "></spmx-select-spool-table>
     </div>
     <div class="modal-footer">
         <button type="button" class="btn" data-dismiss="modal" aria-hidden="true">Close</button>

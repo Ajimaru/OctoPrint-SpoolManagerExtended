@@ -1,0 +1,62 @@
+<!--###############################################################  Legacy settings comparison: id="spmx-dialog_legacy_settings" -->
+<div id="spmx-dialog_legacy_settings" class="modal hide fade">
+    <div class="modal-header">
+        <a href="#" class="close" aria-hidden="true"
+           data-bind="click: closeLegacySettingsDialog">&times;</a>
+        <h3 class="modal-title"><i class="fas fa-sliders-h"></i>&nbsp; Migrate settings from SpoolManager</h3>
+    </div>
+    <div class="modal-body">
+        <p>
+            <small>Every setting the previous installation knows is listed, with the value that
+            applies there on the left and here on the right. Values marked <i>(default)</i> were
+            never changed and show the standard value.
+            Rows that differ are preselected - uncheck anything you don't want to take over,
+            or use Select/Deselect all.</small>
+        </p>
+        <!-- ko if: legacySettingsRows().length > 0 -->
+        <table class="table table-condensed">
+            <thead>
+                <tr>
+                    <th style="width: 24px;">
+                        <input type="checkbox"
+                               data-bind="checked: legacySettingsAllSelected, click: toggleAllLegacySettings">
+                    </th>
+                    <th>Setting</th>
+                    <th>In SpoolManager</th>
+                    <th>In SpoolManagerExtended</th>
+                </tr>
+            </thead>
+            <tbody data-bind="foreach: legacySettingsRows">
+                <tr data-bind="css: {info: differs}">
+                    <td>
+                        <input type="checkbox" data-bind="checked: selected">
+                    </td>
+                    <td><small data-bind="text: key"></small></td>
+                    <td>
+                        <small data-bind="text: legacyValueText"></small>
+                        <!-- ko if: legacyIsDefault -->
+                        <small class="muted">&nbsp;(default)</small>
+                        <!-- /ko -->
+                    </td>
+                    <td>
+                        <small data-bind="text: currentValueText"></small>
+                        <!-- ko if: currentIsDefault -->
+                        <small class="muted">&nbsp;(default)</small>
+                        <!-- /ko -->
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+        <!-- /ko -->
+        <!-- ko if: legacySettingsRows().length === 0 -->
+        <p><small class="text-warning"><i class="fas fa-info-circle"></i> The previous installation has no settings to migrate.</small></p>
+        <!-- /ko -->
+    </div>
+    <div class="modal-footer">
+        <button type="button" class="btn" data-bind="click: selectAllLegacySettings" style="float: left;">Select all</button>
+        <button type="button" class="btn" data-bind="click: deselectAllLegacySettings" style="float: left;">Deselect all</button>
+        <button type="button" class="btn" data-bind="click: closeLegacySettingsDialog">Cancel</button>
+        <button type="button" class="btn btn-primary"
+                data-bind="click: applySelectedLegacySettings, enable: legacySettingsRows().length > 0">Migrate selected</button>
+    </div>
+</div>

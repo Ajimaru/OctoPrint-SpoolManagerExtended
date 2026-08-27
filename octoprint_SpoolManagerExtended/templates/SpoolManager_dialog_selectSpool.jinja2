@@ -1,6 +1,6 @@
 
-<!--###############################################################  Spool SELECTION Dialog: id="dialog_spool_selection" -->
-<div id="dialog_spool_selection" class="modal hide fade">
+<!--###############################################################  Spool SELECTION Dialog: id="spmx-dialog_spool_selection" -->
+<div id="spmx-dialog_spool_selection" class="modal hide fade">
     <div class="modal-header">
         <a href="#" class="close" data-dismiss="modal" aria-hidden="true">&times;</a>
         <h3 class="modal-title">Select Spool</h3>
@@ -30,14 +30,14 @@
             </div>
             <hr/>
 
-            <spm-select-spool-table params="allSpoolsKOArray: allSpoolsForSidebar,
+            <spmx-select-spool-table params="allSpoolsKOArray: allSpoolsForSidebar,
                                             allMaterialsKOArray: spoolDialog.allMaterials,
                                             allVendorsKOArray: spoolDialog.allVendors,
                                             allColorsKOArray: spoolDialog.allColors,
                                             databaseItemCountKO: sidebarDatabaseItemCount,
                                             isLoadingSpoolsSelectorData: isLoadingSpoolsSelectorData,
                                             selectSpoolFunction: sidebarSelectSpoolFromDialog
-                                            "></spm-select-spool-table>
+                                            "></spmx-select-spool-table>
         </div>
     </div>
     <div class="modal-footer">
