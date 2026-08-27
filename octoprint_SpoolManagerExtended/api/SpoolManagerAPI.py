@@ -2624,7 +2624,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 border=4, error_correction=qrcode.constants.ERROR_CORRECT_H
             )
 
-            # spoolSelectionUrl = flask.url_for("plugin.SpoolManager.selectSpoolByQRCode", _external=True, _scheme="https", databaseId=databaseId)
+            # spoolSelectionUrl = flask.url_for("plugin.SpoolManagerExtended.selectSpoolByQRCode", _external=True, _scheme="https", databaseId=databaseId)
             spoolSelectionUrl = None
 
             useURLPrefix = None
@@ -2737,7 +2737,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         if spoolModel is not None:
             self._logger.info("Generate HTML iew for QR-Code")
             qrCodeImageUrl = flask.url_for(
-                "plugin.SpoolManager.generateSpoolQRCode", databaseId=databaseId
+                "plugin.SpoolManagerExtended.generateSpoolQRCode", databaseId=databaseId
             )
             colorCss = self._buildSpoolColorCss(spoolModel.color)
             colorHtml = ""
