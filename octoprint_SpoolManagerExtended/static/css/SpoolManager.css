@@ -6,6 +6,11 @@
     opacity: 0.3;
 }
 
+.spmx-settings-disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
 .control-group.no-bottom-gap {
     margin-bottom: 3px;
 }
