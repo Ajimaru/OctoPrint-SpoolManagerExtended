@@ -1652,9 +1652,15 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # preference (SETTINGS_KEY_OCTOSCALE_NFCV_FORMAT), not something the firmware can
         # infer from the tag alone - so it's passed explicitly. NTAG213/215/216 mirror this
         # with their own independent preference (SETTINGS_KEY_OCTOSCALE_NTAG_FORMAT,
-        # "preferredNtagFormat") - openSpool or extended, extended silently rejected by the
-        # firmware on a too-small NTAG213. The firmware ignores whichever of these two
-        # fields doesn't apply to the tag actually on the reader.
+        # "preferredNtagFormat") - openSpool or extended, extended REJECTED OUTRIGHT (ok:
+        # false, nothing written, not a silent substitution) by the firmware on a
+        # too-small NTAG213 - see TAG_FORMAT_NTAG_EXTENDED's description in TagFormats.py.
+        # The firmware ignores whichever of these two preference fields doesn't apply to
+        # the tag actually on the reader; since each carrier's preference is independent,
+        # the user can never have "the wrong format for this tag type" selected - the
+        # choice is already scoped per carrier. A write always either produces the exact
+        # format requested for the carrier present, or fails outright with ok:false and an
+        # error the frontend surfaces - never a silent substitution the user didn't ask for.
         payload = TagFormats.getTagFormat(
             TagFormats.TAG_FORMAT_OCTOSCALE_EXTENDED
         )["buildPayload"](spoolModel)
@@ -1825,6 +1831,15 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 # doesn't send this field yet - absence here just means teach-in falls back
                 # to the UID last seen via /octoscale/nfc on the frontend side.
                 "uid": statusData.get("uid"),
+                # Present only when the firmware made a capacity decision (currently
+                # OpenPrintTag only - other formats drop fields instead and report that via
+                # droppedFields/unsupportedFields above). failureReason lets the frontend
+                # distinguish "this tag is too small for what was asked" from a transport
+                # error without parsing the human-readable message. Older firmware simply
+                # doesn't send these - all three stay None, same as before this field existed.
+                "failureReason": statusData.get("failureReason"),
+                "capacityAvailable": statusData.get("capacityAvailable"),
+                "capacityNeeded": statusData.get("capacityNeeded"),
             }
         )
 
@@ -2135,6 +2150,15 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             FilamentTagToSpool.diagnosticsFor(filament, normalizedUid, rfidTagKey)
         )
 
+        # OctoScale's own extended format (Mifare/NTAG/NFC-V) carries a databaseId - unlike
+        # every vendor tag, which has no notion of a SpoolManager id at all. This is
+        # identification, not an importable field: it says which spool the tag belongs to,
+        # the same "this tag already belongs to this spool" fact the write flow surfaces,
+        # never something applyToSpoolItem should write back onto a spool.
+        octoscaleExtendedFields = getattr(filament, "octoscaleExtendedFields", None)
+        if octoscaleExtendedFields and octoscaleExtendedFields.get("databaseId") is not None:
+            diagnostics["tagDatabaseId"] = octoscaleExtendedFields["databaseId"]
+
         # A vendor tag carries no SpoolManager id, so an already-known spool can only be
         # found by the tag's own UID - the same path OpenPrintTag and the Snapmaker U1 use.
         matchedSpool = None
@@ -2159,6 +2183,22 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             + "'"
         )
 
+        fields = FilamentTagToSpool.genericFilamentToSpoolFields(filament, normalizedUid)
+        # Round-trip fields no vendor tag carries but OctoScale's own extended format
+        # does (usedWeight, remainingWeight, cost, ...) - see
+        # FilamentTagParsers._buildOctoscaleExtendedFields. genericFilamentToSpoolFields()
+        # is deliberately left untouched above: it protects vendor-tag imports (e.g. never
+        # guessing remainingWeight), a guarantee that must not weaken just because this one
+        # format actually carries the value. databaseId is excluded here - it went into
+        # diagnostics above as identification, not a field to write onto a spool.
+        if octoscaleExtendedFields:
+            for key, value in octoscaleExtendedFields.items():
+                if key == "databaseId":
+                    continue
+                if key in ("firstUseDays", "lastUseDays", "purchasedOnDays"):
+                    continue  # exposed as diagnostics-only manufacturingDate below, not a spool field
+                fields[key] = value
+
         return flask.jsonify(
             {
                 "success": True,
@@ -2167,9 +2207,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 "parserLabel": (
                     parserDescriptor["label"] if parserDescriptor else None
                 ),
-                "fields": FilamentTagToSpool.genericFilamentToSpoolFields(
-                    filament, normalizedUid
-                ),
+                "fields": fields,
                 "uid": normalizedUid,
                 "rfidTagKey": rfidTagKey,
                 "matchedSpoolId": (

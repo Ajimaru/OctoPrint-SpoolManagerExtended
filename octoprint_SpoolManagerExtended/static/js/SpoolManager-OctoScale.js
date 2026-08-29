@@ -149,6 +149,7 @@ var OCTOSCALE_TAG_DIFF_FIELDS = [
     {key: "color", label: "Color", caseInsensitive: true},
     {key: "colorName", label: "Color name"},
     {key: "diameter", label: "Diameter", unit: "mm"},
+    {key: "diameterTolerance", label: "Diameter tolerance", unit: "mm"},
     {key: "density", label: "Density", unit: "g/cm³"},
     {key: "totalWeight", label: "Total weight", unit: "g"},
     {key: "spoolWeight", label: "Spool weight", unit: "g"},
@@ -159,6 +160,14 @@ var OCTOSCALE_TAG_DIFF_FIELDS = [
     {key: "bedTemperature", label: "Bed temperature", unit: "°C"},
     {key: "minBedTemperature", label: "Min bed temperature", unit: "°C"},
     {key: "maxBedTemperature", label: "Max bed temperature", unit: "°C"},
+    {key: "enclosureTemperature", label: "Enclosure temperature", unit: "°C"},
+    // The firmware has no "not set" sentinel for these three - 0 means "no offset", same
+    // as an unconfigured spool. Listed here like any other diff field; there is nothing
+    // format-specific to account for on the frontend side (see TagFormats.py's
+    // _buildFullSpoolPayload for the write-side reasoning).
+    {key: "offsetTemperature", label: "Nozzle temperature offset", unit: "°C"},
+    {key: "offsetBedTemperature", label: "Bed temperature offset", unit: "°C"},
+    {key: "offsetEnclosureTemperature", label: "Enclosure temperature offset", unit: "°C"},
     {key: "dryingTemperature", label: "Drying temperature", unit: "°C"},
     // The tag carries minutes (OpenPrintTag spec key 58), SpoolManager stores hours - so
     // the tag value has to be divided before it can be compared with, or shown next to,
@@ -1263,9 +1272,17 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
                             self.teachRfidTagKeyIfNeeded(statusData);
                         } else {
                             clearWriteOutcome();
-                            self.errorMessage(
-                                statusData.error || "Could not write the tag."
-                            );
+                            var message = statusData.error || "Could not write the tag.";
+                            // failureReason is only present when the firmware made a
+                            // capacity decision (currently OpenPrintTag only) - point the
+                            // user at the two ways out instead of leaving them with just
+                            // the raw byte counts from the firmware's error string.
+                            if (statusData.failureReason === "tagTooSmall") {
+                                message +=
+                                    " Choose a different tag format (Extended uses less" +
+                                    " space) or a larger NFC-V tag.";
+                            }
+                            self.errorMessage(message);
                         }
                     });
                 }, OCTOSCALE_WRITE_STATUS_POLL_INTERVAL_MS);

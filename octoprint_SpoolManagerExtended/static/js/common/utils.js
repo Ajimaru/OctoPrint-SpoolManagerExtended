@@ -615,7 +615,27 @@ SPOOLMANAGER_U1RFID = {
             "maxBedTemperature",
             "dryingTemperature",
             "dryingTime",
-            "td"
+            "td",
+            // Fields no vendor tag carries, but OctoScale's own extended format does (see
+            // FilamentTagParsers.py's OctoScaleExtended*TagParser classes) - the compare
+            // table already showed these rows (OCTOSCALE_TAG_DIFF_FIELDS has always listed
+            // them), but no vendor tag had ever populated them until now.
+            "diameterTolerance",
+            "enclosureTemperature",
+            "offsetTemperature",
+            "offsetBedTemperature",
+            "offsetEnclosureTemperature",
+            "spoolWeight",
+            "usedWeight",
+            "remainingWeight",
+            "totalLength",
+            "usedLength",
+            "code",
+            "batchNumber",
+            "purchasedFrom",
+            "finish",
+            "displayName",
+            "cost"
         ];
         directFields.forEach(function (fieldName) {
             setIfPresent(fieldName, fields[fieldName]);
@@ -727,7 +747,27 @@ SPOOLMANAGER_U1RFID = {
             "maxBedTemperature",
             "dryingTemperature",
             "dryingTime",
-            "td"
+            "td",
+            // Fields no vendor tag carries, but OctoScale's own extended format does (see
+            // FilamentTagParsers.py's OctoScaleExtended*TagParser classes) - the compare
+            // table already showed these rows (OCTOSCALE_TAG_DIFF_FIELDS has always listed
+            // them), but no vendor tag had ever populated them until now.
+            "diameterTolerance",
+            "enclosureTemperature",
+            "offsetTemperature",
+            "offsetBedTemperature",
+            "offsetEnclosureTemperature",
+            "spoolWeight",
+            "usedWeight",
+            "remainingWeight",
+            "totalLength",
+            "usedLength",
+            "code",
+            "batchNumber",
+            "purchasedFrom",
+            "finish",
+            "displayName",
+            "cost"
         ];
         directFields.forEach(function (fieldName) {
             setIfSelected(fieldName, fields[fieldName]);

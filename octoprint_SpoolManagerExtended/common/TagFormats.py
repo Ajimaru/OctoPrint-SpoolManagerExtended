@@ -197,6 +197,7 @@ def _buildFullSpoolPayload(spoolModel):
         "color": spoolModel.color,
         "colorName": spoolModel.colorName,
         "diameter": spoolModel.diameter,
+        "diameterTolerance": spoolModel.diameterTolerance,
         "density": spoolModel.density,
         "totalWeight": spoolModel.totalWeight,
         "spoolWeight": spoolModel.spoolWeight,
@@ -207,6 +208,15 @@ def _buildFullSpoolPayload(spoolModel):
         "bedTemperature": spoolModel.bedTemperature,
         "minBedTemperature": minBedTemperature,
         "maxBedTemperature": maxBedTemperature,
+        "enclosureTemperature": spoolModel.enclosureTemperature,
+        # The firmware has no "unset" sentinel for these three - 0 already means "no
+        # offset", so sending None here (spool never had an offset entered) writes 0,
+        # which is the same thing. Confirmed against the firmware source (RED FALCON,
+        # octoscale-46): unlike diameterTolerance/enclosureTemperature above, an int8
+        # offset field cannot distinguish "not set" from "explicitly zero".
+        "offsetTemperature": spoolModel.offsetTemperature,
+        "offsetBedTemperature": spoolModel.offsetBedTemperature,
+        "offsetEnclosureTemperature": spoolModel.offsetEnclosureTemperature,
         "remainingWeight": spoolModel.remainingWeight,
         "totalLength": spoolModel.totalLength,
         "usedLength": spoolModel.usedLength,
