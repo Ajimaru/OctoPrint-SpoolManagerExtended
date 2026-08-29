@@ -51,6 +51,11 @@ def _spool(**kwargs):
         "cost": None,
         "density": None,
         "databaseId": 42,
+        "diameterTolerance": None,
+        "enclosureTemperature": None,
+        "offsetTemperature": None,
+        "offsetBedTemperature": None,
+        "offsetEnclosureTemperature": None,
     }
     defaults.update(kwargs)
     for key, value in defaults.items():
@@ -270,6 +275,68 @@ class TestRoundTripAgainstTheReadParser(unittest.TestCase):
         self.assertEqual(1000, filament.weight_grams)
         self.assertEqual(190, filament.hotend_min_temp_c)
         self.assertEqual(230, filament.hotend_max_temp_c)
+
+
+class TestBuildFullSpoolPayloadCarriesTheOffsetAndToleranceFields(unittest.TestCase):
+    """The shared extended payload (_buildFullSpoolPayload, used by octoscaleExtended,
+    ntagExtended and nfcvExtended alike) used to omit diameterTolerance,
+    enclosureTemperature and the three temperature offset fields entirely - the firmware
+    has known these keys since v1/v2 (confirmed against the firmware source by RED
+    FALCON/octoscale-46, and this plugin's own OctoScaleExtended*TagParser read classes
+    already extract diameterTolerance and the three offsets from the wire format), but
+    the write side never sent them. These tests guard against that gap reopening.
+    """
+
+    def test_all_five_fields_are_present_in_the_payload(self):
+        spool = _spool(
+            diameterTolerance=0.03,
+            enclosureTemperature=45,
+            offsetTemperature=-5,
+            offsetBedTemperature=3,
+            offsetEnclosureTemperature=-2,
+        )
+        payload = TagFormats.getTagFormat(TagFormats.TAG_FORMAT_OCTOSCALE_EXTENDED)[
+            "buildPayload"
+        ](spool)
+        self.assertEqual(0.03, payload["diameterTolerance"])
+        self.assertEqual(45, payload["enclosureTemperature"])
+        self.assertEqual(-5, payload["offsetTemperature"])
+        self.assertEqual(3, payload["offsetBedTemperature"])
+        self.assertEqual(-2, payload["offsetEnclosureTemperature"])
+
+    def test_present_across_every_extended_format_not_just_classic(self):
+        # One shared builder feeds Classic, NTAG and NFC-V extended alike - a regression
+        # here would silently affect all three carriers at once, not just one.
+        spool = _spool(diameterTolerance=0.05, enclosureTemperature=30)
+        for formatId in (
+            TagFormats.TAG_FORMAT_OCTOSCALE_EXTENDED,
+            TagFormats.TAG_FORMAT_NTAG_EXTENDED,
+            TagFormats.TAG_FORMAT_NFCV_EXTENDED,
+        ):
+            payload = TagFormats.getTagFormat(formatId)["buildPayload"](spool)
+            self.assertEqual(
+                0.05, payload["diameterTolerance"], "missing on format " + formatId
+            )
+            self.assertEqual(
+                30, payload["enclosureTemperature"], "missing on format " + formatId
+            )
+
+    def test_unset_offsets_are_sent_as_none_not_a_guessed_zero(self):
+        # The firmware itself treats a missing/null offset key as 0 ("no offset") - see
+        # the comment in TagFormats.py. This test only guards that this module keeps
+        # passing None through rather than substituting a literal 0, which would be
+        # indistinguishable to the firmware but would misrepresent "never configured" as
+        # "explicitly zero" in any future plugin-side logic that inspects the payload
+        # before it is sent.
+        spool = _spool()
+        payload = TagFormats.getTagFormat(TagFormats.TAG_FORMAT_OCTOSCALE_EXTENDED)[
+            "buildPayload"
+        ](spool)
+        self.assertIsNone(payload["offsetTemperature"])
+        self.assertIsNone(payload["offsetBedTemperature"])
+        self.assertIsNone(payload["offsetEnclosureTemperature"])
+        self.assertIsNone(payload["diameterTolerance"])
+        self.assertIsNone(payload["enclosureTemperature"])
 
 
 class _FakeIdService:

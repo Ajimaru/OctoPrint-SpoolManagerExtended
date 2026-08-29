@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import json
 import logging
+import struct
 
 try:
     from urllib import parse as urlparse
@@ -58,6 +59,7 @@ from . import FilamentTagBinary as Binary
 from . import FilamentTagConstants as Constants
 from . import FilamentTagKeys as Keys
 from . import FilamentTagNdef as Ndef
+from . import OpenPrintTag as OpenPrintTagModule
 from .FilamentTagModel import GenericFilament, TagType
 
 _logger = logging.getLogger(
@@ -85,17 +87,37 @@ def _firstNumber(*values):
 
 
 def _parseColorHex(value, default=0xFFFFFF):
+    """"RRGGBB" (or "#RRGGBB") -> the 24-bit int, ignoring any trailing alpha byte.
+
+    OpenSpool's color_hex can be 8 hex digits ("RRGGBBAA") - the firmware itself writes
+    whatever string it's given verbatim (no length check) but only ever reads the first
+    three byte-pairs as RGB wherever it needs concrete bytes (confirmed against the
+    firmware source, RED FALCON/octoscale-46: pn5180ParseColorHex takes exactly 3
+    byte-pairs). Feeding the raw 8-digit string to int(..., 16) here used to produce the
+    full 32-bit value instead, and a later `& 0xFFFFFF` mask then kept the LAST six hex
+    digits rather than the first six - "FFFFFF00" (white, alpha 0) silently became
+    "#FFFF00" (yellow). Slicing to the first 6 characters before parsing mirrors the
+    firmware's own three-byte-pairs behaviour instead.
+    """
     try:
         hexString = str(value).strip()
         if hexString.startswith("#"):
             hexString = hexString[1:]
+        hexString = hexString[:6]
         return int(hexString, 16)
     except (ValueError, TypeError):
         return default
 
 
 class OpenSpoolTagParser(object):
-    """OpenSpool's NDEF/JSON record - the open format this plugin also writes."""
+    """OpenSpool's NDEF/JSON record - the open format this plugin also writes.
+
+    The NDEF/TLV parsing itself is carrier-independent (parseNdefRecords locates the
+    capability container by scanning rather than assuming a fixed offset - Page 3 on
+    NTAG, Block 0 on NFC-V - see FilamentTagNdef.py), so this same logic also backs
+    OpenSpoolNfcvTagParser below for the NFC-V carrier. Only the accepted tag_type
+    differs per subclass.
+    """
 
     id = "openSpool"
     label = "OpenSpool"
@@ -103,7 +125,7 @@ class OpenSpoolTagParser(object):
     requiresKey = False
 
     def parseTag(self, scanResult, data):
-        if scanResult.tag_type != TagType.MIFARE_ULTRALIGHT:
+        if scanResult.tag_type != self.tagClass:
             return None
 
         errorCode, records = Ndef.parseNdefRecords(data)
@@ -189,6 +211,123 @@ class OpenSpoolTagParser(object):
             drying_temp_c=dryingTempC,
             drying_time_hours=dryingTimeHours,
             manufacturing_date=Constants.NO_MANUFACTURING_DATE,
+        )
+
+
+class OpenSpoolNfcvTagParser(OpenSpoolTagParser):
+    """OpenSpool's NDEF/JSON record, written onto an NFC-V (ISO15693) tag instead of NTAG.
+
+    Same on-tag format as OpenSpoolTagParser (see its docstring) - the NDEF/TLV layer this
+    plugin's Ndef.parseNdefRecords() implements locates the capability container by
+    scanning rather than assuming NTAG's fixed Page-3/offset-16 position, so it already
+    handles NFC-V's CC-at-Block-0/NDEF-at-Block-1 layout unchanged. Confirmed against the
+    firmware's NFC-V OpenSpool writer (pn5180WriteNfcvOpenSpool): same short-record MIME
+    "application/json" header on both carriers, no per-carrier framing difference to
+    account for here.
+    """
+
+    id = "nfcvOpenSpool"
+    label = "OpenSpool (NFC-V)"
+    tagClass = TagType.NFCV
+    requiresKey = False
+
+
+class OpenPrintTagParser(object):
+    """OpenPrintTag's CBOR/NDEF record (NFC-V only) - see common/OpenPrintTag.py.
+
+    Unlike the other NFC-V formats, this one carries no SpoolManager databaseId - matching
+    an already-known spool happens via the tag's own UID (rfidTagKey), same as OpenSpool
+    and every other vendor format without an id field.
+
+    OpenPrintTag.py's decodePayload()/fieldsToSpoolValues() do the actual CBOR decoding
+    and field-name mapping; this class only extracts the NDEF payload and adapts the
+    result into a GenericFilament. Fields the spec has no equivalent for (colorName,
+    remainingWeight, ...) simply never appear in fieldsToSpoolValues()'s output - see
+    OpenPrintTag.UNMAPPED_FIELD_NAMES for the authoritative list.
+    """
+
+    id = "openPrintTag"
+    label = "OpenPrintTag"
+    tagClass = TagType.NFCV
+    requiresKey = False
+
+    def parseTag(self, scanResult, data):
+        if scanResult.tag_type != TagType.NFCV:
+            return None
+
+        errorCode, records = Ndef.parseNdefRecords(data)
+        if errorCode != Ndef.NDEF_OK:
+            return None
+
+        for record in records:
+            if record.mime_type == OpenPrintTagModule.OPENPRINTTAG_MIME_TYPE:
+                filament = self._parsePayload(record.payload)
+                if filament is not None:
+                    return filament
+        return None
+
+    def _parsePayload(self, payload):
+        if payload is None or not isinstance(payload, (bytes, bytearray)):
+            return None
+
+        try:
+            fields = OpenPrintTagModule.decodePayload(bytes(payload))
+        except (ValueError, IndexError, struct.error):
+            return None
+        if not fields:
+            return None
+
+        values = OpenPrintTagModule.fieldsToSpoolValues(fields)
+
+        material = values.get("material")
+        if material is None:
+            return None
+        vendor = values.get("vendor", "Generic")
+
+        colorArgb = None
+        color = values.get("color")
+        if color is not None:
+            colorArgb = (0xFF << 24) | _parseColorHex(color)
+
+        minTemp = values.get("minTemperature")
+        maxTemp = values.get("maxTemperature")
+        if minTemp is None or maxTemp is None:
+            preheat = values.get("temperature")
+            if minTemp is None:
+                minTemp = preheat
+            if maxTemp is None:
+                maxTemp = preheat
+        if minTemp is None or maxTemp is None:
+            return None
+        if maxTemp < minTemp:
+            return None
+
+        bedTemp = values.get("minBedTemperature")
+        if bedTemp is None:
+            bedTemp = values.get("maxBedTemperature")
+        bedMin = values.get("minBedTemperature")
+        bedMax = values.get("maxBedTemperature")
+
+        return GenericFilament(
+            source_processor=self.id,
+            unique_id=GenericFilament.generate_unique_id(
+                "OpenPrintTag", vendor, material, "", colorArgb or 0xFFFFFFFF
+            ),
+            manufacturer=vendor,
+            type=str(material).upper(),
+            modifiers=[],
+            colors=[colorArgb] if colorArgb is not None else [],
+            diameter_mm=values.get("diameter", 1.75),
+            weight_grams=int(values.get("totalWeight", 1000)),
+            hotend_min_temp_c=int(minTemp),
+            hotend_max_temp_c=int(maxTemp),
+            bed_temp_c=bedTemp if bedTemp is not None else 0.0,
+            drying_temp_c=values.get("dryingTemperature", 0.0),
+            drying_time_hours=values.get("dryingTime", 0.0),
+            manufacturing_date=Constants.NO_MANUFACTURING_DATE,
+            td=values.get("td", 0.0),
+            bed_min_temp_c=bedMin,
+            bed_max_temp_c=bedMax,
         )
 
 
@@ -981,7 +1120,962 @@ class SnapmakerTagParser(object):
         return "%s-%s-%s" % (raw[0:4], raw[4:6], raw[6:8])
 
 
+# ---------------------------------------------------------------------------------------
+# OctoScale's own "extended" tag format - one Python-side reader per carrier (Mifare
+# Classic, NTAG/Ultralight, NFC-V). The firmware builds the on-tag bytes (see
+# TagFormats.py's module docstring); this is the read side that was missing entirely -
+# the plugin could write these tags but never parse one back. Layout reverse-engineered
+# together with the firmware's own author against real hardware dumps (Mifare Classic
+# tag 37, NTAG215 UID 045330AC3A0289, an ICODE NFC-V tag) - not from the (nonexistent)
+# on-tag documentation, since the firmware is this format's only other implementation.
+#
+# All three carriers share the same *field semantics* (scalings, sentinels, epoch-day and
+# minute-of-day date encoding, [len][utf-8] strings, plain RGB colour) but each has its own
+# frame, magic position and field table - they must never be computed from one another.
+# ---------------------------------------------------------------------------------------
+
+# Sentinel values the firmware uses for "this field was never written". Distinct per width
+# because the wire format is fixed-width integers with no separate null bit.
+_OCTOSCALE_SENTINEL_U8 = 0xFF
+_OCTOSCALE_SENTINEL_U16 = 0xFFFF
+_OCTOSCALE_SENTINEL_U24 = 0xFFFFFF
+# Minute-of-day is 0..1439; anything at or above that (not just the 0xFFFF sentinel) means
+# "not set" - a v3 Classic tag written before Block 17 existed has that block all-zero,
+# which must read as "not set", not as midnight... except zero IS midnight and therefore
+# valid. Only values >1439 are rejected.
+_OCTOSCALE_MINUTE_OF_DAY_MAX = 1439
+
+
+def _octoscaleU8OrNone(value):
+    if value is None or value == _OCTOSCALE_SENTINEL_U8:
+        return None
+    return value
+
+
+def _octoscaleU16OrNone(value):
+    if value is None or value == _OCTOSCALE_SENTINEL_U16:
+        return None
+    return value
+
+
+def _octoscaleU24OrNone(value):
+    if value is None or value == _OCTOSCALE_SENTINEL_U24:
+        return None
+    return value
+
+
+def _octoscaleMinuteOfDayOrNone(value):
+    if value is None or value > _OCTOSCALE_MINUTE_OF_DAY_MAX:
+        return None
+    return value
+
+
+def _octoscaleEpochDaysToIso(days):
+    """Epoch-days (days since 1970-01-01) to an ISO 8601 date string, or the "not set"
+    sentinel GenericFilament otherwise uses. Mirrors TagFormats._epochDaysOrNone() in
+    reverse: that function goes date -> epoch-days for the write side, this goes back."""
+    days = _octoscaleU16OrNone(days)
+    if days is None:
+        return Constants.NO_MANUFACTURING_DATE
+    import datetime
+
+    try:
+        return (datetime.date(1970, 1, 1) + datetime.timedelta(days=days)).isoformat()
+    except (OverflowError, ValueError):
+        return Constants.NO_MANUFACTURING_DATE
+
+
+def _octoscaleColorArgb(red, green, blue):
+    """Plain R,G,B (no alpha) to the 0xAARRGGBB GenericFilament expects, or None.
+
+    0,0,0 is not black on this format - it is the firmware's own "unparseable/mixed
+    colour" marker (verified: pn5180ReadNtagExtended leaves the color field unset rather
+    than emitting "#000000" for it). Importing it as black would silently overwrite a
+    spool's real colour with one the tag never actually claimed.
+    """
+    if red is None or green is None or blue is None:
+        return None
+    if red == 0 and green == 0 and blue == 0:
+        return None
+    return (0xFF << 24) | (red << 16) | (green << 8) | blue
+
+
+# Bit layout of the v4/v3/v2 multi-color flags byte, identical across all three carriers
+# (Mifare block10[8], NFC-V block24[3], NTAG page19[3]) - RED FALCON/octoscale-46, verified
+# on real hardware. 0x00 means "no color information", which is also what an older tag's
+# zeroed reserve bytes already read as - no separate presence bit was needed.
+_OCTOSCALE_COLOR_FLAG_TRANSPARENT = 0x01
+_OCTOSCALE_COLOR_FLAG_COUNT_MASK = 0x06  # bits 1-2, count 0-3
+_OCTOSCALE_COLOR_FLAG_COUNT_SHIFT = 1
+_OCTOSCALE_COLOR_FLAG_RAINBOW = 0x08
+
+
+def _octoscaleParseColorFlags(flagsByte):
+    """Flags byte -> (isTransparent, colorCount, isRainbow), or the all-unset defaults.
+
+    A None input (field not present on this read, e.g. a pre-v4/v3/v2 tag) is treated the
+    same as 0x00 - both mean "no multi-color information", matching the firmware's own
+    "zeroed reserve reads as absent" convention documented above.
+    """
+    flags = flagsByte or 0
+    isTransparent = bool(flags & _OCTOSCALE_COLOR_FLAG_TRANSPARENT)
+    colorCount = (flags & _OCTOSCALE_COLOR_FLAG_COUNT_MASK) >> _OCTOSCALE_COLOR_FLAG_COUNT_SHIFT
+    isRainbow = bool(flags & _OCTOSCALE_COLOR_FLAG_RAINBOW)
+    return isTransparent, colorCount, isRainbow
+
+
+def _octoscaleComposeColorString(primaryArgb, extraColors, isTransparent, isRainbow):
+    """Rebuilds SpoolManager's own "color" grammar (see SPOOLMANAGER_UTILS.composeSpoolColor
+    in utils.js) from what the tag's flags byte and RGB slots carry, so a round trip through
+    an Extended tag reproduces the same string the spool was written with - not just the
+    primary color.
+
+    Returns None when there is nothing to compose (no primary color and not rainbow), so the
+    caller's "absent key, not a guessed value" convention still applies.
+    """
+    if isRainbow:
+        return "rainbow"
+
+    colors = []
+    if primaryArgb is not None:
+        colors.append("#%06X" % (primaryArgb & 0xFFFFFF))
+    for argb in extraColors:
+        if argb is not None:
+            colors.append("#%06X" % (argb & 0xFFFFFF))
+
+    if not colors:
+        return "transparent" if isTransparent else None
+
+    composed = ";".join(colors)
+    return ("transparent:" + composed) if isTransparent else composed
+
+
+def _octoscaleReadStrings(data, offset, fieldNames, blockSkip=None):
+    """Read a flat sequence of [len_uint8][utf-8] fields starting at `offset`.
+
+    Every declared slot is read regardless of length - a len=0 slot is a placeholder, not
+    a terminator, and the fields the format actually carries can sit behind one (verified
+    against the NTAG215 dump: purchasedFrom and displayName follow two empty slots).
+    Stopping at the first len=0 silently drops every field after it.
+
+    `blockSkip(absoluteOffset) -> newOffset` optionally jumps over bytes that are not part
+    of the string buffer (Mifare Classic's sector trailers, interleaved every 4 blocks).
+    Returns {fieldName: str} for slots with a non-empty value; empty/absent slots are
+    simply not in the returned dict, same "absent means not on the tag" convention as
+    every sentinel above.
+    """
+    result = {}
+    pos = offset
+    for name in fieldNames:
+        if blockSkip is not None:
+            pos = blockSkip(pos)
+        length = Binary.extract_byte(data, pos)
+        if length is None:
+            break
+        pos += 1
+        if length == 0:
+            continue
+        raw = Binary.extract_slice(data, pos, length)
+        if raw is None:
+            break
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            text = raw.decode("utf-8", errors="replace")
+        if text:
+            result[name] = text
+        pos += length
+    return result
+
+
+class OctoScaleExtendedTagParser(object):
+    """OctoScale's own extended format on Mifare Classic 1K.
+
+    Layout confirmed against a real tag (databaseId 37, written and read back by the
+    firmware author, CRC and every field independently recomputed here). Versions 1-3 are
+    purely additive - no offset moves and no field changes meaning between them - except
+    for the CRC coverage, which grows with each version and is the one place a v2 reader
+    would break on a v3 tag if it used the wrong length.
+
+    Like Qidi, this format sits on the Mifare factory key (FFFFFFFFFFFF), which every
+    blank Classic tag also accepts - authentication proves nothing here. Recognition has
+    to come entirely from the magic bytes and the CRC, not from having authenticated.
+    """
+
+    id = "octoscaleExtended"
+    label = "OctoScale Extended"
+    tagClass = TagType.MIFARE_CLASSIC_1K
+    requiresKey = False
+
+    # Block n starts at n * 16 in the full 1K image (sector trailers included, never
+    # written by this format and simply skipped over when walking string buffers).
+    BLOCK_4_LEGACY_ID = 4 * 16
+    BLOCK_8_HEADER = 8 * 16
+    BLOCK_9_PHYSICAL = 9 * 16
+    BLOCK_10_BED_RANGE = 10 * 16
+    BLOCK_16_V3_NUMERIC = 16 * 16
+    BLOCK_17_V3_MINUTES = 17 * 16
+    BLOCK_36_V3_COMMIT = 36 * 16
+
+    MAGIC = b"OS"
+    V3_SUB_MAGIC = b"O3"
+
+    # String buffer 1 (block 8's flags bit0 gates it): vendor/material/colorName, 48 bytes
+    # across blocks 12-14.
+    BUFFER_1_OFFSET = 12 * 16
+    BUFFER_1_FIELDS = ("vendor", "material", "colorName")
+
+    # String buffer 2 (block 36's flags bit0 gates it): the five bookkeeping fields, 192
+    # bytes spread over blocks 20,21,22,24,25,26,28,29,30,32,33,34 - sector trailers
+    # 23,27,31,35 sit in between and are skipped, never part of the buffer.
+    BUFFER_2_TRAILER_BLOCKS = frozenset([23, 27, 31, 35])
+    BUFFER_2_START_BLOCK = 20
+    BUFFER_2_FIELDS = ("code", "batchNumber", "purchasedFrom", "finish", "displayName")
+
+    def _buffer2Skip(self, absoluteOffset):
+        block = absoluteOffset // 16
+        while block in self.BUFFER_2_TRAILER_BLOCKS:
+            block += 1
+            absoluteOffset = block * 16
+        return absoluteOffset
+
+    def parseTag(self, scanResult, data):
+        if scanResult.tag_type != TagType.MIFARE_CLASSIC_1K:
+            return None
+        if data is None or len(data) < self.BLOCK_10_BED_RANGE + 16:
+            return None
+
+        if Binary.extract_slice(data, self.BLOCK_8_HEADER, 2) != self.MAGIC:
+            return None
+
+        version = Binary.extract_byte(data, self.BLOCK_8_HEADER + 2)
+        if version is None or version < 1:
+            return None
+        # Unknown/future versions must be rejected, not optimistically parsed as v4 - a v5
+        # tag would otherwise be misread as v4 with garbage in the fields v5 repurposed.
+        if version > 4:
+            return None
+        isV2 = version >= 2
+        isV3 = version >= 3
+        isV4 = version >= 4
+
+        flags1 = Binary.extract_byte(data, self.BLOCK_8_HEADER + 3) or 0
+        buffer1Present = bool(flags1 & 0x01)
+
+        if isV3 and len(data) < self.BLOCK_16_V3_NUMERIC + 16:
+            return None
+
+        # Coverage is non-contiguous ranges, not one span: block8[0..15] + block9[0..14]
+        # (the CRC byte itself at block9[15] is excluded), extended per version:
+        #   v1: stops after block9                                          (31 B)
+        #   v2: + block10[0..1] (bed min/max)                                (33 B)
+        #   v3: + block16[0..15] (v3 numeric fields)                         (49 B)
+        #   v4: block10 grows to [0..8] (bed range + 2 extra colors + flags),
+        #       block16 shifts to offset 40 in the CRC buffer instead of 33   (56 B)
+        # v4's block10 covers 9 bytes (bed min/max at [0..1], unchanged; colors 2/3 and
+        # flags at [2..8], new) where v2/v3 only covered the first 2 - RED FALCON
+        # confirmed the CRC buffer position of block16 moves accordingly on v4 tags.
+        block8Part = Binary.extract_slice(data, self.BLOCK_8_HEADER, 16)
+        block9Part = Binary.extract_slice(data, self.BLOCK_9_PHYSICAL, 15)
+        if block8Part is None or block9Part is None:
+            return None
+        crcCovered = block8Part + block9Part
+        if isV4:
+            block10Part = Binary.extract_slice(data, self.BLOCK_10_BED_RANGE, 9)
+            if block10Part is None:
+                return None
+            crcCovered += block10Part
+        elif isV2:
+            block10Part = Binary.extract_slice(data, self.BLOCK_10_BED_RANGE, 2)
+            if block10Part is None:
+                return None
+            crcCovered += block10Part
+        if isV3:
+            block16Part = Binary.extract_slice(data, self.BLOCK_16_V3_NUMERIC, 16)
+            if block16Part is None:
+                return None
+            crcCovered += block16Part
+
+        storedCrc = Binary.extract_byte(data, self.BLOCK_9_PHYSICAL + 15)
+        if storedCrc is None or Binary.crc8(crcCovered) != storedCrc:
+            # A CRC mismatch means the tag is not a valid Extended write - possibly a
+            # partial write, possibly unrelated bytes that happened to start with 'O','S'.
+            # Treating it as "not our format" mirrors what the firmware itself does
+            # (pn5180ReadMifareExtended).
+            return None
+
+        databaseId = Binary.extract_uint32_le(data, self.BLOCK_8_HEADER + 4)
+        totalWeight = _octoscaleU16OrNone(
+            Binary.extract_uint16_le(data, self.BLOCK_8_HEADER + 8)
+        )
+        spoolWeight = _octoscaleU16OrNone(
+            Binary.extract_uint16_le(data, self.BLOCK_8_HEADER + 10)
+        )
+        usedWeight = _octoscaleU16OrNone(
+            Binary.extract_uint16_le(data, self.BLOCK_8_HEADER + 12)
+        )
+        density = _octoscaleU16OrNone(
+            Binary.extract_uint16_le(data, self.BLOCK_8_HEADER + 14)
+        )
+
+        diameter = _octoscaleU16OrNone(
+            Binary.extract_uint16_le(data, self.BLOCK_9_PHYSICAL + 0)
+        )
+        diameterTolerance = _octoscaleU16OrNone(
+            Binary.extract_uint16_le(data, self.BLOCK_9_PHYSICAL + 2)
+        )
+        hotendTemp = _octoscaleU8OrNone(Binary.extract_byte(data, self.BLOCK_9_PHYSICAL + 4))
+        bedTemp = _octoscaleU8OrNone(Binary.extract_byte(data, self.BLOCK_9_PHYSICAL + 5))
+        enclosureTemp = _octoscaleU8OrNone(
+            Binary.extract_byte(data, self.BLOCK_9_PHYSICAL + 6)
+        )
+        offsetTemp = Binary.extract_int8(data, self.BLOCK_9_PHYSICAL + 7)
+        offsetBedTemp = Binary.extract_int8(data, self.BLOCK_9_PHYSICAL + 8)
+        offsetEnclosureTemp = Binary.extract_int8(data, self.BLOCK_9_PHYSICAL + 9)
+
+        red = Binary.extract_byte(data, self.BLOCK_9_PHYSICAL + 10)
+        green = Binary.extract_byte(data, self.BLOCK_9_PHYSICAL + 11)
+        blue = Binary.extract_byte(data, self.BLOCK_9_PHYSICAL + 12)
+        argb = _octoscaleColorArgb(red, green, blue)
+
+        hotendMin = _octoscaleU8OrNone(Binary.extract_byte(data, self.BLOCK_9_PHYSICAL + 13))
+        hotendMax = _octoscaleU8OrNone(Binary.extract_byte(data, self.BLOCK_9_PHYSICAL + 14))
+
+        bedMin = None
+        bedMax = None
+        if isV2 and len(data) >= self.BLOCK_10_BED_RANGE + 2:
+            bedMin = _octoscaleU8OrNone(Binary.extract_byte(data, self.BLOCK_10_BED_RANGE + 0))
+            bedMax = _octoscaleU8OrNone(Binary.extract_byte(data, self.BLOCK_10_BED_RANGE + 1))
+
+        # v4: colors 2/3 (block10[2..4], [5..7]) and the shared flags byte (block10[8]).
+        # Color 1 stays at block9[10..12], unmoved since v1 - see the class docstring.
+        extraColors = []
+        isTransparent = False
+        isRainbow = False
+        if isV4 and len(data) >= self.BLOCK_10_BED_RANGE + 9:
+            color2Rgb = Binary.extract_slice(data, self.BLOCK_10_BED_RANGE + 2, 3)
+            color3Rgb = Binary.extract_slice(data, self.BLOCK_10_BED_RANGE + 5, 3)
+            colorFlags = Binary.extract_byte(data, self.BLOCK_10_BED_RANGE + 8)
+            isTransparent, colorCount, isRainbow = _octoscaleParseColorFlags(colorFlags)
+            if colorCount >= 2 and color2Rgb is not None:
+                extraColors.append(
+                    _octoscaleColorArgb(color2Rgb[0], color2Rgb[1], color2Rgb[2])
+                )
+            if colorCount >= 3 and color3Rgb is not None:
+                extraColors.append(
+                    _octoscaleColorArgb(color3Rgb[0], color3Rgb[1], color3Rgb[2])
+                )
+
+        remainingWeight = None
+        totalLength = None
+        usedLength = None
+        cost = None
+        firstUse = None
+        lastUse = None
+        purchasedOn = None
+        firstUseMinute = None
+        lastUseMinute = None
+        purchasedOnMinute = None
+        if isV3:
+            remainingWeight = _octoscaleU16OrNone(
+                Binary.extract_uint16_le(data, self.BLOCK_16_V3_NUMERIC + 0)
+            )
+            totalLength = _octoscaleU24OrNone(
+                Binary.extract_uint24_le(data, self.BLOCK_16_V3_NUMERIC + 2)
+            )
+            usedLength = _octoscaleU24OrNone(
+                Binary.extract_uint24_le(data, self.BLOCK_16_V3_NUMERIC + 5)
+            )
+            firstUse = _octoscaleU16OrNone(
+                Binary.extract_uint16_le(data, self.BLOCK_16_V3_NUMERIC + 8)
+            )
+            lastUse = _octoscaleU16OrNone(
+                Binary.extract_uint16_le(data, self.BLOCK_16_V3_NUMERIC + 10)
+            )
+            purchasedOn = _octoscaleU16OrNone(
+                Binary.extract_uint16_le(data, self.BLOCK_16_V3_NUMERIC + 12)
+            )
+            rawCost = Binary.extract_uint16_le(data, self.BLOCK_16_V3_NUMERIC + 14)
+            rawCost = _octoscaleU16OrNone(rawCost)
+            cost = (rawCost / 100.0) if rawCost is not None else None
+
+            if len(data) >= self.BLOCK_17_V3_MINUTES + 6:
+                firstUseMinute = _octoscaleMinuteOfDayOrNone(
+                    Binary.extract_uint16_le(data, self.BLOCK_17_V3_MINUTES + 0)
+                )
+                lastUseMinute = _octoscaleMinuteOfDayOrNone(
+                    Binary.extract_uint16_le(data, self.BLOCK_17_V3_MINUTES + 2)
+                )
+                purchasedOnMinute = _octoscaleMinuteOfDayOrNone(
+                    Binary.extract_uint16_le(data, self.BLOCK_17_V3_MINUTES + 4)
+                )
+
+        strings1 = {}
+        if buffer1Present and len(data) >= self.BUFFER_1_OFFSET + 48:
+            strings1 = _octoscaleReadStrings(
+                data, self.BUFFER_1_OFFSET, self.BUFFER_1_FIELDS
+            )
+
+        strings2 = {}
+        # Block 36's own flags bit0 is the only integrity statement about buffer 2 - it is
+        # not CRC-covered, unlike everything in blocks 8-16. A missing marker means "do not
+        # trust whatever bytes are sitting there", even if their length bytes look
+        # plausible - a partial write can leave exactly that behind.
+        if isV3 and len(data) >= self.BLOCK_36_V3_COMMIT + 3:
+            v3Marker = Binary.extract_slice(data, self.BLOCK_36_V3_COMMIT, 2)
+            flags36 = Binary.extract_byte(data, self.BLOCK_36_V3_COMMIT + 2) or 0
+            buffer2Present = v3Marker == self.V3_SUB_MAGIC and bool(flags36 & 0x01)
+            if buffer2Present:
+                strings2 = _octoscaleReadStrings(
+                    data,
+                    self.BUFFER_2_START_BLOCK * 16,
+                    self.BUFFER_2_FIELDS,
+                    blockSkip=self._buffer2Skip,
+                )
+
+        manufacturingDate = _octoscaleEpochDaysToIso(firstUse)
+
+        filament = GenericFilament(
+            source_processor=self.id,
+            unique_id=GenericFilament.generate_unique_id(
+                "OctoScaleExtended", databaseId, strings1.get("material"), argb
+            ),
+            manufacturer=strings1.get("vendor"),
+            type=strings1.get("material"),
+            modifiers=[],
+            colors=([argb] if argb is not None else []) + [c for c in extraColors if c is not None],
+            diameter_mm=(diameter / 1000.0) if diameter is not None else None,
+            weight_grams=totalWeight,
+            hotend_min_temp_c=hotendMin if hotendMin is not None else hotendTemp,
+            hotend_max_temp_c=hotendMax if hotendMax is not None else hotendTemp,
+            bed_temp_c=bedTemp if bedTemp is not None else 0,
+            bed_min_temp_c=bedMin,
+            bed_max_temp_c=bedMax,
+            drying_temp_c=0,
+            drying_time_hours=0,
+            manufacturing_date=manufacturingDate,
+        )
+
+        # Fields no vendor tag carries but this one does - kept off GenericFilament's
+        # standard fields (which genericFilamentToSpoolFields() maps conservatively for
+        # every vendor format) and surfaced separately so the API layer can round-trip
+        # them without touching that shared, deliberately conservative mapping.
+        #
+        # "color" here deliberately overrides the generic multi-color join
+        # genericFilamentToSpoolFields() already produces from filament.colors (plain
+        # "#hex;#hex;#hex", no grammar prefix) - it is applied second in
+        # SpoolManagerAPI.py's _buildReadTagResponse, and only this composed form can
+        # express the "transparent:"/"rainbow" prefixes SpoolManager's own color field
+        # grammar defines (SPOOLMANAGER_UTILS.composeSpoolColor in utils.js). Absent when
+        # a v1-v3 tag has no flags byte to read (see _octoscaleComposeColorString) - the
+        # generic join then stays untouched, same as before v4 existed.
+        composedColor = _octoscaleComposeColorString(
+            argb, extraColors, isTransparent, isRainbow
+        )
+
+        filament.octoscaleExtendedFields = _buildOctoscaleExtendedFields(
+            databaseId=databaseId,
+            spoolWeight=spoolWeight,
+            usedWeight=usedWeight,
+            density=(density / 1000.0) if density is not None else None,
+            diameterTolerance=(
+                diameterTolerance / 1000.0 if diameterTolerance is not None else None
+            ),
+            colorName=strings1.get("colorName"),
+            color=composedColor,
+            remainingWeight=remainingWeight,
+            totalLength=totalLength,
+            usedLength=usedLength,
+            cost=cost,
+            firstUseDays=firstUse,
+            lastUseDays=lastUse,
+            purchasedOnDays=purchasedOn,
+            firstUseMinuteOfDay=firstUseMinute,
+            lastUseMinuteOfDay=lastUseMinute,
+            purchasedOnMinuteOfDay=purchasedOnMinute,
+            code=strings2.get("code"),
+            batchNumber=strings2.get("batchNumber"),
+            purchasedFrom=strings2.get("purchasedFrom"),
+            finish=strings2.get("finish"),
+            displayName=strings2.get("displayName"),
+            enclosureTemperature=enclosureTemp,
+            offsetTemperature=offsetTemp,
+            offsetBedTemperature=offsetBedTemp,
+            offsetEnclosureTemperature=offsetEnclosureTemp,
+        )
+        return filament
+
+
+class OctoScaleExtendedNtagTagParser(object):
+    """OctoScale's own extended format on NTAG/Ultralight.
+
+    A distinct layout from the Mifare Classic version, not merely a re-offset of it: all
+    eight string fields sit in one buffer instead of two, the version stays at 1 (no v2/v3
+    split - remainingWeight/cost/lengths/dates are present from the start), and the CRC
+    covers a fixed range regardless of version. Verified byte-for-byte against a real
+    NTAG215 dump (UID 045330AC3A0289, spool 37) including its leftover openSpool NDEF JSON
+    past the commit marker - proof that a write here does not erase the tag first.
+
+    Registered ahead of every NDEF parser (see FILAMENT_TAG_PARSERS below): unlike Mifare
+    Classic, nothing here is sector-authenticated, so whichever parser runs first wins -
+    and this format's own leftover-NDEF fixture demonstrates the openSpool parser would
+    otherwise happily misclaim it.
+    """
+
+    id = "ntagExtended"
+    label = "OctoScale Extended (NTAG)"
+    tagClass = TagType.MIFARE_ULTRALIGHT
+    requiresKey = False
+
+    PAGE_4_HEADER = 4 * 4
+    PAGE_5_DB_ID = 5 * 4
+    PAGE_6_WEIGHTS = 6 * 4
+    PAGE_7_WEIGHTS2 = 7 * 4
+    PAGE_8_PHYSICAL = 8 * 4
+    PAGE_9_PHYSICAL2 = 9 * 4
+    PAGE_10_TEMPS = 10 * 4
+    PAGE_11_COLOR = 11 * 4
+    PAGE_12_TEMPS2 = 12 * 4
+    PAGE_13_CRC = 13 * 4
+    PAGE_14_LENGTHS = 14 * 4
+    PAGE_15_LENGTHS2 = 15 * 4
+    PAGE_16_DATES = 16 * 4
+    PAGE_17_DATES2 = 17 * 4
+    PAGE_18_MINUTES = 18 * 4
+    # v1 strings start at page 19. v2 inserts colors 2/3 + flags at pages 19-20 (8 bytes),
+    # pushing strings to page 21 - RED FALCON/octoscale-46, verified on real hardware. The
+    # marker scan below still finds the commit marker regardless (it searches, never
+    # computes), but the string BUFFER start must match the version or the scan begins
+    # mid-color-data on a v2 tag.
+    STRINGS_START_PAGE_V1 = 19
+    STRINGS_START_PAGE_V2 = 21
+    PAGE_19_COLOR2 = 19 * 4
+    PAGE_20_COLOR3 = 20 * 4
+
+    MAGIC = b"OX"
+    CRC_COVERAGE_LENGTH = 36  # fixed, pages 4..12 - unchanged by v2, unlike Classic
+
+    STRING_FIELDS = (
+        "vendor", "material", "colorName", "code",
+        "batchNumber", "purchasedFrom", "finish", "displayName",
+    )
+
+    # Firmware scans, rather than computes, the marker position - and so must this parser:
+    # relying on a formula would be one string-length edge case away from missing it (or
+    # worse, reading garbage past the tag's actual data as if it were the marker).
+    MARKER = b"NX"
+    MAX_MARKER_SCAN_PAGES = 222  # NTAG216's full user area, generous upper bound
+
+    def parseTag(self, scanResult, data):
+        if scanResult.tag_type != TagType.MIFARE_ULTRALIGHT:
+            return None
+        if data is None or len(data) < self.PAGE_13_CRC + 4:
+            return None
+
+        if Binary.extract_slice(data, self.PAGE_4_HEADER, 2) != self.MAGIC:
+            return None
+
+        version = Binary.extract_byte(data, self.PAGE_4_HEADER + 2)
+        if version is None or version < 1:
+            return None
+        if version > 2:
+            # An unknown future version must be rejected, not parsed against today's
+            # field table.
+            return None
+        isV2 = version >= 2
+        # Page 4 byte 3 is reserved and always 0 on NTAG - unlike Classic's block8[3],
+        # which is a real "buffer 1 present" flag. Reading it the same way here would be
+        # wrong; it carries no meaning on this carrier and is intentionally ignored.
+
+        crcCovered = Binary.extract_slice(
+            data, self.PAGE_4_HEADER, self.CRC_COVERAGE_LENGTH
+        )
+        if crcCovered is None:
+            return None
+        storedCrc = Binary.extract_byte(data, self.PAGE_13_CRC)
+        if storedCrc is None or Binary.crc8(crcCovered) != storedCrc:
+            return None
+
+        databaseId = Binary.extract_uint32_le(data, self.PAGE_5_DB_ID)
+        totalWeight = _octoscaleU16OrNone(Binary.extract_uint16_le(data, self.PAGE_6_WEIGHTS))
+        spoolWeight = _octoscaleU16OrNone(
+            Binary.extract_uint16_le(data, self.PAGE_6_WEIGHTS + 2)
+        )
+        usedWeight = _octoscaleU16OrNone(Binary.extract_uint16_le(data, self.PAGE_7_WEIGHTS2))
+        remainingWeight = _octoscaleU16OrNone(
+            Binary.extract_uint16_le(data, self.PAGE_7_WEIGHTS2 + 2)
+        )
+        density = _octoscaleU16OrNone(Binary.extract_uint16_le(data, self.PAGE_8_PHYSICAL))
+        diameter = _octoscaleU16OrNone(
+            Binary.extract_uint16_le(data, self.PAGE_8_PHYSICAL + 2)
+        )
+        diameterTolerance = _octoscaleU16OrNone(
+            Binary.extract_uint16_le(data, self.PAGE_9_PHYSICAL2)
+        )
+        hotendTemp = _octoscaleU8OrNone(Binary.extract_byte(data, self.PAGE_9_PHYSICAL2 + 2))
+        bedTemp = _octoscaleU8OrNone(Binary.extract_byte(data, self.PAGE_9_PHYSICAL2 + 3))
+        enclosureTemp = _octoscaleU8OrNone(Binary.extract_byte(data, self.PAGE_10_TEMPS))
+        offsetTemp = Binary.extract_int8(data, self.PAGE_10_TEMPS + 1)
+        offsetBedTemp = Binary.extract_int8(data, self.PAGE_10_TEMPS + 2)
+        offsetEnclosureTemp = Binary.extract_int8(data, self.PAGE_10_TEMPS + 3)
+
+        red = Binary.extract_byte(data, self.PAGE_11_COLOR)
+        green = Binary.extract_byte(data, self.PAGE_11_COLOR + 1)
+        blue = Binary.extract_byte(data, self.PAGE_11_COLOR + 2)
+        argb = _octoscaleColorArgb(red, green, blue)
+
+        hotendMax = _octoscaleU8OrNone(Binary.extract_byte(data, self.PAGE_11_COLOR + 3))
+        hotendMin = _octoscaleU8OrNone(Binary.extract_byte(data, self.PAGE_12_TEMPS2))
+        bedMin = _octoscaleU8OrNone(Binary.extract_byte(data, self.PAGE_12_TEMPS2 + 1))
+        bedMax = _octoscaleU8OrNone(Binary.extract_byte(data, self.PAGE_12_TEMPS2 + 2))
+
+        # v2: colors 2/3 (page19[0..2], page20[0..2]) and the shared flags byte
+        # (page19[3]). Color 1 stays at page11[0..2], unmoved since v1.
+        extraColors = []
+        isTransparent = False
+        isRainbow = False
+        stringsStartPage = self.STRINGS_START_PAGE_V1
+        if isV2 and len(data) >= self.PAGE_20_COLOR3 + 4:
+            stringsStartPage = self.STRINGS_START_PAGE_V2
+            color2Rgb = Binary.extract_slice(data, self.PAGE_19_COLOR2, 3)
+            colorFlags = Binary.extract_byte(data, self.PAGE_19_COLOR2 + 3)
+            color3Rgb = Binary.extract_slice(data, self.PAGE_20_COLOR3, 3)
+            isTransparent, colorCount, isRainbow = _octoscaleParseColorFlags(colorFlags)
+            if colorCount >= 2 and color2Rgb is not None:
+                extraColors.append(
+                    _octoscaleColorArgb(color2Rgb[0], color2Rgb[1], color2Rgb[2])
+                )
+            if colorCount >= 3 and color3Rgb is not None:
+                extraColors.append(
+                    _octoscaleColorArgb(color3Rgb[0], color3Rgb[1], color3Rgb[2])
+                )
+
+        totalLength = _octoscaleU24OrNone(
+            Binary.extract_uint24_le(data, self.PAGE_14_LENGTHS)
+        )
+        # usedLength is the one field that straddles a page boundary: byte 3 of page 14 is
+        # its low byte, bytes 0-1 of page 15 are the middle/high bytes.
+        usedLengthByte0 = Binary.extract_byte(data, self.PAGE_14_LENGTHS + 3)
+        usedLengthBytes12 = Binary.extract_uint16_le(data, self.PAGE_15_LENGTHS2)
+        usedLength = None
+        if usedLengthByte0 is not None and usedLengthBytes12 is not None:
+            usedLength = _octoscaleU24OrNone(
+                usedLengthByte0 | (usedLengthBytes12 << 8)
+            )
+
+        rawCost = _octoscaleU16OrNone(
+            Binary.extract_uint16_le(data, self.PAGE_15_LENGTHS2 + 2)
+        )
+        cost = (rawCost / 100.0) if rawCost is not None else None
+
+        firstUse = _octoscaleU16OrNone(Binary.extract_uint16_le(data, self.PAGE_16_DATES))
+        firstUseMinute = _octoscaleMinuteOfDayOrNone(
+            Binary.extract_uint16_le(data, self.PAGE_16_DATES + 2)
+        )
+        lastUse = _octoscaleU16OrNone(Binary.extract_uint16_le(data, self.PAGE_17_DATES2))
+        purchasedOn = _octoscaleU16OrNone(
+            Binary.extract_uint16_le(data, self.PAGE_17_DATES2 + 2)
+        )
+        lastUseMinute = _octoscaleMinuteOfDayOrNone(
+            Binary.extract_uint16_le(data, self.PAGE_18_MINUTES)
+        )
+        purchasedOnMinute = _octoscaleMinuteOfDayOrNone(
+            Binary.extract_uint16_le(data, self.PAGE_18_MINUTES + 2)
+        )
+
+        # The firmware scans for the commit marker rather than computing its page, so a
+        # reader has to as well - a formula would be one string-length edge case away from
+        # missing it. This also bounds the string read: without it, a tag whose strings are
+        # shorter than the fixed offsets below assume would keep reading into whatever
+        # bytes follow (verified: a real dump has leftover openSpool NDEF JSON exactly
+        # there). Only accepted when found within the actual data length and before the
+        # scan's own generous upper bound.
+        markerPage = None
+        maxScanPage = min(
+            self.MAX_MARKER_SCAN_PAGES, (len(data) // 4)
+        )
+        for page in range(stringsStartPage, maxScanPage):
+            if Binary.extract_slice(data, page * 4, 2) == self.MARKER:
+                markerPage = page
+                break
+        if markerPage is None:
+            return None
+
+        strings = _octoscaleReadStrings(
+            data, stringsStartPage * 4, self.STRING_FIELDS
+        )
+
+        manufacturingDate = _octoscaleEpochDaysToIso(firstUse)
+
+        filament = GenericFilament(
+            source_processor=self.id,
+            unique_id=GenericFilament.generate_unique_id(
+                "OctoScaleExtendedNtag", databaseId, strings.get("material"), argb
+            ),
+            manufacturer=strings.get("vendor"),
+            type=strings.get("material"),
+            modifiers=[],
+            colors=([argb] if argb is not None else []) + [c for c in extraColors if c is not None],
+            diameter_mm=(diameter / 1000.0) if diameter is not None else None,
+            weight_grams=totalWeight,
+            hotend_min_temp_c=hotendMin if hotendMin is not None else hotendTemp,
+            hotend_max_temp_c=hotendMax if hotendMax is not None else hotendTemp,
+            bed_temp_c=bedTemp if bedTemp is not None else 0,
+            bed_min_temp_c=bedMin,
+            bed_max_temp_c=bedMax,
+            drying_temp_c=0,
+            drying_time_hours=0,
+            manufacturing_date=manufacturingDate,
+        )
+        # See OctoScaleExtendedTagParser's parseTag() for why "color" is overridden here
+        # rather than left to the generic multi-color join.
+        composedColor = _octoscaleComposeColorString(
+            argb, extraColors, isTransparent, isRainbow
+        )
+        filament.octoscaleExtendedFields = _buildOctoscaleExtendedFields(
+            databaseId=databaseId,
+            spoolWeight=spoolWeight,
+            usedWeight=usedWeight,
+            density=(density / 1000.0) if density is not None else None,
+            diameterTolerance=(
+                diameterTolerance / 1000.0 if diameterTolerance is not None else None
+            ),
+            colorName=strings.get("colorName"),
+            color=composedColor,
+            remainingWeight=remainingWeight,
+            totalLength=totalLength,
+            usedLength=usedLength,
+            cost=cost,
+            firstUseDays=firstUse,
+            lastUseDays=lastUse,
+            purchasedOnDays=purchasedOn,
+            firstUseMinuteOfDay=firstUseMinute,
+            lastUseMinuteOfDay=lastUseMinute,
+            purchasedOnMinuteOfDay=purchasedOnMinute,
+            code=strings.get("code"),
+            batchNumber=strings.get("batchNumber"),
+            purchasedFrom=strings.get("purchasedFrom"),
+            finish=strings.get("finish"),
+            displayName=strings.get("displayName"),
+            enclosureTemperature=enclosureTemp,
+            offsetTemperature=offsetTemp,
+            offsetBedTemperature=offsetBedTemp,
+            offsetEnclosureTemperature=offsetEnclosureTemp,
+        )
+        return filament
+
+
+class OctoScaleExtendedNfcvTagParser(object):
+    """OctoScale's own extended format on NFC-V (ISO15693).
+
+    The smallest of the three carriers, not just a differently-arranged one: only three
+    string fields exist (vendor/material/colorName), and remainingWeight, cost, code, the
+    two length fields and every date field are simply absent from this layout - they are
+    never on an NFC-V extended tag, not merely unset. Verified against a real ICODE tag
+    written with spool 37's data and dumped back (databaseId, weights and all three
+    strings matched the write exactly).
+
+    Unlike those, a primary RGB color DOES exist on this carrier (physBuf[10..12],
+    straddling the block9/block10 boundary at absolute offset 38-40) - it was simply never
+    read here before a fix confirmed against the firmware source (RED FALCON/
+    octoscale-46), which affected every version, not just the v3 multi-color extension.
+
+    Same magic bytes as Mifare Classic ('O','S'), but at a different absolute position
+    (block 3, not block 8) - the position identifies the carrier, not the magic.
+
+    Capacity is unreliable here: /nfcprobe's capacityBytes for NFC-V is a compile-time
+    format-budget constant (not a tag attribute, unlike NTAG's), so the read length this
+    parser gets handed already reflects the reader's actual block walk - it must not be
+    second-guessed against capacityBytes.
+    """
+
+    id = "nfcvExtended"
+    label = "OctoScale Extended (NFC-V)"
+    tagClass = TagType.NFCV
+    requiresKey = False
+
+    BLOCK_3_HEADER = 3 * 4
+    BLOCK_4_DB_ID = 4 * 4
+    BLOCK_5_WEIGHTS = 5 * 4
+    BLOCK_6_WEIGHTS2 = 6 * 4
+    BLOCK_7_PHYSICAL = 7 * 4
+    BLOCK_8_PHYSICAL2 = 8 * 4
+    BLOCK_9_PHYSICAL3 = 9 * 4
+    BLOCK_10_PHYSICAL4 = 10 * 4
+    STRINGS_START_BLOCK = 11
+
+    MAGIC = b"OS"
+    # v2 is the only version that predates this parser's primary-color fix and the v3
+    # multi-color extension. v3 adds colors 2/3 + flags in blocks 24-25 - see parseTag().
+    VERSION_V2 = 2
+    VERSION_V3 = 3
+
+    STRING_FIELDS = ("vendor", "material", "colorName")
+
+    # physBuf is 16 bytes across four 4-byte blocks starting at block 7 (RED FALCON/
+    # octoscale-46, src/pn5180nfc.h): block7=physBuf[0..3], block8=[4..7], block9=[8..11],
+    # block10=[12..15]. The primary color at physBuf[10..12] therefore straddles the
+    # block9/block10 boundary (byte 2-3 of block9, byte 0 of block10) - reading only
+    # blocks 7-9 (as this parser did before this fix) silently missed it, returning
+    # colors=[] on every NFC-V extended tag regardless of version. physBuf[13] (the CRC
+    # byte) sits at block10 byte 1, absolute offset 41.
+    PHYSBUF_COLOR_OFFSET = BLOCK_9_PHYSICAL3 + 2  # = 38, spans into block 10
+
+    def parseTag(self, scanResult, data):
+        if scanResult.tag_type != TagType.NFCV:
+            return None
+        if data is None or len(data) < self.BLOCK_10_PHYSICAL4 + 4:
+            return None
+
+        if Binary.extract_slice(data, self.BLOCK_3_HEADER, 2) != self.MAGIC:
+            return None
+
+        version = Binary.extract_byte(data, self.BLOCK_3_HEADER + 2)
+        if version is None or version < self.VERSION_V2:
+            return None
+        # Unknown/future versions must be rejected, not optimistically parsed as v3 - a v4
+        # tag would otherwise be misread with garbage in the fields v4 repurposed.
+        if version > self.VERSION_V3:
+            return None
+        isV3 = version >= self.VERSION_V3
+
+        flags = Binary.extract_byte(data, self.BLOCK_3_HEADER + 3) or 0
+        stringsPresent = bool(flags & 0x01)
+
+        databaseId = Binary.extract_uint32_le(data, self.BLOCK_4_DB_ID)
+        totalWeight = _octoscaleU16OrNone(Binary.extract_uint16_le(data, self.BLOCK_5_WEIGHTS))
+        spoolWeight = _octoscaleU16OrNone(
+            Binary.extract_uint16_le(data, self.BLOCK_5_WEIGHTS + 2)
+        )
+        usedWeight = _octoscaleU16OrNone(Binary.extract_uint16_le(data, self.BLOCK_6_WEIGHTS2))
+        density = _octoscaleU16OrNone(
+            Binary.extract_uint16_le(data, self.BLOCK_6_WEIGHTS2 + 2)
+        )
+
+        # Primary color at physBuf[10..12], absolute offset 38-40 - straddles the
+        # block9/block10 boundary (see PHYSBUF_COLOR_OFFSET's comment above). Existed
+        # since v1/v2 but was never read here before this fix.
+        primaryRgb = Binary.extract_slice(data, self.PHYSBUF_COLOR_OFFSET, 3)
+        argb = None
+        if primaryRgb is not None:
+            argb = _octoscaleColorArgb(primaryRgb[0], primaryRgb[1], primaryRgb[2])
+
+        # v3: colors 2/3 (block24[0..2], block25[0..2]) and the shared flags byte
+        # (block24[3]). Block 25 byte 3 is reserved.
+        BLOCK_24 = 24 * 4
+        BLOCK_25 = 25 * 4
+        extraColors = []
+        isTransparent = False
+        isRainbow = False
+        if isV3 and len(data) >= BLOCK_25 + 4:
+            color2Rgb = Binary.extract_slice(data, BLOCK_24, 3)
+            colorFlags = Binary.extract_byte(data, BLOCK_24 + 3)
+            color3Rgb = Binary.extract_slice(data, BLOCK_25, 3)
+            isTransparent, colorCount, isRainbow = _octoscaleParseColorFlags(colorFlags)
+            if colorCount >= 2 and color2Rgb is not None:
+                extraColors.append(
+                    _octoscaleColorArgb(color2Rgb[0], color2Rgb[1], color2Rgb[2])
+                )
+            if colorCount >= 3 and color3Rgb is not None:
+                extraColors.append(
+                    _octoscaleColorArgb(color3Rgb[0], color3Rgb[1], color3Rgb[2])
+                )
+
+        strings = {}
+        if stringsPresent and len(data) >= self.STRINGS_START_BLOCK * 4:
+            strings = _octoscaleReadStrings(
+                data, self.STRINGS_START_BLOCK * 4, self.STRING_FIELDS
+            )
+
+        # This format identifies a spool by databaseId alone - no manufacturer, no
+        # colour/temperature fields exist at all on this carrier, so a valid tag with
+        # every optional field empty must still be accepted rather than rejected for
+        # "nothing to show".
+        if databaseId is None:
+            return None
+
+        filament = GenericFilament(
+            source_processor=self.id,
+            unique_id=GenericFilament.generate_unique_id(
+                "OctoScaleExtendedNfcv", databaseId, strings.get("material")
+            ),
+            manufacturer=strings.get("vendor"),
+            type=strings.get("material"),
+            modifiers=[],
+            colors=([argb] if argb is not None else []) + [c for c in extraColors if c is not None],
+            diameter_mm=None,
+            weight_grams=totalWeight,
+            hotend_min_temp_c=None,
+            hotend_max_temp_c=None,
+            bed_temp_c=0,
+            drying_temp_c=0,
+            drying_time_hours=0,
+            manufacturing_date=Constants.NO_MANUFACTURING_DATE,
+        )
+        # See OctoScaleExtendedTagParser's parseTag() for why "color" is overridden here
+        # rather than left to the generic multi-color join.
+        composedColor = _octoscaleComposeColorString(
+            argb, extraColors, isTransparent, isRainbow
+        )
+        filament.octoscaleExtendedFields = _buildOctoscaleExtendedFields(
+            databaseId=databaseId,
+            spoolWeight=spoolWeight,
+            usedWeight=usedWeight,
+            density=(density / 1000.0) if density is not None else None,
+            diameterTolerance=None,
+            colorName=strings.get("colorName"),
+            color=composedColor,
+            remainingWeight=None,
+            totalLength=None,
+            usedLength=None,
+            cost=None,
+            firstUseDays=None,
+            lastUseDays=None,
+            purchasedOnDays=None,
+            firstUseMinuteOfDay=None,
+            lastUseMinuteOfDay=None,
+            purchasedOnMinuteOfDay=None,
+            code=None,
+            batchNumber=None,
+            purchasedFrom=None,
+            finish=None,
+            displayName=None,
+        )
+        return filament
+
+
+def _buildOctoscaleExtendedFields(**kwargs):
+    """Fields our own extended format carries beyond what GenericFilament/
+    genericFilamentToSpoolFields() knows how to map for vendor tags - see the module docs
+    above. A key is present only when the tag actually carries that field: absence (not an
+    empty value) is what lets the API layer's "never clear an existing value" semantics
+    work correctly for a carrier that structurally lacks a field (e.g. NFC-V has no cost).
+    """
+    fields = {}
+    for key, value in kwargs.items():
+        if value is None:
+            continue
+        fields[key] = value
+    return fields
+
+
 FILAMENT_TAG_PARSERS = {
+    OctoScaleExtendedNtagTagParser.id: {
+        "id": OctoScaleExtendedNtagTagParser.id,
+        "label": OctoScaleExtendedNtagTagParser.label,
+        "tagClass": OctoScaleExtendedNtagTagParser.tagClass,
+        "requiresKey": False,
+        "sectors": None,
+        "needsKeyB": False,
+        "parser": OctoScaleExtendedNtagTagParser,
+        # Must run before every NDEF parser: unlike Mifare Classic, nothing on NTAG is
+        # sector-authenticated, so whichever parser runs first wins. A write here does not
+        # erase the tag first, so leftover foreign NDEF content can sit right behind this
+        # format's own commit marker - see the class docstring and
+        # TestParsersRejectEachOthersTags for the fixture that demonstrates it.
+        "parser_order": -1,
+        "description": "OctoScale's own extended format on NTAG/Ultralight.",
+    },
     OpenSpoolTagParser.id: {
         "id": OpenSpoolTagParser.id,
         "label": OpenSpoolTagParser.label,
@@ -1060,6 +2154,40 @@ FILAMENT_TAG_PARSERS = {
         "parser": SnapmakerTagParser,
         "description": "Snapmaker vendor tags (Mifare Classic, keys derived from the UID).",
     },
+    OctoScaleExtendedTagParser.id: {
+        "id": OctoScaleExtendedTagParser.id,
+        "label": OctoScaleExtendedTagParser.label,
+        "tagClass": OctoScaleExtendedTagParser.tagClass,
+        "requiresKey": False,
+        # Sector 0 MUST be included even though this format writes nothing there: the
+        # firmware's /nfcreadstart returns only the requested sectors, back-to-back, with
+        # no padding for the ones skipped - a sector list starting at 1 makes the response
+        # begin at block 4, not block 0, silently shifting every absolute offset this
+        # parser uses by 64 bytes. Caught live on hardware (spool 110): the read itself
+        # succeeded (all nine sectors authenticated, 576 bytes back, legacy id "110"
+        # readable at byte 0 of the response) but parseTag() rejected the shifted data as
+        # not matching the magic - the *reported* "authentication failed" was a red
+        # herring from Qidi, which runs after this parser in the same dispatch loop and
+        # overwrites the shared lastError/lastRetryable on its own unrelated rejection.
+        #
+        # The *sectors* (not block numbers - 4 blocks per sector) that cover every block
+        # this format's fields and CRC actually live in:
+        #   sector 1 = blocks  4- 7 (legacy id anchor, block 4)
+        #   sector 2 = blocks  8-11 (header/numeric, block 8-9, CRC)
+        #   sector 3 = blocks 12-15 (buffer 1: vendor/material/colorName)
+        #   sector 4 = blocks 16-19 (v3 numeric + minutes, block 16-17)
+        #   sectors 5-9 = blocks 20-39 (buffer 2 + its trailers, v3 commit marker block 36)
+        "sectors": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        "needsKeyB": False,
+        "parser": OctoScaleExtendedTagParser,
+        # Must run after the keyed vendor parsers (which can reject a foreign tag outright)
+        # but before Qidi (order 100), whose recognition is only heuristic and which must
+        # not get a shot at a tag this format actually owns. Like Qidi, this format sits on
+        # the Mifare factory key, so authentication alone proves nothing here either - see
+        # the class docstring.
+        "parser_order": 50,
+        "description": "OctoScale's own extended format on Mifare Classic 1K.",
+    },
     QidiTagParser.id: {
         "id": QidiTagParser.id,
         "label": QidiTagParser.label,
@@ -1076,6 +2204,41 @@ FILAMENT_TAG_PARSERS = {
         # first. See the class docstring.
         "parser_order": 100,
         "description": "Qidi vendor tags (Mifare Classic, factory key - no secret needed).",
+    },
+    OctoScaleExtendedNfcvTagParser.id: {
+        "id": OctoScaleExtendedNfcvTagParser.id,
+        "label": OctoScaleExtendedNfcvTagParser.label,
+        "tagClass": OctoScaleExtendedNfcvTagParser.tagClass,
+        "requiresKey": False,
+        # NFC-V has no sector concept; the reader does a plain block walk.
+        "sectors": None,
+        "needsKeyB": False,
+        "parser": OctoScaleExtendedNfcvTagParser,
+        "description": "OctoScale's own extended format on NFC-V (ISO15693).",
+    },
+    OpenSpoolNfcvTagParser.id: {
+        "id": OpenSpoolNfcvTagParser.id,
+        "label": OpenSpoolNfcvTagParser.label,
+        "tagClass": OpenSpoolNfcvTagParser.tagClass,
+        "requiresKey": False,
+        "sectors": None,
+        "needsKeyB": False,
+        "parser": OpenSpoolNfcvTagParser,
+        # After the extended parser: extended's magic+CRC check rejects unambiguously,
+        # OpenSpool's NDEF/JSON has no comparable guard against misreading foreign data.
+        "parser_order": 10,
+        "description": "Open NDEF/JSON format on NFC-V (ISO15693), also written by this plugin.",
+    },
+    OpenPrintTagParser.id: {
+        "id": OpenPrintTagParser.id,
+        "label": OpenPrintTagParser.label,
+        "tagClass": OpenPrintTagParser.tagClass,
+        "requiresKey": False,
+        "sectors": None,
+        "needsKeyB": False,
+        "parser": OpenPrintTagParser,
+        "parser_order": 20,
+        "description": "OpenPrintTag CBOR/NDEF format on NFC-V (ISO15693).",
     },
 }
 

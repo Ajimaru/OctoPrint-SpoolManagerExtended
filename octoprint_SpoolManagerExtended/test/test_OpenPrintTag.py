@@ -58,6 +58,7 @@ class SpoolStub(object):
             "color": "#c0c0c0",
             "density": 1.27,
             "diameter": 1.75,
+            "diameterTolerance": None,
             "totalWeight": 1000.0,
             "spoolWeight": 200.0,
             "usedWeight": 250.0,
@@ -69,6 +70,9 @@ class SpoolStub(object):
             "minBedTemperature": None,
             "maxBedTemperature": None,
             "enclosureTemperature": None,
+            "offsetTemperature": None,
+            "offsetBedTemperature": None,
+            "offsetEnclosureTemperature": None,
             # V12 fields, default unset so the existing golden vectors stay valid
             "dryingTemperature": None,
             "dryingTime": None,

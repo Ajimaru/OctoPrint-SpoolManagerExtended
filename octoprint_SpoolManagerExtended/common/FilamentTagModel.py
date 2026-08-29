@@ -61,6 +61,9 @@ class TagType(object):
     UNKNOWN = 0xFF
     MIFARE_CLASSIC_1K = 0x08
     MIFARE_ULTRALIGHT = 0x00
+    # NFC-V (ISO15693) is not part of OpenRFID's original set - added for the OctoScale
+    # extended format's third carrier, which upstream never had to deal with.
+    NFCV = 0x05
 
     # Names kept in OpenRFID's spelling so ported parser bodies need no edits.
     Unknown = UNKNOWN
@@ -75,6 +78,7 @@ class TagType(object):
 _OCTOSCALE_TAG_TYPES = {
     "mifareClassic1k": TagType.MIFARE_CLASSIC_1K,
     "ntag": TagType.MIFARE_ULTRALIGHT,
+    "nfcv": TagType.NFCV,
 }
 
 

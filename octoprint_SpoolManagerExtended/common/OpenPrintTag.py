@@ -230,6 +230,77 @@ def encodeCBOR(value):
     raise TypeError("Cannot CBOR encode value of type " + str(type(value)))
 
 
+def decodeCBOR(data, offset=0):
+    """(value, nextOffset) for one CBOR item starting at offset. Mirror of encodeCBOR's
+    subset only - just enough to read back what this module (and OctoScale's firmware,
+    which uses the same subset) can write. Raises ValueError on anything else, which the
+    caller treats like any other "not a valid tag" outcome.
+    """
+    if offset >= len(data):
+        raise ValueError("CBOR: unexpected end of data")
+
+    initial = data[offset]
+    majorType = initial >> 5
+    additional = initial & 0x1F
+    offset += 1
+
+    if additional < 24:
+        length = additional
+    elif additional == 24:
+        length = data[offset]
+        offset += 1
+    elif additional == 25:
+        length = struct.unpack(">H", data[offset : offset + 2])[0]
+        offset += 2
+    elif additional == 26:
+        length = struct.unpack(">I", data[offset : offset + 4])[0]
+        offset += 4
+    elif additional == 27:
+        length = struct.unpack(">Q", data[offset : offset + 8])[0]
+        offset += 8
+    else:
+        raise ValueError("CBOR: unsupported additional info " + str(additional))
+
+    if majorType == 0:  # unsigned int
+        return length, offset
+    if majorType == 1:  # negative int
+        return -1 - length, offset
+    if majorType == 2:  # byte string
+        value = bytes(data[offset : offset + length])
+        return value, offset + length
+    if majorType == 3:  # text string
+        value = bytes(data[offset : offset + length]).decode("utf-8")
+        return value, offset + length
+    if majorType == 4:  # array
+        items = []
+        for _ in range(length):
+            item, offset = decodeCBOR(data, offset)
+            items.append(item)
+        return items, offset
+    if majorType == 5:  # map
+        result = {}
+        for _ in range(length):
+            key, offset = decodeCBOR(data, offset)
+            value, offset = decodeCBOR(data, offset)
+            result[key] = value
+        return result, offset
+    if majorType == 7:  # simple/float
+        if additional == 20:
+            return False, offset
+        if additional == 21:
+            return True, offset
+        if additional == 22:
+            return None, offset
+        if additional == 26:
+            value = struct.unpack(">f", data[offset - 4 : offset])[0]
+            return value, offset
+        if additional == 27:
+            value = struct.unpack(">d", data[offset - 8 : offset])[0]
+            return value, offset
+        raise ValueError("CBOR: unsupported simple value " + str(additional))
+    raise ValueError("CBOR: unsupported major type " + str(majorType))
+
+
 ##~~ NDEF
 
 
@@ -545,3 +616,143 @@ def buildTagPayload(spoolModel):
     # should use spoolModelToFields() instead, which never raises.
     fields = spoolModelToFields(spoolModel)
     return buildNDEFMessage(encodeFields(fields))
+
+
+##~~ Decoding (read path)
+
+# Inverse of FIELD_KEY_MAP[SECTION_MAIN]: integer key -> our field name. Built once at import
+# time rather than duplicated by hand, so the two directions cannot drift apart.
+_MAIN_KEY_TO_FIELD_NAME = {
+    integerKey: fieldName
+    for fieldName, integerKey in FIELD_KEY_MAP[SECTION_MAIN].items()
+}
+
+# Inverse of MATERIAL_TYPE_BY_ABBREVIATION: index -> abbreviation, for turning a decoded
+# material_type enum value back into the text SpoolManager stores.
+_MATERIAL_TYPE_BY_INDEX = {
+    index: abbreviation for abbreviation, index in MATERIAL_TYPE_BY_ABBREVIATION.items()
+}
+
+
+def decodeMainRegion(mainEncoded):
+    """CBOR-decode a main-region byte string into a {fieldName: value} dict.
+
+    Unknown integer keys (a future spec revision, or a region written by some other
+    OpenPrintTag-aware tool) are silently skipped rather than raising - the same
+    "unmapped fields are absent, not guessed" convention as the write side.
+    """
+    cborMap, _ = decodeCBOR(mainEncoded, 0)
+    if not isinstance(cborMap, dict):
+        raise ValueError("OpenPrintTag main region did not decode to a CBOR map")
+
+    fields = {}
+    for integerKey, value in cborMap.items():
+        fieldName = _MAIN_KEY_TO_FIELD_NAME.get(integerKey)
+        if fieldName is None:
+            continue
+        fields[fieldName] = value
+    return fields
+
+
+def decodePayload(ndefPayload):
+    """{fieldName: value} for one OpenPrintTag NDEF payload ([meta][main][aux]).
+
+    Meta gives the main region's offset/size as CBOR-encoded integers (see
+    _buildMetaRegion) - both counted from the start of this payload, exactly as written.
+    aux is decoded for completeness but currently always empty (see UNMAPPED_FIELD_NAMES),
+    so its fields are not merged into the result.
+    """
+    metaMap, metaConsumed = decodeCBOR(ndefPayload, 0)
+    if not isinstance(metaMap, dict):
+        raise ValueError("OpenPrintTag meta region did not decode to a CBOR map")
+    if metaConsumed > OPT_META_SIZE:
+        raise ValueError("OpenPrintTag meta region longer than OPT_META_SIZE")
+
+    mainOffset = metaMap.get(META_KEY_MAIN_REGION_OFFSET)
+    mainSize = metaMap.get(META_KEY_MAIN_REGION_SIZE)
+    if mainOffset is None or mainSize is None:
+        raise ValueError("OpenPrintTag meta region missing main offset/size")
+    if mainOffset < 0 or mainSize < 0 or mainOffset + mainSize > len(ndefPayload):
+        raise ValueError("OpenPrintTag main region out of bounds")
+
+    mainEncoded = ndefPayload[mainOffset : mainOffset + mainSize]
+    return decodeMainRegion(mainEncoded)
+
+
+def fieldsToSpoolValues(fields):
+    """Named OpenPrintTag fields -> a dict of SpoolManager field names/values.
+
+    Inverse of the relevant part of spoolModelToFields(): Float32 markers unwrap to plain
+    floats, primary_color's 3-byte RGB becomes a "#RRGGBB" string, material_type's enum
+    index becomes the abbreviation text (falling back to material_name/material_type_name
+    if the tag also carries free text and the enum does not resolve), drying_time converts
+    minutes back to hours. Fields this plugin has no matching SpoolModel column for (any
+    key not reachable from FIELD_KEY_MAP) are simply not present in the input and so never
+    appear here either.
+    """
+    values = {}
+
+    materialName = fields.get("material_name")
+    materialType = fields.get("material_type")
+    material = _MATERIAL_TYPE_BY_INDEX.get(materialType) if materialType is not None else None
+    if material is None:
+        material = materialName
+    if material is not None:
+        values["material"] = material
+
+    if fields.get("brand_name") is not None:
+        values["vendor"] = fields["brand_name"]
+
+    totalWeight = fields.get("nominal_netto_full_weight")
+    if totalWeight is not None:
+        values["totalWeight"] = float(totalWeight)
+
+    spoolWeight = fields.get("empty_container_weight")
+    if spoolWeight is not None:
+        values["spoolWeight"] = float(spoolWeight)
+
+    primaryColor = fields.get("primary_color")
+    if isinstance(primaryColor, (bytes, bytearray)) and len(primaryColor) == 3:
+        values["color"] = "#{:02X}{:02X}{:02X}".format(
+            primaryColor[0], primaryColor[1], primaryColor[2]
+        )
+
+    density = fields.get("density")
+    if density is not None:
+        values["density"] = float(density)
+
+    diameter = fields.get("filament_diameter")
+    if diameter is not None:
+        values["diameter"] = float(diameter)
+
+    minTemp = fields.get("min_print_temperature")
+    if minTemp is not None:
+        values["minTemperature"] = int(minTemp)
+    maxTemp = fields.get("max_print_temperature")
+    if maxTemp is not None:
+        values["maxTemperature"] = int(maxTemp)
+
+    preheatTemp = fields.get("preheat_temperature")
+    if preheatTemp is not None:
+        values["temperature"] = int(preheatTemp)
+
+    minBedTemp = fields.get("min_bed_temperature")
+    if minBedTemp is not None:
+        values["minBedTemperature"] = int(minBedTemp)
+    maxBedTemp = fields.get("max_bed_temperature")
+    if maxBedTemp is not None:
+        values["maxBedTemperature"] = int(maxBedTemp)
+
+    dryingTemp = fields.get("drying_temperature")
+    if dryingTemp is not None:
+        values["dryingTemperature"] = int(dryingTemp)
+
+    dryingTimeMinutes = fields.get("drying_time")
+    if dryingTimeMinutes is not None:
+        values["dryingTime"] = int(round(dryingTimeMinutes / 60.0))
+
+    td = fields.get("transmission_distance")
+    if td is not None:
+        values["td"] = float(td)
+
+    return values

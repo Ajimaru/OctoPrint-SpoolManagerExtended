@@ -113,3 +113,41 @@ def extract_byte(data, pos):
     if raw is None:
         return None
     return raw[0]
+
+
+def extract_uint24_le(data, pos):
+    """Extract a little-endian 24-bit unsigned value, or None if out of range.
+
+    Used by the OctoScale extended tag format (totalLength/usedLength), which struct has
+    no format character for.
+    """
+    raw = _slice(data, pos, 3)
+    if raw is None:
+        return None
+    return raw[0] | (raw[1] << 8) | (raw[2] << 16)
+
+
+def extract_int8(data, pos):
+    """Extract a signed byte, or None if out of range."""
+    raw = _slice(data, pos, 1)
+    if raw is None:
+        return None
+    value = raw[0]
+    return value - 256 if value >= 128 else value
+
+
+def crc8(data, poly=0x07, init=0x00):
+    """CRC-8, MSB-first, no final XOR - matches the OctoScale firmware's checksum.
+
+    Used to verify the OctoScale extended tag format's own integrity byte, distinct from
+    the (nonexistent) checksums every vendor format here otherwise lacks.
+    """
+    crc = init
+    for byte in data:
+        crc ^= byte
+        for _ in range(8):
+            if crc & 0x80:
+                crc = ((crc << 1) ^ poly) & 0xFF
+            else:
+                crc = (crc << 1) & 0xFF
+    return crc
