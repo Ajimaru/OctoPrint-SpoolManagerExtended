@@ -846,9 +846,9 @@ SPOOLMANAGER_U1RFID = {
             return "Multi-color";
         }
 
-        // colorNameForSpoolColor() already follows the codebase's convention (lowercase
-        // CSS names like "red"; "Rainbow"/"Transparent"/"Multi-color" as the only
-        // capitalized special cases) - reuse its result as-is, do not re-capitalize it.
+        // colorNameForSpoolColor() already follows the codebase's Title Case convention
+        // (e.g. "Red"; "Rainbow"/"Transparent"/"Multi-color" as the special cases) - reuse
+        // its result as-is, do not re-capitalize it.
         var exactName = null;
         if (typeof SPOOLMANAGER_UTILS.colorNameForSpoolColor === "function") {
             exactName = SPOOLMANAGER_UTILS.colorNameForSpoolColor(colorValue);
@@ -857,10 +857,14 @@ SPOOLMANAGER_U1RFID = {
             return exactName;
         }
 
-        return SPOOLMANAGER_U1RFID.approximateColorName(colorValue);
+        return SPOOLMANAGER_UTILS.titleCaseColorName(
+            SPOOLMANAGER_U1RFID.approximateColorName(colorValue)
+        );
     },
 
-    // Rough hue/lightness classification for hex values CSS has no name for.
+    // Rough hue/lightness classification for hex values CSS has no name for. Returns
+    // lowercase names; buildColorName() Title Cases the result to match
+    // colorNameForSpoolColor()'s convention.
     approximateColorName: function (hexColor) {
         var match = /^#?([0-9a-f]{6})$/i.exec(String(hexColor).trim());
         if (match == null) {
@@ -875,8 +879,7 @@ SPOOLMANAGER_U1RFID = {
         var min = Math.min(red, green, blue);
         var delta = max - min;
 
-        // near-greyscale first: hue is meaningless there. Lowercase throughout, matching
-        // colorNameForSpoolColor()'s convention (tinycolor's CSS names are lowercase too).
+        // near-greyscale first: hue is meaningless there.
         if (delta <= 20) {
             if (max <= 40) return "black";
             if (max >= 225) return "white";
