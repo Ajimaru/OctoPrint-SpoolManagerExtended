@@ -1235,6 +1235,12 @@ def _octoscaleColorArgb(red, green, blue, colorCount=None):
     no shared "from v4". Both projects once held the same wrong table because each read the
     number off the other instead of off the code; the wiki lists the gate expressions so the
     claim can be checked rather than believed.
+
+    The tag's own format version is the only usable signal here: do NOT branch on the
+    device's fwVersion instead. Eight firmware commits shipped under "0.0.2", the colour fix
+    among them, so that string does not separate a device that discards black from one that
+    reports it - and a future version bump would only mark devices built after it, never the
+    ones already in the field.
     """
     if red is None or green is None or blue is None:
         return None
