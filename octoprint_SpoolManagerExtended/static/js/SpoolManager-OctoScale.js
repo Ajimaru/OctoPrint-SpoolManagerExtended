@@ -162,6 +162,14 @@ var OCTOSCALE_TAG_DIFF_FIELDS = [
     // already produces via _octoscaleComposeColorString() server-side, so this makes
     // tagValueDiff agree with it. Falls back to "color" for firmware that predates
     // colorFull.
+    //
+    // The "!= null" test is load-bearing - do NOT simplify it to "colorFull ? ... : ...".
+    // The firmware always emits colorFull, empty string included, and an empty one means
+    // "this spool has no colour" (bare transparent, rainbow with no slots). A falsy test
+    // treats that as missing and falls through to "color", which for some formats still
+    // holds a value the grammar deliberately dropped - reviving a colour the tag does not
+    // claim. Absent (pre-colorFull firmware) and empty (no colour) must stay distinct here;
+    // everywhere else the two mean the same thing and may be treated alike.
     {
         key: "color",
         label: "Color",
