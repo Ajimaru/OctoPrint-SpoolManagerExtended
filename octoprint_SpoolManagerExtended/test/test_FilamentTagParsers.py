@@ -1423,10 +1423,23 @@ class TestOctoScaleExtendedTagParser(unittest.TestCase):
         self.assertEqual("Ebay", ext["purchasedFrom"])
         self.assertEqual("Weiß", ext["displayName"])
 
-    def test_color_all_zero_is_no_color_not_black(self):
-        data = _classicExtendedImage(rgb=(0, 0, 0))
+    def test_color_all_zero_below_v4_gate_is_ambiguous(self):
+        # Below Mifare's colour-flag gate (v4) the flags byte was never written, so 0,0,0 on
+        # the tag means either black or "no colour set" and nothing can tell them apart.
+        # Yielding no colour is the deliberate choice: an honest gap the user can fill,
+        # rather than a guess that would overwrite a spool's real colour on import.
+        data = _classicExtendedImage(version=3, rgb=(0, 0, 0))
         filament = self.parser.parseTag(self.scan, data)
         self.assertEqual([], filament.colors)
+
+    def test_color_all_zero_at_or_above_v4_gate_is_black(self):
+        # From v4 on, the flags byte carries colorCount and resolves the ambiguity: count >= 1
+        # means the RGB slots are valid, so 0,0,0 is black and must import as such. Guarding
+        # this separately from the case above keeps the gate visible - an implementation that
+        # silently reverted to "0,0,0 is always unset" would still pass that one.
+        data = _classicExtendedImage(version=4, rgb=(0, 0, 0), colorFlags=0x02)
+        filament = self.parser.parseTag(self.scan, data)
+        self.assertEqual([0xFF000000], filament.colors)
 
     def test_buffer2_ignored_without_block36_marker_even_with_plausible_bytes(self):
         data = bytearray(_classicExtendedImage(buffer2=False))

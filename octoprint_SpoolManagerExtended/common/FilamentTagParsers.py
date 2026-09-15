@@ -1213,17 +1213,38 @@ def _octoscaleEpochDaysToIso(days):
         return Constants.NO_MANUFACTURING_DATE
 
 
-def _octoscaleColorArgb(red, green, blue):
+def _octoscaleColorArgb(red, green, blue, colorCount=None):
     """Plain R,G,B (no alpha) to the 0xAARRGGBB GenericFilament expects, or None.
 
-    0,0,0 is not black on this format - it is the firmware's own "unparseable/mixed
-    colour" marker (verified: pn5180ReadNtagExtended leaves the color field unset rather
-    than emitting "#000000" for it). Importing it as black would silently overwrite a
-    spool's real colour with one the tag never actually claimed.
+    0,0,0 is ambiguous on this format: the write path stores it both for "black" and for
+    "no colour set", so the bytes alone cannot tell the two apart. Above each carrier's
+    colour-flag gate (Mifare v4 / NFC-V v3 / NTAG v2) the flags byte resolves it - pass its
+    `colorCount` and a count >= 1 means the RGB slots are valid, black included. Below the
+    gate the flags byte was never written, so `colorCount` stays None and 0,0,0 yields None:
+    an honest gap the user can see and fill, rather than a guess that would overwrite a
+    spool's real colour with one the tag never claimed.
+
+    Do not restore the old "0,0,0 always means unset" rule from observed firmware output.
+    That behaviour was a bug in the firmware's read path (a `||` over the three colour bytes
+    treating black as absent), not a property of the format. The rule this function follows
+    is the documented one:
+    https://github.com/Ajimaru/OctoScale/wiki/Development-Guide#colour-fields
+    (gate table per carrier, and all four gate cases including colorCount == 0).
+
+    Note the gates differ per carrier and the version counters run independently - there is
+    no shared "from v4". Both projects once held the same wrong table because each read the
+    number off the other instead of off the code; the wiki lists the gate expressions so the
+    claim can be checked rather than believed.
+
+    The tag's own format version is the only usable signal here: do NOT branch on the
+    device's fwVersion instead. Eight firmware commits shipped under "0.0.2", the colour fix
+    among them, so that string does not separate a device that discards black from one that
+    reports it - and a future version bump would only mark devices built after it, never the
+    ones already in the field.
     """
     if red is None or green is None or blue is None:
         return None
-    if red == 0 and green == 0 and blue == 0:
+    if red == 0 and green == 0 and blue == 0 and not colorCount:
         return None
     return (0xFF << 24) | (red << 16) | (green << 8) | blue
 
@@ -1486,7 +1507,6 @@ class OctoScaleExtendedTagParser(object):
         red = Binary.extract_byte(data, self.BLOCK_9_PHYSICAL + 10)
         green = Binary.extract_byte(data, self.BLOCK_9_PHYSICAL + 11)
         blue = Binary.extract_byte(data, self.BLOCK_9_PHYSICAL + 12)
-        argb = _octoscaleColorArgb(red, green, blue)
 
         hotendMin = _octoscaleU8OrNone(
             Binary.extract_byte(data, self.BLOCK_9_PHYSICAL + 13)
@@ -1507,9 +1527,12 @@ class OctoScaleExtendedTagParser(object):
 
         # v4: colors 2/3 (block10[2..4], [5..7]) and the shared flags byte (block10[8]).
         # Color 1 stays at block9[10..12], unmoved since v1 - see the class docstring.
+        # colorCount stays None below the gate, which is what makes a black color 1
+        # ambiguous there - see _octoscaleColorArgb().
         extraColors = []
         isTransparent = False
         isRainbow = False
+        colorCount = None
         if isV4 and len(data) >= self.BLOCK_10_BED_RANGE + 9:
             color2Rgb = Binary.extract_slice(data, self.BLOCK_10_BED_RANGE + 2, 3)
             color3Rgb = Binary.extract_slice(data, self.BLOCK_10_BED_RANGE + 5, 3)
@@ -1517,12 +1540,14 @@ class OctoScaleExtendedTagParser(object):
             isTransparent, colorCount, isRainbow = _octoscaleParseColorFlags(colorFlags)
             if colorCount >= 2 and color2Rgb is not None:
                 extraColors.append(
-                    _octoscaleColorArgb(color2Rgb[0], color2Rgb[1], color2Rgb[2])
+                    _octoscaleColorArgb(color2Rgb[0], color2Rgb[1], color2Rgb[2], 1)
                 )
             if colorCount >= 3 and color3Rgb is not None:
                 extraColors.append(
-                    _octoscaleColorArgb(color3Rgb[0], color3Rgb[1], color3Rgb[2])
+                    _octoscaleColorArgb(color3Rgb[0], color3Rgb[1], color3Rgb[2], 1)
                 )
+
+        argb = _octoscaleColorArgb(red, green, blue, colorCount)
 
         dryingTemp = None
         dryingTimeHours = None
@@ -1836,7 +1861,6 @@ class OctoScaleExtendedNtagTagParser(object):
         red = Binary.extract_byte(data, self.PAGE_11_COLOR)
         green = Binary.extract_byte(data, self.PAGE_11_COLOR + 1)
         blue = Binary.extract_byte(data, self.PAGE_11_COLOR + 2)
-        argb = _octoscaleColorArgb(red, green, blue)
 
         hotendMax = _octoscaleU8OrNone(
             Binary.extract_byte(data, self.PAGE_11_COLOR + 3)
@@ -1847,9 +1871,12 @@ class OctoScaleExtendedNtagTagParser(object):
 
         # v2: colors 2/3 (page19[0..2], page20[0..2]) and the shared flags byte
         # (page19[3]). Color 1 stays at page11[0..2], unmoved since v1.
+        # colorCount stays None below the gate, which is what makes a black color 1
+        # ambiguous there - see _octoscaleColorArgb().
         extraColors = []
         isTransparent = False
         isRainbow = False
+        colorCount = None
         stringsStartPage = self.STRINGS_START_PAGE_V1
         if isV2 and len(data) >= self.PAGE_20_COLOR3 + 4:
             stringsStartPage = self.STRINGS_START_PAGE_V2
@@ -1859,12 +1886,14 @@ class OctoScaleExtendedNtagTagParser(object):
             isTransparent, colorCount, isRainbow = _octoscaleParseColorFlags(colorFlags)
             if colorCount >= 2 and color2Rgb is not None:
                 extraColors.append(
-                    _octoscaleColorArgb(color2Rgb[0], color2Rgb[1], color2Rgb[2])
+                    _octoscaleColorArgb(color2Rgb[0], color2Rgb[1], color2Rgb[2], 1)
                 )
             if colorCount >= 3 and color3Rgb is not None:
                 extraColors.append(
-                    _octoscaleColorArgb(color3Rgb[0], color3Rgb[1], color3Rgb[2])
+                    _octoscaleColorArgb(color3Rgb[0], color3Rgb[1], color3Rgb[2], 1)
                 )
+
+        argb = _octoscaleColorArgb(red, green, blue, colorCount)
 
         # The string start MUST move on every v3 tag, so it is set outside the length
         # guard below - unlike the v2 line above, which is safe only because a v2 tag that
@@ -2108,17 +2137,17 @@ class OctoScaleExtendedNfcvTagParser(object):
         # block9/block10 boundary (see PHYSBUF_COLOR_OFFSET's comment above). Existed
         # since v1/v2 but was never read here before this fix.
         primaryRgb = Binary.extract_slice(data, self.PHYSBUF_COLOR_OFFSET, 3)
-        argb = None
-        if primaryRgb is not None:
-            argb = _octoscaleColorArgb(primaryRgb[0], primaryRgb[1], primaryRgb[2])
 
         # v3: colors 2/3 (block24[0..2], block25[0..2]) and the shared flags byte
         # (block24[3]). Block 25 byte 3 is reserved.
+        # colorCount stays None below the gate, which is what makes a black color 1
+        # ambiguous there - see _octoscaleColorArgb().
         BLOCK_24 = 24 * 4
         BLOCK_25 = 25 * 4
         extraColors = []
         isTransparent = False
         isRainbow = False
+        colorCount = None
         if isV3 and len(data) >= BLOCK_25 + 4:
             color2Rgb = Binary.extract_slice(data, BLOCK_24, 3)
             colorFlags = Binary.extract_byte(data, BLOCK_24 + 3)
@@ -2126,12 +2155,18 @@ class OctoScaleExtendedNfcvTagParser(object):
             isTransparent, colorCount, isRainbow = _octoscaleParseColorFlags(colorFlags)
             if colorCount >= 2 and color2Rgb is not None:
                 extraColors.append(
-                    _octoscaleColorArgb(color2Rgb[0], color2Rgb[1], color2Rgb[2])
+                    _octoscaleColorArgb(color2Rgb[0], color2Rgb[1], color2Rgb[2], 1)
                 )
             if colorCount >= 3 and color3Rgb is not None:
                 extraColors.append(
-                    _octoscaleColorArgb(color3Rgb[0], color3Rgb[1], color3Rgb[2])
+                    _octoscaleColorArgb(color3Rgb[0], color3Rgb[1], color3Rgb[2], 1)
                 )
+
+        argb = None
+        if primaryRgb is not None:
+            argb = _octoscaleColorArgb(
+                primaryRgb[0], primaryRgb[1], primaryRgb[2], colorCount
+            )
 
         # v4: drying/td at blocks 26-27, immediately after the v3 colors. The soft guard
         # matters more here than on the other carriers - this format has no CRC at all and
