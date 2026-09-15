@@ -1226,8 +1226,15 @@ def _octoscaleColorArgb(red, green, blue, colorCount=None):
 
     Do not restore the old "0,0,0 always means unset" rule from observed firmware output.
     That behaviour was a bug in the firmware's read path (a `||` over the three colour bytes
-    treating black as absent), not a property of the format - fixed on their side 2026-09-15,
-    see FilamentTagParsers' OctoScale parsers and the tests next to them.
+    treating black as absent), not a property of the format. The rule this function follows
+    is the documented one:
+    https://github.com/Ajimaru/OctoScale/wiki/Development-Guide#colour-fields
+    (gate table per carrier, and all four gate cases including colorCount == 0).
+
+    Note the gates differ per carrier and the version counters run independently - there is
+    no shared "from v4". Both projects once held the same wrong table because each read the
+    number off the other instead of off the code; the wiki lists the gate expressions so the
+    claim can be checked rather than believed.
     """
     if red is None or green is None or blue is None:
         return None

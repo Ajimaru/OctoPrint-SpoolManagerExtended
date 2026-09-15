@@ -163,6 +163,9 @@ var OCTOSCALE_TAG_DIFF_FIELDS = [
     // tagValueDiff agree with it. Falls back to "color" for firmware that predates
     // colorFull.
     //
+    // Field contract (empty vs absent colorFull, the falsyness trap below, gate tables):
+    // https://github.com/Ajimaru/OctoScale/wiki/Development-Guide#colour-fields
+    //
     // The "!= null" test is load-bearing - do NOT simplify it to "colorFull ? ... : ...".
     // The firmware always emits colorFull, empty string included, and an empty one means
     // "this spool has no colour" (bare transparent, rainbow with no slots). A falsy test
