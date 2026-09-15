@@ -147,10 +147,17 @@ var OCTOSCALE_TAG_DIFF_FIELDS = [
     // where the spool holds "#fd7412", which would otherwise show up as a change on every
     // single write of an unmodified spool.
     //
-    // /nfcprobe splits color into a hex list ("color") and a composed grammar string
-    // ("colorFull", a firmware field not otherwise used in this plugin) - for
-    // transparent/rainbow spools the hex list is empty, so reading "color" directly
-    // reported a correctly-written tag as "(not set)" even though the tag was fine.
+    // /nfcprobe reports colour twice: "color" is deliberately narrow (the primary colour as
+    // #RRGGBB, empty for rainbow and bare transparent, which have none), while "colorFull"
+    // is the documented field a consumer can rely on - it carries the full colour grammar
+    // for every format and can be written back verbatim.
+    //
+    // Diffing "color" therefore reported a correctly-written multi-colour tag as changed:
+    // the tag holds "transparent:#FF0000;#0000FF;#FFFF00" but "color" only ever returned
+    // "#FF0000", so every unmodified spool looked modified. (An earlier version of this
+    // comment claimed "color" was empty for those spools - it was not; it held the primary
+    // colour. Same fix, wrong reason recorded.)
+    //
     // colorFull carries the same composed value the read-tag path (/octoscale/readTag)
     // already produces via _octoscaleComposeColorString() server-side, so this makes
     // tagValueDiff agree with it. Falls back to "color" for firmware that predates

@@ -1415,6 +1415,18 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     # do not compete for a core at all. The firmware's own /weight handler merely reads a variable
     # the scale task already filled in. The real cause is unconfirmed - WiFi power-save or TCP
     # handling are the likelier candidates - so the generous timeout stays as a safety margin.
+    #
+    # WiFi power-save has since gained evidence over the other candidates: the firmware calls
+    # neither WiFi.setSleep() nor esp_wifi_set_ps(), leaving the ESP32 default WIFI_PS_MIN_MODEM
+    # active, which produces exactly this kind of second-range latency spike. Still a candidate,
+    # not a diagnosis - nobody has measured it directly.
+    #
+    # The 0.02-5.0s figure above was measured 2026-07-26 and has not been reproducible since:
+    # 40 consecutive /weight calls with a tag on the reader peaked at 0.39s on 2026-09-15, with
+    # nothing above 0.5s. Between those dates the device's 5V supply chain was rebuilt and a
+    # firmware bug was fixed where an open preview page suppressed NFC polling entirely; either
+    # could explain it, and one run cannot separate them. The timeout stays at 8s regardless -
+    # it costs nothing when answers are fast, and a single good run does not retire a margin.
     OCTOSCALE_TIMEOUT_SECONDS = 8.0
 
     def _getOctoScaleBaseUrl(self):
