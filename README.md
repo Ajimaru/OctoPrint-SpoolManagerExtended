@@ -4,7 +4,7 @@
 [![Python][badge-python]](https://python.org)
 [![OctoPrint][badge-octoprint]](https://octoprint.org)
 [![Latest Release][badge-release]](https://github.com/Ajimaru/OctoPrint-SpoolManagerExtended/releases/latest)
-[![Latest Prerelease][badge-prerelease]](https://github.com/Ajimaru/OctoPrint-SpoolManagerExtended/releases)
+[![Pre-release][badge-prerelease]](https://github.com/Ajimaru/OctoPrint-SpoolManagerExtended/releases)
 [![Downloads][badge-downloads]](https://github.com/Ajimaru/OctoPrint-SpoolManagerExtended/releases)
 [![Made with Love][badge-love]](https://github.com/Ajimaru/OctoPrint-SpoolManagerExtended)
 
@@ -25,7 +25,6 @@ An OctoPrint plugin that manages spool information (filament type, color, remain
 > and I make no guarantees about its functionality or safety.
 > It has not been fully tested and should not be used in production environments.
 > **Use at your own risk.**
-
 > [!NOTE]
 > **About this project.** I built this for my own printer setup with AI,
 > and if it helps others, even better.
@@ -74,15 +73,34 @@ Original READMEs from these projects are archived in [docs/original-readmes/](do
 ## Installation
 
 > [!WARNING]
-> **About this project.** Create a backup of your OctoPrint instance before installing this
+> Create a backup of your OctoPrint instance before installing this
 > plugin, and read the [migrating from SpoolManager](#migrating-from-spoolmanager) section
 > below if you are already using that plugin.
 
-Install via OctoPrint's Plugin Manager using this repository's release archive URL, or manually via pip:
+This URL always installs the **latest version**, and updates an existing installation
+in place:
+
+```text
+https://github.com/Ajimaru/OctoPrint-SpoolManagerExtended/archive/testing.zip
+```
+
+### Via OctoPrint's Plugin Manager
+
+*Settings* → *Plugin Manager* → *Get More…* → *… from URL*, paste the URL and
+click *Install*, then restart OctoPrint.
+
+### Via pip
+
+Use the pip of the Python environment OctoPrint runs under, then restart OctoPrint:
 
 ```bash
-pip install https://github.com/Ajimaru/OctoPrint-SpoolManagerExtended/archive/main.zip
+pip install --upgrade https://github.com/Ajimaru/OctoPrint-SpoolManagerExtended/archive/testing.zip
 ```
+
+### Installing a specific version
+
+All released versions are listed on the
+[releases page](https://github.com/Ajimaru/OctoPrint-SpoolManagerExtended/releases).
 
 ## Migrating from SpoolManager
 
