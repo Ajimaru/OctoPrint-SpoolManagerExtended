@@ -14,7 +14,9 @@ jobs:
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
       - name: Check out repository code # this step uses another repo so it just needs a name and "uses"
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so --generate-notes can diff against the previous tag
 
       - name: Check current version against tag # this step is coded directly into this file
         env:
@@ -27,20 +29,9 @@ jobs:
       - name: Build ZIP archive
         run: zip -r main.zip * -i '\octoprint_*' 'translations' 'README.md' 'requirements.txt' 'setup.py' 'LICENSE.txt'
 
-      - name: Find and close milestone with same name as tag # and save it to env for use with the release notes generator
-        env:
-          GH_TOKEN: ${{ github.token }}
-          MILESTONE: ${{ github.ref_name }}
-        run: |
-          echo $MILESTONE
-          MILESTONE_NUMBER=$(gh api /repos/{owner}/{repo}/milestones | jq '.[] | select(.title==env.MILESTONE) | .number')
-          echo "MILESTONE_NUMBER=$MILESTONE_NUMBER" >> $GITHUB_ENV
-          echo '{"state": "closed"}' | gh api --method PATCH repos/{owner}/{repo}/milestones/$MILESTONE_NUMBER --input -
-
-      - name: Create release notes # this is another step with an external repo, this time with a variable passed
-        uses: WildRikku/release-notes-generator-action@master
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Release notes come from GitHub's own generator (merged PRs since the previous
+      # tag). The milestone-driven generator this workflow used before required a
+      # milestone named after the tag and aborted without one.
 
       - name: List files in the repository for debugging
         run: ls ${{ github.workspace }}
@@ -48,7 +39,7 @@ jobs:
       - name: Create release draft
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          MILESTONE: ${{ github.ref_name }}
+          VERSIONTAG: ${{ github.ref_name }}
         run: |
-          gh release create "$MILESTONE" --notes-file release_file.md --draft --verify-tag --title "Version $MILESTONE (draft)"
-          gh release upload "$MILESTONE" main.zip
+          gh release create "$VERSIONTAG" --generate-notes --draft --verify-tag --title "Version $VERSIONTAG (draft)"
+          gh release upload "$VERSIONTAG" main.zip
