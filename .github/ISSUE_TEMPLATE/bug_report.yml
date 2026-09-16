@@ -1,0 +1,72 @@
+name: Bug report
+description: Something is not working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please fill in the fields below —
+        version numbers and logs are what make a bug reproducible.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What went wrong, and what did you expect instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to …
+        2. Click …
+        3. See error
+    validations:
+      required: true
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      description: See *Settings* → *Plugin Manager*, or the plugin's settings page.
+      placeholder: "2.0.0a1"
+    validations:
+      required: true
+
+  - type: input
+    id: octoprint-version
+    attributes:
+      label: OctoPrint version
+      placeholder: "2.0.0rc1"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: database
+    attributes:
+      label: Database
+      options:
+        - SQLite (default)
+        - MySQL / MariaDB
+        - PostgreSQL
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log output
+      description: |
+        Relevant part of `octoprint.log`, and the browser console for UI problems.
+        This is inserted as code, so no backticks needed.
+      render: shell
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else?
+      description: Screenshots, printer/connector in use, RFID reader or scale model, …
