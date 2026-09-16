@@ -25,6 +25,7 @@ An OctoPrint plugin that manages spool information (filament type, color, remain
 > and I make no guarantees about its functionality or safety.
 > It has not been fully tested and should not be used in production environments.
 > **Use at your own risk.**
+
 > [!NOTE]
 > **About this project.** I built this for my own printer setup with AI,
 > and if it helps others, even better.
