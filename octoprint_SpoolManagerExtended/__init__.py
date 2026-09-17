@@ -93,6 +93,10 @@ class SpoolmanagerPlugin(
         self._slicedUsageAlreadyBooked = False
         # own wall clock per print job - connectors may report time=0.0 in the PRINT_DONE payload
         self._printJobStartedTimestamp = None
+        # snapshot of the last booked print job's usage, taken before the odometer reset so
+        # external consumers (e.g. PrintJobHistoryExtended) can read it race-free; see
+        # api_getLastPrintJobUsage()
+        self._lastPrintJobUsage = None
 
         # DATABASE
         self.databaseConnectionProblemConfirmed = False
@@ -1792,6 +1796,11 @@ class SpoolmanagerPlugin(
             printDuration is None
             or printDuration >= self.MINIMUM_PRINT_DURATION_FOR_SLICED_USAGE
         )
+        # per-tool snapshot for api_getLastPrintJobUsage(), taken here because it's the
+        # last point where the odometer still holds this job's data - reset_extruded_length()
+        # below wipes it, and a second plugin's PRINT_DONE handler may run before or after
+        # ours with no defined order
+        toolSnapshots = []
         selectedSpools = self.loadSelectedSpools()
         for toolIndex, spoolModel in enumerate(selectedSpools):
             if spoolModel is None:
@@ -1799,6 +1808,7 @@ class SpoolmanagerPlugin(
                     "Tool %d: No spool selected, could not update values after print"
                     % toolIndex
                 )
+                toolSnapshots.append(None)
                 continue
 
             # - Last usage datetime
@@ -1811,6 +1821,7 @@ class SpoolmanagerPlugin(
             except (KeyError, IndexError):
                 currentExtrusionLength = None
 
+            usageSource = "odometer"
             if (
                 (currentExtrusionLength is None or currentExtrusionLength <= 0.0)
                 and printStatus == "success"
@@ -1830,6 +1841,7 @@ class SpoolmanagerPlugin(
                 if slicedLength is not None and slicedLength > 0.0:
                     currentExtrusionLength = slicedLength
                     slicedUsageBooked = True
+                    usageSource = "slicedMetaData"
                     self._logger.info(
                         "Tool %d: no extrusion tracked by odometer, using sliced filament usage of %.1fmm instead"
                         % (toolIndex, slicedLength)
@@ -1837,6 +1849,7 @@ class SpoolmanagerPlugin(
 
             if currentExtrusionLength is None:
                 self._logger.info("Tool %d: No filament extruded" % toolIndex)
+                toolSnapshots.append(None)
                 continue
             self._logger.info(
                 "Tool %d: Extruded filament length: %s"
@@ -1860,6 +1873,7 @@ class SpoolmanagerPlugin(
             # - Used weight
             diameter = spoolModel.diameter
             density = spoolModel.density
+            usedWeight = None
             if diameter is None or density is None:
                 self._logger.warning(
                     "Tool %d: Could not update spool weight, because diameter or density not set in spool '%s'"
@@ -1881,6 +1895,31 @@ class SpoolmanagerPlugin(
                     "Tool %d: New spoolUsedWeight: %s" % (toolIndex, str(newUsedWeight))
                 )
 
+            usedCost = None
+            if (
+                usedWeight is not None
+                and spoolModel.cost is not None
+                and spoolModel.totalWeight is not None
+                and spoolModel.totalWeight > 0.0
+            ):
+                usedCost = spoolModel.cost / spoolModel.totalWeight * usedWeight
+
+            toolSnapshots.append(
+                {
+                    "toolIndex": toolIndex,
+                    "databaseId": spoolModel.databaseId,
+                    "spoolName": spoolModel.displayName,
+                    "vendor": spoolModel.vendor,
+                    "material": spoolModel.material,
+                    "diameter": diameter,
+                    "density": density,
+                    "usedLength": currentExtrusionLength,
+                    "usedWeight": usedWeight,
+                    "usedCost": usedCost,
+                    "source": usageSource,
+                }
+            )
+
             self._databaseManager.saveSpool(spoolModel)
 
             eventPayload = {
@@ -1897,6 +1936,32 @@ class SpoolmanagerPlugin(
 
             reload = True
 
+        if printStatus in ("success", "failed", "canceled"):
+            usedSources = {
+                toolSnapshot["source"]
+                for toolSnapshot in toolSnapshots
+                if toolSnapshot is not None
+            }
+            if len(usedSources) == 0:
+                overallSource = "odometer"
+            elif len(usedSources) == 1:
+                overallSource = next(iter(usedSources))
+            else:
+                overallSource = "mixed"
+
+            self._lastPrintJobUsage = {
+                "apiVersion": 1,
+                "capturedAt": datetime.now().isoformat(),
+                "printStatus": printStatus,
+                "source": overallSource,
+                "currencySymbol": self._settings.get(
+                    [SettingsKeys.SETTINGS_KEY_CURRENCY_SYMBOL]
+                ),
+                "tools": toolSnapshots,
+            }
+
+        # the snapshot above must be taken before this reset - it discards the odometer's
+        # per-tool data that a second plugin's own PRINT_DONE handler could otherwise race us for
         self.myFilamentOdometer.reset_extruded_length()
 
         if slicedUsageBooked:
@@ -2055,6 +2120,18 @@ class SpoolmanagerPlugin(
         """
         return self.myFilamentOdometer.getExtrusionAmount()
         pass
+
+    def api_getLastPrintJobUsage(self):
+        """
+        Returns a per-tool filament usage/cost snapshot of the most recently booked print
+        job (success, failed or canceled - never a pause), taken inside commitOdometerData()
+        before the odometer reset. Covers both odometer-tracked and sliced-metadata-fallback
+        usage, so external consumers don't lose usage to either the odometer reset race or
+        the fallback being invisible on api_getExtrusionAmount(). Returns None if no print
+        has been booked yet in this session.
+        :return: dict, or None
+        """
+        return self._lastPrintJobUsage
 
     ######################################################################################### Hooks and public functions
 
