@@ -8,6 +8,7 @@ import re
 import shutil
 import tempfile
 import threading
+import time
 from io import BytesIO  # for handling byte strings
 from math import pi as PI
 
@@ -33,6 +34,7 @@ from octoprint_SpoolManagerExtended.common import (
     RfidTeachIn,
     StringUtils,
     TagFormats,
+    UnverifiableSpoolId,
 )
 from octoprint_SpoolManagerExtended.common.EventBusKeys import EventBusKeys
 from octoprint_SpoolManagerExtended.common.SettingsKeys import SettingsKeys
@@ -1616,9 +1618,15 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
         existingSpoolId = None
         idParsed = nfcData.get("idParsed")
+        # bool is a subclass of int, so an idParsed of True would otherwise read as spool id 1.
+        if isinstance(idParsed, bool):
+            idParsed = None
         if isinstance(idParsed, int) and idParsed >= 0:
             existingSpoolId = idParsed
-        else:
+        elif idParsed is None:
+            # Only fall back to idText when the firmware reported no idParsed at all. A negative
+            # idParsed is the firmware positively saying "no id on this tag"; letting a stale
+            # numeric idText win over that would resurrect an id the firmware just denied.
             rawIdText = nfcData.get("idText")
             if rawIdText is not None and str(rawIdText).strip().isdigit():
                 existingSpoolId = int(str(rawIdText).strip())
@@ -1653,23 +1661,111 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             "extended": nfcData.get("extended") or None,
             # "empty" | "foreign" | "" - what the firmware makes of the data already on the
             # tag. "foreign" means the tag carries data in a format OctoScale does not
-            # recognize (most likely another vendor's), which a write would destroy. Only
-            # reported for Mifare Classic and NTAG; NFC-V has no page reader on the normal
-            # poll path and always answers "", so the frontend keeps its own heuristic as a
-            # fallback (see isPossiblyForeignTag in SpoolManager-OctoScale.js). Read with
-            # .get() like every other newer field: older firmware simply omits it.
+            # recognize (most likely another vendor's), which a write would destroy.
+            #
+            # It is reported for all three carriers - NFC-V included, via
+            # pn5180NfcvOccupancy() (main.cpp:4166). What actually decides whether it is
+            # computed at all is the firmware's "!extendedCacheHasExtended" guard sitting in
+            # front of every occupancy branch: once a tag is recognized as carrying an
+            # Extended payload, occupancy is skipped and arrives here as "". Measured on a
+            # real TigerTag (2026-09-18, firmware 0.0.3-dev2): hasExtendedData true,
+            # occupancy "".
+            #
+            # That is why "" must never be read as "nothing on this tag" - a TigerTag or
+            # OpenPrintTag, both formats this plugin writes itself, land here with an empty
+            # occupancy while carrying somebody else's data. The frontend keeps its own
+            # heuristic as a fallback (see isPossiblyForeignTag in SpoolManager-OctoScale.js),
+            # but that heuristic excludes hasExtendedData tags and so does not cover them
+            # either - see idSource below. Read with .get() like every other newer field:
+            # older firmware simply omits it.
             "occupancy": nfcData.get("occupancy") or "",
         }
 
         # Resolve the id already on the tag to a name, so the UI can warn with something
         # meaningful ("this tag belongs to <name>") before overwriting it.
+        spoolExistsInDatabase = False
         if existingSpoolId is not None:
             existingSpool = self._databaseManager.loadSpool(existingSpoolId)
+            spoolExistsInDatabase = existingSpool is not None
             result["spoolDisplayName"] = (
                 existingSpool.displayName if existingSpool is not None else None
             )
 
+        # Whether spoolId is an id this plugin can actually stand behind. The firmware's legacy
+        # write path stores the id as bare space-padded ASCII digits with no magic, NDEF or CRC
+        # (pn5180WriteNtagId behind /nfcwriteid), so digits sitting in that area are
+        # indistinguishable from digits any other system left there. See UnverifiableSpoolId for
+        # why "occupancy is foreign" alone must NOT be treated as grounds to discard an id -
+        # legitimate legacy tags report exactly that. Reuses the lookup just performed rather
+        # than hitting the database again.
+        result["spoolIdIsUnverifiable"] = UnverifiableSpoolId.isSpoolIdUnverifiable(
+            spoolId=existingSpoolId,
+            occupancy=result["occupancy"],
+            hasExtendedData=result["hasExtendedData"],
+            spoolExistsInDatabase=spoolExistsInDatabase,
+        )
+
         return flask.jsonify(result)
+
+    def _tagOnReaderHasUnverifiableId(self):
+        """
+        Whether the tag currently on the reader carries an id this plugin cannot stand behind
+        (see common/UnverifiableSpoolId.py). Asks the device directly instead of trusting
+        anything the caller sent: this decides whether a write may bypass the vendor-tag
+        toggle, so a request that simply claims the situation must not be able to create it.
+
+        Any doubt answers False - an unreachable device, an unreadable reply or a firmware too
+        old to report occupancy all keep the toggle in force rather than relaxing it.
+        """
+        baseUrl, errorResponse = self._getOctoScaleBaseUrl()
+        if errorResponse is not None:
+            return False
+
+        # The device reports present/uid as soon as it has seen a tag, but fills in idParsed
+        # and the extended cache only after classification, the extended read and up to three
+        # occupancy probes (each a full RF reset + re-select) have finished - a window of
+        # several hundred milliseconds on NTAG. Reading once inside it yields present=true
+        # with idParsed=-1, which here would mean "not unverifiable", so force stays off and
+        # the firmware answers 409: the write fails for a tag that should have gone through.
+        # Not dangerous (the mistake is always towards refusing, never towards forcing a real
+        # vendor tag), but it would make this write intermittently fail for no visible reason,
+        # which is the exact symptom this whole change removes. So retry briefly instead of
+        # trusting a first answer that may still be mid-read.
+        nfcData = None
+        for attempt in range(3):
+            if attempt:
+                time.sleep(0.25)
+            response, errorMessage = self._callOctoScale(baseUrl, "/nfcprobe")
+            if errorMessage is not None:
+                return False
+            try:
+                candidate = response.json()
+            except ValueError:
+                return False
+            if candidate.get("present") is not True:
+                return False
+            nfcData = candidate
+            # idSource is the device's own "I am done reading this tag" signal: it stays ""
+            # while the read is still in flight and is non-empty for every finished outcome,
+            # including "no id at all". Older firmware never sends it - there the first
+            # answer is all there is, and the loop falls through unchanged.
+            if candidate.get("idSource") or candidate.get("idSource") is None:
+                break
+
+        if nfcData is None:
+            return False
+
+        spoolId = nfcData.get("idParsed")
+        if isinstance(spoolId, bool) or not isinstance(spoolId, int) or spoolId < 0:
+            return False
+
+        spoolExists = self._databaseManager.loadSpool(spoolId) is not None
+        return UnverifiableSpoolId.isSpoolIdUnverifiable(
+            spoolId=spoolId,
+            occupancy=nfcData.get("occupancy") or "",
+            hasExtendedData=nfcData.get("hasExtendedData") or False,
+            spoolExistsInDatabase=spoolExists,
+        )
 
     @octoprint.plugin.BlueprintPlugin.route("/octoscale/writeTag", methods=["POST"])
     @no_firstrun_access
@@ -1794,10 +1890,23 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # confirmForeignTagOverwrite()/canWrite(): a request forged or replayed straight
         # against this endpoint must not be able to force a vendor-tag overwrite while the
         # user has switched that possibility off entirely.
-        if jsonData.get("force") is True and self._settings.get_boolean(
-            [SettingsKeys.SETTINGS_KEY_OCTOSCALE_VENDOR_TAG_WRITE_ENABLED]
-        ):
-            payload["force"] = True
+        #
+        # The unverifiable-legacy-id case is exempt from that toggle, mirroring canWrite() in
+        # the frontend: such a tag holds a bare number in the header-less area and nothing
+        # else, so there is no manufacturer data for the toggle to protect. Without this
+        # exemption the frontend lets the write through, the firmware answers 409 "foreign
+        # tag", and the user is back in the dead end this whole change removes - only now
+        # with a confirmation that visibly did nothing. The exemption is re-derived here from
+        # the device's own current answer rather than trusted from the request, so a forged
+        # or replayed call cannot claim it: a real vendor tag carries extended data or an id
+        # that resolves, and fails isSpoolIdUnverifiable() either way.
+        forceRequested = jsonData.get("force") is True
+        if forceRequested:
+            vendorWriteEnabled = self._settings.get_boolean(
+                [SettingsKeys.SETTINGS_KEY_OCTOSCALE_VENDOR_TAG_WRITE_ENABLED]
+            )
+            if vendorWriteEnabled or self._tagOnReaderHasUnverifiableId():
+                payload["force"] = True
 
         self._logger.info(
             "Writing NFC tag for spool with database id '"

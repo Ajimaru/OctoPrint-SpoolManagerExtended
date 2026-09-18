@@ -360,6 +360,11 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
     self.tagPresent = ko.observable(false);
     self.tagSpoolId = ko.observable(null); // spool id already stored on the tag, if any
     self.tagSpoolDisplayName = ko.observable(null);
+    // Backend verdict (see UnverifiableSpoolId.py): the id above was read out of the tag area
+    // that carries no magic/NDEF/CRC, and it matches no spool here - so it cannot be confirmed
+    // to be ours and cannot be reconciled by the user either. Defaults to false, which is also
+    // what older backends that never send the field produce.
+    self.spoolIdIsUnverifiable = ko.observable(false);
     self.tagValues = ko.observable(null); // raw "extended" payload of the tag currently on the reader, if any
     self.errorMessage = ko.observable(null);
     self.isWriting = ko.observable(false);
@@ -530,6 +535,28 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
         return self.tagPresent() == true && self.tagOccupancy() === "foreign";
     });
 
+    // The subset of "foreign" tags that are almost certainly NOT a manufacturer's.
+    //
+    // occupancy "foreign" is a weaker statement than it reads: the firmware only means "the CC
+    // says NDEF but the data area holds something that is not an empty NDEF message", i.e.
+    // "carries data". A tag written by OctoScale's own legacy /nfcwriteid path - bare
+    // space-padded ASCII digits, no magic - lands in that branch just as a Bambu tag does.
+    //
+    // When the backend additionally tells us the id is unverifiable, we have a tag holding a
+    // plain number and nothing else. Calling that "a manufacturer tag (Bambu, Creality, ...)"
+    // is simply false, and the vendor-tag protections built on that claim then trap the user:
+    // the id triggers an overwrite confirmation while the foreign verdict demands a vendor
+    // confirmation that the (default-off) vendor-write setting refuses to accept - with no way
+    // out of the dialog. This computed exists to keep those protections for real vendor tags
+    // while letting this case through a single honest confirmation.
+    self.hasUnverifiableLegacyId = ko.pureComputed(function () {
+        return (
+            self.tagPresent() == true &&
+            self.spoolIdIsUnverifiable() === true &&
+            self.hasExtendedData() !== true
+        );
+    });
+
     // What the "Tag detected: ..." UI actually wants: the physical chip, not the write
     // format. product is the accurate source; for Mifare Classic, formatLabel would always
     // read "Extended" here regardless of the chip's actual contents (see the notes on
@@ -584,6 +611,12 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
 
     self.foreignTagWarningText = ko.pureComputed(function () {
         if (self.isPossiblyForeignTag() != true) {
+            return "";
+        }
+        if (self.hasUnverifiableLegacyId()) {
+            // overwriteWarningText already describes this tag accurately. Repeating the
+            // manufacturer-tag claim next to it would contradict that text and misstate what is
+            // on the tag.
             return "";
         }
         if (self.isConfirmedForeignTag()) {
@@ -681,6 +714,20 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
                 ")."
             );
         }
+        if (self.spoolIdIsUnverifiable()) {
+            // Deliberately not phrased as a fact about the tag's owner. The number was read out
+            // of the tag area that carries no format marker, so it is not established that
+            // OctoScale ever wrote it - and it points at no spool here either. Stating "this tag
+            // carries spool id N" would present a guess as a finding.
+            return (
+                "This tag holds the number " +
+                existingId +
+                " in an area that carries no format marker, so it cannot be confirmed as a" +
+                " SpoolManager tag id - and no spool with that id exists in this database." +
+                " Overwriting is safe unless you recognise the tag as belonging to something" +
+                " else."
+            );
+        }
         return (
             "This tag already carries spool id " +
             existingId +
@@ -710,6 +757,35 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
         return resolution != null && resolution.wouldSucceed === false;
     });
 
+    // Why canWrite() is false, in the user's terms. Only consulted when a write was actually
+    // attempted - the button being disabled is self-explanatory, a click that does nothing is
+    // not. Mirrors canWrite()'s order so the reason names the guard that actually stopped it.
+    self.blockedWriteReason = ko.pureComputed(function () {
+        if (self.targetDatabaseId() == null) {
+            return "Save the spool first - it needs a database id before a tag can be written.";
+        }
+        if (self.tagPresent() != true) {
+            return "No tag on the reader.";
+        }
+        if (self.isBlockedByTigerTagResolution()) {
+            return (
+                "This spool's vendor or material cannot be resolved to TigerTag ids, so the" +
+                " firmware would refuse the write."
+            );
+        }
+        if (
+            self.isPossiblyForeignTag() &&
+            self.vendorTagWriteEnabled() != true &&
+            self.hasUnverifiableLegacyId() != true
+        ) {
+            return (
+                "Writing over a suspected manufacturer tag is disabled in the SpoolManager" +
+                " settings."
+            );
+        }
+        return null;
+    });
+
     self.canWrite = ko.pureComputed(function () {
         if (self.isWriting() || self.targetDatabaseId() == null) {
             return false;
@@ -723,13 +799,20 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
         if (self.needsOverwriteConfirmation() && self.overwriteConfirmed() != true) {
             return false;
         }
-        // Independent of the id-based confirmation above: a manufacturer tag carries no id
-        // at all, so needsOverwriteConfirmation() never fires for it.
+        // Mostly independent of the id-based confirmation above: a manufacturer tag usually
+        // carries no id at all, so needsOverwriteConfirmation() often never fires for it. The
+        // exception is the legacy case handled below, where both fire at once.
         if (self.isPossiblyForeignTag()) {
-            // The setting is a hard "never", stronger than the per-tag confirmation below:
-            // even a stale foreignTagConfirmed(true) from before the tag was recognized as
-            // foreign must not let a write through once this is off.
-            if (self.vendorTagWriteEnabled() != true) {
+            // A tag whose only content is an unverifiable number is not a vendor tag, so the
+            // vendor-write setting must not gate it - that setting exists to protect
+            // manufacturer data, and there is none here. Blocking on it left the user with two
+            // confirmations they could satisfy and a third they could not, i.e. no way to write
+            // the tag at all. The confirmation itself still applies: something is on the tag,
+            // and overwriting it is still the user's call.
+            if (
+                self.vendorTagWriteEnabled() != true &&
+                self.hasUnverifiableLegacyId() != true
+            ) {
                 return false;
             }
             if (self.foreignTagConfirmed() != true) {
@@ -771,6 +854,10 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
                 );
                 self.tagSpoolDisplayName(
                     responseData.present === true ? responseData.spoolDisplayName : null
+                );
+                self.spoolIdIsUnverifiable(
+                    responseData.present === true &&
+                        responseData.spoolIdIsUnverifiable === true
                 );
                 self.tagType(responseData.present === true ? responseData.tagType : null);
                 self.tagTypeName(
@@ -883,6 +970,7 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
         self.formatLabel(null);
         self.product(null);
         self.hasExtendedData(false);
+        self.spoolIdIsUnverifiable(false);
         self.tagValues(null);
         self.targetSpoolItem(null);
         self.overwriteConfirmed(false);
@@ -914,8 +1002,14 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
     self.confirmForeignTagOverwrite = function () {
         // Defence in depth alongside the vendorTagWriteEnabled check in canWrite() above:
         // even if some caller reaches this directly, the flag it would set must never
-        // become true while the setting says vendor tags are never to be written.
-        if (self.vendorTagWriteEnabled() != true) {
+        // become true while the setting says vendor tags are never to be written. The
+        // unverifiable-legacy-id case is exempt for the same reason it is in canWrite(): that
+        // setting guards manufacturer data, and such a tag holds none - keeping it here would
+        // make the confirmation a no-op and reinstate the dead end.
+        if (
+            self.vendorTagWriteEnabled() != true &&
+            self.hasUnverifiableLegacyId() != true
+        ) {
             return;
         }
         self.foreignTagConfirmed(true);
@@ -1215,6 +1309,16 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
 
     self.writeTag = function () {
         if (self.canWrite() == false) {
+            // This used to return silently, which is how a blocked write looked exactly like a
+            // dead button: the user clicked "Overwrite anyway", nothing happened, and nothing
+            // said why. Reaching here means a guard is still unsatisfied - name the likeliest
+            // one rather than leaving the click unanswered.
+            if (self.isWriting() != true) {
+                self.errorMessage(
+                    self.blockedWriteReason() ||
+                        "Cannot write this tag right now - a confirmation is still pending."
+                );
+            }
             return;
         }
         self.isWriting(true);
