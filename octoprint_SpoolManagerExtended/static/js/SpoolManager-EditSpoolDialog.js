@@ -1415,7 +1415,14 @@ function SpoolManagerExtendedEditSpoolDialog() {
                     proceedClass: "warning",
                     onproceed: function () {
                         writer.confirmOverwrite();
-                        writer.writeTag();
+                        // Re-enter rather than writing directly: a tag can need BOTH this
+                        // confirmation and the foreign-tag one below (an unrecognized format
+                        // that still carries an id). Calling writeTag() here left canWrite()
+                        // false on the foreign branch, so the write was silently dropped and
+                        // the second question was never asked - the click looked like a dead
+                        // button. Re-entering falls through to whatever is still unconfirmed,
+                        // exactly as the unsaved-changes branch above already does.
+                        self.writeTagWithConfirmation();
                     },
                     onclose: function () {
                         overwriteConfirmDialog = null;
@@ -1427,6 +1434,18 @@ function SpoolManagerExtendedEditSpoolDialog() {
             }
             if (writer.isPossiblyForeignTag() && writer.foreignTagConfirmed() != true) {
                 overwriteConfirmDialogUid = writer.tagUid();
+                // A tag holding nothing but an unverifiable number is not a manufacturer tag,
+                // and the overwrite question just answered already described it accurately.
+                // Asking a second time under the "vendor tag" heading would contradict that
+                // text and state something untrue about the tag, so the confirmation the user
+                // already gave stands for this write.
+                if (writer.hasUnverifiableLegacyId()) {
+                    overwriteConfirmDialog = null;
+                    overwriteConfirmDialogUid = null;
+                    writer.confirmForeignTagOverwrite();
+                    writer.writeTag();
+                    return;
+                }
                 if (writer.vendorTagWriteEnabled() != true) {
                     // The setting is a hard "never" - no "Overwrite anyway" escape hatch
                     // here, just an explanation of why the button did nothing.
