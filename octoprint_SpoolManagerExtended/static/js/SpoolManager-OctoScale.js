@@ -365,6 +365,9 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
     // to be ours and cannot be reconciled by the user either. Defaults to false, which is also
     // what older backends that never send the field produce.
     self.spoolIdIsUnverifiable = ko.observable(false);
+    // Raw idSource from the firmware (see the endpoint comment in SpoolManagerAPI.py).
+    // "" for older firmware that does not report it.
+    self.tagIdSource = ko.observable("");
     self.tagValues = ko.observable(null); // raw "extended" payload of the tag currently on the reader, if any
     self.errorMessage = ko.observable(null);
     self.isWriting = ko.observable(false);
@@ -510,9 +513,28 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
     //    costs the tag.
     // occupancy "empty" is the firmware positively confirming the tag is blank, so it wins
     // over the heuristic and no warning is shown.
+    // A tag carrying a verified payload that is not ours: TigerTag or OpenPrintTag, both
+    // formats this plugin can write itself. The firmware says so via idSource
+    // "extendedNoId" - a format whose magic checked out, but which holds no SpoolManager id.
+    //
+    // Nothing else available here can express that. hasExtendedData is true for our own
+    // Extended tags as well, and occupancy is not computed at all once a tag is recognized
+    // as extended (the firmware's "!extendedCacheHasExtended" guard), so it arrives as "".
+    // Measured on a real TigerTag: hasExtendedData true, occupancy "", tagSpoolId null.
+    self.hasForeignExtendedPayload = ko.pureComputed(function () {
+        return self.tagPresent() == true && self.tagIdSource() === "extendedNoId";
+    });
+
     self.isPossiblyForeignTag = ko.pureComputed(function () {
         if (self.tagPresent() != true) {
             return false;
+        }
+        // Checked before occupancy: a foreign extended payload reports occupancy "" (see
+        // above), so the empty-occupancy branch below would otherwise wave it through. This
+        // is how a TigerTag used to reach a write with no confirmation at all - verified
+        // against a physical tag, not inferred.
+        if (self.hasForeignExtendedPayload()) {
+            return true;
         }
         var occupancy = self.tagOccupancy();
         if (occupancy === "foreign") {
@@ -618,6 +640,16 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
             // manufacturer-tag claim next to it would contradict that text and misstate what is
             // on the tag.
             return "";
+        }
+        if (self.hasForeignExtendedPayload()) {
+            // Name the actual formats. The generic text below guesses at "Bambu, Creality",
+            // which is wrong here - the firmware verified this payload's magic and told us
+            // exactly what it is.
+            return (
+                "This tag holds a TigerTag or OpenPrintTag payload - filament data written" +
+                " for other tools to read, with no SpoolManager spool id on it. Writing" +
+                " would replace that data irreversibly."
+            );
         }
         if (self.isConfirmedForeignTag()) {
             return "This tag holds data in a format OctoScale does not recognize - most likely a manufacturer tag (Bambu, Creality, ...). Writing would destroy it irreversibly.";
@@ -859,6 +891,9 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
                     responseData.present === true &&
                         responseData.spoolIdIsUnverifiable === true
                 );
+                self.tagIdSource(
+                    responseData.present === true ? responseData.idSource || "" : ""
+                );
                 self.tagType(responseData.present === true ? responseData.tagType : null);
                 self.tagTypeName(
                     responseData.present === true ? responseData.tagTypeName : null
@@ -971,6 +1006,7 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
         self.product(null);
         self.hasExtendedData(false);
         self.spoolIdIsUnverifiable(false);
+        self.tagIdSource("");
         self.tagValues(null);
         self.targetSpoolItem(null);
         self.overwriteConfirmed(false);

@@ -153,5 +153,39 @@ class TestIsSpoolIdUnverifiable(unittest.TestCase):
         )
 
 
+class TestForeignExtendedPayloadIsSeparateFromUnverifiable(unittest.TestCase):
+    """
+    A TigerTag/OpenPrintTag (firmware idSource "extendedNoId") must NOT come out of this
+    module as "unverifiable": it carries no id at all, so there is no id to doubt. It is
+    handled by its own frontend guard (hasForeignExtendedPayload). These tests pin that
+    separation so a later change cannot quietly merge the two cases - they need opposite
+    treatment, one warns about an id, the other protects somebody else's payload.
+    """
+
+    def test_tigertag_has_no_id_so_it_is_not_unverifiable(self):
+        # Measured on a real TigerTag (045C6B56CB2A81, firmware 0.0.3-dev2): idParsed -1,
+        # hasExtendedData true, occupancy "".
+        self.assertFalse(
+            UnverifiableSpoolId.isSpoolIdUnverifiable(
+                spoolId=None,
+                occupancy="",
+                hasExtendedData=True,
+                spoolExistsInDatabase=False,
+            )
+        )
+
+    def test_openprinttag_behaves_the_same(self):
+        # OpenPrintTag deliberately stores no database id either (matching runs via the
+        # tag UID), so it reaches this module exactly like a TigerTag does.
+        self.assertFalse(
+            UnverifiableSpoolId.isSpoolIdUnverifiable(
+                spoolId=None,
+                occupancy="",
+                hasExtendedData=True,
+                spoolExistsInDatabase=False,
+            )
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

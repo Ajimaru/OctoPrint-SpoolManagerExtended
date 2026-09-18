@@ -1679,6 +1679,16 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             # either - see idSource below. Read with .get() like every other newer field:
             # older firmware simply omits it.
             "occupancy": nfcData.get("occupancy") or "",
+            # "extended" | "extendedNoId" | "legacy" | "unverified" | "" - where the firmware
+            # got the id from, and how far it trusts it. The value this plugin cares about is
+            # "extendedNoId": a verified format that carries no SpoolManager id, i.e. TigerTag
+            # or OpenPrintTag - somebody else's data on a tag we can write. hasExtendedData
+            # cannot express that on its own (it is true for our own Extended tags too), and
+            # occupancy is silent for any extended tag, so without this field a foreign
+            # payload is indistinguishable from one of ours. Measured on a real TigerTag
+            # (2026-09-18, firmware 0.0.3-dev2). Older firmware omits the field entirely; the
+            # frontend then falls back to its previous behaviour.
+            "idSource": nfcData.get("idSource") or "",
         }
 
         # Resolve the id already on the tag to a name, so the UI can warn with something
@@ -1707,6 +1717,61 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
         return flask.jsonify(result)
 
+    def _tagOnReaderHasForeignExtendedPayload(self):
+        """
+        Whether the tag currently on the reader carries a verified payload that is not ours -
+        TigerTag or OpenPrintTag, which the firmware reports as idSource "extendedNoId".
+
+        Like _tagOnReaderHasUnverifiableId() this asks the device rather than the caller, and
+        any doubt answers False: an unreachable device or a firmware too old to send idSource
+        leaves the write to the guards that existed before, instead of blocking it on a
+        question that cannot be answered here.
+        """
+        nfcData = self._probeTagOnReader()
+        if nfcData is None:
+            return False
+        return nfcData.get("idSource") == "extendedNoId"
+
+    def _probeTagOnReader(self):
+        """
+        One /nfcprobe answer for a tag that is actually finished reading, or None.
+
+        The device reports present/uid as soon as it sees a tag but fills in idParsed, the
+        extended cache and idSource only after classification, the extended read and up to
+        three occupancy probes have run - several hundred milliseconds on NTAG. A single read
+        inside that window describes a tag that looks blank, so both callers here would draw
+        the wrong conclusion from it. idSource is the device's own "done" signal: empty while
+        the read is in flight, non-empty for every finished outcome including "no id at all".
+        """
+        baseUrl, errorResponse = self._getOctoScaleBaseUrl()
+        if errorResponse is not None:
+            return None
+
+        nfcData = None
+        for attempt in range(3):
+            if attempt:
+                time.sleep(0.25)
+            response, errorMessage = self._callOctoScale(baseUrl, "/nfcprobe")
+            if errorMessage is not None:
+                return None
+            try:
+                candidate = response.json()
+            except ValueError:
+                return None
+            if candidate.get("present") is not True:
+                return None
+            nfcData = candidate
+            # "complete" is the device saying outright that it has finished reading this tag
+            # (firmware 0.0.3-dev9 and newer); prefer it over inferring the same thing from
+            # idSource. Both are absent on older firmware, and there the first answer is all
+            # there is - retrying twice would only add delay to a reply that will not change.
+            if "complete" in candidate:
+                if candidate.get("complete") is True:
+                    break
+            elif candidate.get("idSource") or "idSource" not in candidate:
+                break
+        return nfcData
+
     def _tagOnReaderHasUnverifiableId(self):
         """
         Whether the tag currently on the reader carries an id this plugin cannot stand behind
@@ -1717,41 +1782,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         Any doubt answers False - an unreachable device, an unreadable reply or a firmware too
         old to report occupancy all keep the toggle in force rather than relaxing it.
         """
-        baseUrl, errorResponse = self._getOctoScaleBaseUrl()
-        if errorResponse is not None:
-            return False
-
-        # The device reports present/uid as soon as it has seen a tag, but fills in idParsed
-        # and the extended cache only after classification, the extended read and up to three
-        # occupancy probes (each a full RF reset + re-select) have finished - a window of
-        # several hundred milliseconds on NTAG. Reading once inside it yields present=true
-        # with idParsed=-1, which here would mean "not unverifiable", so force stays off and
-        # the firmware answers 409: the write fails for a tag that should have gone through.
-        # Not dangerous (the mistake is always towards refusing, never towards forcing a real
-        # vendor tag), but it would make this write intermittently fail for no visible reason,
-        # which is the exact symptom this whole change removes. So retry briefly instead of
-        # trusting a first answer that may still be mid-read.
-        nfcData = None
-        for attempt in range(3):
-            if attempt:
-                time.sleep(0.25)
-            response, errorMessage = self._callOctoScale(baseUrl, "/nfcprobe")
-            if errorMessage is not None:
-                return False
-            try:
-                candidate = response.json()
-            except ValueError:
-                return False
-            if candidate.get("present") is not True:
-                return False
-            nfcData = candidate
-            # idSource is the device's own "I am done reading this tag" signal: it stays ""
-            # while the read is still in flight and is non-empty for every finished outcome,
-            # including "no id at all". Older firmware never sends it - there the first
-            # answer is all there is, and the loop falls through unchanged.
-            if candidate.get("idSource") or candidate.get("idSource") is None:
-                break
-
+        nfcData = self._probeTagOnReader()
         if nfcData is None:
             return False
 
@@ -1900,6 +1931,35 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # the device's own current answer rather than trusted from the request, so a forged
         # or replayed call cannot claim it: a real vendor tag carries extended data or an id
         # that resolves, and fails isSpoolIdUnverifiable() either way.
+        # A verified payload that is not ours (TigerTag/OpenPrintTag, firmware idSource
+        # "extendedNoId") is somebody else's filament data on a tag this plugin can write.
+        # The frontend already refuses it unless the vendor-tag setting is on, but that guard
+        # lives in the browser: a direct call to this endpoint used to walk straight past it
+        # and destroy the payload without any confirmation - verified against a real TigerTag
+        # before this check existed. Enforced here for the same reason the force gate below
+        # is enforced server-side rather than trusted from the request.
+        #
+        # Gated on the same setting as every other foreign-tag overwrite, so a user who has
+        # deliberately enabled vendor-tag writing keeps the ability to reuse such a tag.
+        if (
+            not self._settings.get_boolean(
+                [SettingsKeys.SETTINGS_KEY_OCTOSCALE_VENDOR_TAG_WRITE_ENABLED]
+            )
+            and self._tagOnReaderHasForeignExtendedPayload()
+        ):
+            return make_response(
+                jsonify(
+                    {
+                        "success": False,
+                        "overridable": True,
+                        "error": "This tag holds a TigerTag or OpenPrintTag payload written"
+                        " for other tools to read. Writing over vendor tags is disabled in"
+                        " the SpoolManager settings.",
+                    }
+                ),
+                409,
+            )
+
         forceRequested = jsonData.get("force") is True
         if forceRequested:
             vendorWriteEnabled = self._settings.get_boolean(
