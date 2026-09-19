@@ -31,6 +31,7 @@ from octoprint_SpoolManagerExtended.common import (
     FilamentTagToSpool,
     OctoScaleUrl,
     OpenPrintTag,
+    RfidKeyCollision,
     RfidTeachIn,
     StringUtils,
     TagFormats,
@@ -1079,6 +1080,42 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             {"spool": Transformer.transformSpoolModelToDict(spoolModel)}
         )
 
+    def _describeRfidMatch(self, rfidTagKey, idSource=None, tagFormat=None):
+        """
+        The caveat for a spool that was found through its rfidTagKey, as
+        {"foreignTag": bool, "ambiguous": bool} - or None when no such lookup happened.
+
+        A tag is matched on the last few hex characters of its UID, which is deliberate (a
+        two-tag spool's tags share that suffix) but leaves a small key space. Observed on real
+        hardware: a foreign tag and a spool's own tag shared a suffix and resolved to the same
+        spool. The lookup result is not changed - callers get the same spool they got before -
+        but it is no longer presented as if it were unique.
+
+        idSource (the firmware's verdict) and tagFormat (what a parser made of the tag) are
+        both optional: a caller that never saw the tag - a typed code, a stored key - passes
+        neither and gets the ambiguity answer alone, rather than a foreignTag flag invented
+        from nothing.
+
+        Any doubt answers None rather than a cleared flag: an unreachable count must not read
+        as "checked, and it is fine".
+        """
+        if not rfidTagKey:
+            return None
+        try:
+            matchingSpoolCount = self._databaseManager.countSpoolsByRfidTagKey(
+                rfidTagKey
+            )
+        except Exception:
+            self._logger.exception(
+                "Could not count spools for rfidTagKey '" + str(rfidTagKey) + "'"
+            )
+            return None
+        return RfidKeyCollision.describeMatch(
+            matchingSpoolCount=matchingSpoolCount,
+            idSource=idSource,
+            tagFormat=tagFormat,
+        )
+
     @octoprint.plugin.BlueprintPlugin.route(
         "/spool/byCode/<string:code>", methods=["GET"]
     )
@@ -1090,6 +1127,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # Matching itself lives in DatabaseManager.loadSpoolByCode() (also used to be U1's
         # lookup) - this is just the HTTP-facing twin of getSpoolById above.
         spoolModel = self._databaseManager.loadSpoolByCode(code)
+        matchedByRfidTagKey = None
 
         if spoolModel is None:
             # Fallback: `code` is deliberately no longer set from an RFID UID (see
@@ -1099,15 +1137,30 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             # OctoScale) may still pass a full tag UID it just scanned; try the same
             # derivation before giving up, so spools taught in via the U1 flow remain
             # resolvable through this endpoint too.
-            rfidTagKey = deriveRfidTagKey(code)
+            #
+            # Normalized first: deriveRfidTagKey() expects an already-normalized UID and does
+            # no case folding or separator stripping of its own, while `code` arrives here
+            # straight off the URL. A caller sending "04:5c:6b..." or lowercase hex used to
+            # derive a key that matches nothing.
+            normalizedCode = normalizeCardUid(code)
+            rfidTagKey = deriveRfidTagKey(normalizedCode) if normalizedCode else None
             if rfidTagKey:
                 spoolModel = self._databaseManager.loadSpoolByRfidTagKey(rfidTagKey)
+                if spoolModel is not None:
+                    matchedByRfidTagKey = rfidTagKey
 
         if spoolModel is None:
             abort(404)
 
         return flask.jsonify(
-            {"spool": Transformer.transformSpoolModelToDict(spoolModel)}
+            {
+                "spool": Transformer.transformSpoolModelToDict(spoolModel),
+                # Only ever set on the rfidTagKey fallback above: a `code` hit is an exact
+                # match on a whole field and needs no caveat. No idSource here - this endpoint
+                # is handed a string and never sees the reader, so it can only answer the
+                # ambiguity half. See common/RfidKeyCollision.py.
+                "match": self._describeRfidMatch(matchedByRfidTagKey),
+            }
         )
 
     #####################################################################################################   MEASURED WEIGHT (SCALE)
@@ -2453,6 +2506,18 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 ),
                 "matchedSpoolDisplayName": (
                     matchedSpool.displayName if matchedSpool is not None else None
+                ),
+                # Whether matchedSpool is really this tag's spool, or only the spool whose
+                # key suffix it happens to share - see common/RfidKeyCollision.py. The parsed
+                # format is the evidence here: a TigerTag or OpenPrintTag carries no
+                # SpoolManager id, so any spool found for it was found by suffix alone.
+                # Null when no spool matched.
+                "match": (
+                    self._describeRfidMatch(
+                        rfidTagKey, tagFormat=filament.source_processor
+                    )
+                    if matchedSpool is not None
+                    else None
                 ),
                 "diagnostics": diagnostics,
             }

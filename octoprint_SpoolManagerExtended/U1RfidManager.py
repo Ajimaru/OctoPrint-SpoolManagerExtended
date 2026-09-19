@@ -4,6 +4,7 @@ import json
 import threading
 import time
 
+from octoprint_SpoolManagerExtended.common import RfidKeyCollision
 from octoprint_SpoolManagerExtended.common.SettingsKeys import SettingsKeys
 
 try:
@@ -724,5 +725,33 @@ class U1RfidManager(object):
                 "spoolName": spoolModel.displayName,
                 "status": result.get("status"),
                 "toolIndex": result.get("toolIndex"),
+                # Whether this spool is the only one the scanned tag could mean. This path
+                # selects a spool for a tool on its own, without anyone confirming it, so a
+                # tie resolved silently by newest-first ordering is worth saying out loud -
+                # see common/RfidKeyCollision.py.
+                "match": self._describeMatch(uid),
             }
+        )
+
+    def _describeMatch(self, uid):
+        # None on any doubt: a failed count must not read as "checked, and it is unique".
+        #
+        # Only the ambiguity half is answerable here. This path is fed by the printer's own
+        # RFID reader, which reports a UID and nothing else - there is no parsed format and no
+        # firmware idSource to say whether the tag belongs to another ecosystem. A foreign tag
+        # on a U1 spool holder is also not a case that arises: these are the printer's own
+        # spools. describeMatch() therefore answers foreignTag False, which is honest here
+        # rather than a cleared check.
+        rfidTagKey = deriveRfidTagKey(uid) if uid else None
+        if not rfidTagKey:
+            return None
+        try:
+            matchingSpoolCount = self._plugin._databaseManager.countSpoolsByRfidTagKey(
+                rfidTagKey
+            )
+        except Exception:
+            self._logger.exception("U1 RFID: could not count spools for a tag key")
+            return None
+        return RfidKeyCollision.describeMatch(
+            matchingSpoolCount=matchingSpoolCount,
         )

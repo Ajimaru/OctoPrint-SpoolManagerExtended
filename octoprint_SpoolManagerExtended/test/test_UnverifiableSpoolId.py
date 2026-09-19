@@ -3,11 +3,6 @@
 # Tests for common/UnverifiableSpoolId.py - the pure decision logic behind the
 # "spoolIdIsUnverifiable" flag on GET /octoscale/nfc. Dependency-free by design, loaded by path
 # like test_RfidTeachIn.py so it runs without flask/OctoPrint/peewee.
-#
-# The cases below are built from real hardware measurements taken on 2026-09-18 against
-# OctoScale firmware v0.0.3 (reader at the U1 test bench), not from invented values - see the
-# per-test comments for the tag each one stands for.
-#
 # Run with:  python3 octoprint_SpoolManagerExtended/test/test_UnverifiableSpoolId.py
 
 import importlib.util

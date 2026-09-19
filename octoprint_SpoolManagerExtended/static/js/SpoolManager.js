@@ -2468,9 +2468,22 @@ $(function () {
                 return;
             }
             var spoolName = data.spoolName || "Spool";
+            // A tag is matched on the last 4 hex characters of its UID, so two spools can
+            // end up sharing a key - see common/RfidKeyCollision.py. This path selects a
+            // spool without anyone confirming it, so a tie resolved silently by newest-first
+            // ordering is worth saying out loud. Absent "match" (older backend) stays silent
+            // rather than claiming the match was checked.
+            var matchCaveat = "";
+            if (data.match != null && data.match.ambiguous === true) {
+                matchCaveat =
+                    " More than one spool carries this tag key, so this may not be the" +
+                    " right one - check before printing.";
+            }
             if (data.status === "selected") {
                 self.showPopUp(
-                    "success",
+                    data.match != null && data.match.ambiguous === true
+                        ? "warning"
+                        : "success",
                     "Spool selected",
                     "'" +
                         spoolName +
@@ -2478,8 +2491,10 @@ $(function () {
                         data.toolIndex +
                         " (U1 channel " +
                         data.channel +
-                        ").",
-                    true
+                        ")." +
+                        matchCaveat,
+                    // An ambiguous match is worth reading before it disappears.
+                    !(data.match != null && data.match.ambiguous === true)
                 );
                 return;
             }
