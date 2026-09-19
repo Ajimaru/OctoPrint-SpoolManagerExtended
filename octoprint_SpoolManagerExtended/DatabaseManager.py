@@ -137,7 +137,29 @@ class DatabaseManager(object):
             )
             result = cursor.value
             if result is not None:
-                schemeVersionFromDatabase = int(result[0])
+                # int(result[0]) - only the FIRST CHARACTER - used to stand here, which read
+                # every two-digit version as 1 ("13" -> 1). The auto-upgrade below then saw a
+                # version 1 database and would have replayed every migration from the start,
+                # so the startup path has been effectively unusable since version 10. Visible
+                # in the log as "Current databasescheme: 1" on a database that is long past
+                # that. The other two readers of this row (recheckSchemeUpgradeNeeded,
+                # upgradeExternalDatabaseScheme) always parsed the whole value.
+                #
+                # A value that is not a number at all is treated like a missing one rather
+                # than allowed to raise: the except branch below is there to recognize a
+                # missing *table*, and a ValueError falling into it would close the database
+                # and leave the caller with no scheme version and no explanation.
+                try:
+                    schemeVersionFromDatabase = int(str(result).strip())
+                except (TypeError, ValueError):
+                    self._logger.warning(
+                        "Database scheme version '"
+                        + str(result)
+                        + "' is not a number. Recreating the db-scheme."
+                    )
+                    self.backupDatabaseFile()  # safty first
+                    self._createDatabaseTables()
+                    return
                 self._logger.info(
                     "Current databasescheme: " + str(schemeVersionFromDatabase)
                 )
@@ -2180,6 +2202,33 @@ class DatabaseManager(object):
 
         return self._handleReusableConnection(
             databaseCallMethode, withReusedConnection, "loadSpoolByRfidTagKey"
+        )
+
+    def countSpoolsByRfidTagKey(self, rfidTagKey, withReusedConnection=False):
+        # How many spools loadSpoolByRfidTagKey() had to choose between. That method returns
+        # the newest match and says nothing about the others, so a caller cannot tell an
+        # unambiguous hit from an arbitrary pick - see common/RfidKeyCollision.py for why that
+        # distinction matters (4 hex characters of key space, real collision measured).
+        #
+        # Deliberately a separate method rather than a change to loadSpoolByRfidTagKey(): every
+        # existing caller of that one keeps behaving exactly as before.
+        def databaseCallMethode():
+            if rfidTagKey is None or len(str(rfidTagKey).strip()) == 0:
+                return 0
+            return (
+                SpoolModel.select()
+                .where(
+                    (SpoolModel.rfidTagKey == str(rfidTagKey).strip())
+                    & (
+                        (SpoolModel.isTemplate == False)
+                        | (SpoolModel.isTemplate == None)
+                    )
+                )
+                .count()
+            )
+
+        return self._handleReusableConnection(
+            databaseCallMethode, withReusedConnection, "countSpoolsByRfidTagKey"
         )
 
     def loadSpoolTemplates(self, withReusedConnection=False):
