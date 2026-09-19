@@ -1904,24 +1904,28 @@ class SpoolmanagerPlugin(
             ):
                 usedCost = spoolModel.cost / spoolModel.totalWeight * usedWeight
 
-            toolSnapshots.append(
-                {
-                    "toolIndex": toolIndex,
-                    "databaseId": spoolModel.databaseId,
-                    "spoolName": spoolModel.displayName,
-                    "vendor": spoolModel.vendor,
-                    "material": spoolModel.material,
-                    "diameter": diameter,
-                    "density": density,
-                    "usedLength": currentExtrusionLength,
-                    "usedWeight": usedWeight,
-                    "usedCost": usedCost,
-                    "source": usageSource,
-                }
-            )
+            toolSnapshot = {
+                "toolIndex": toolIndex,
+                "databaseId": spoolModel.databaseId,
+                "spoolName": spoolModel.displayName,
+                "vendor": spoolModel.vendor,
+                "material": spoolModel.material,
+                "diameter": diameter,
+                "density": density,
+                "usedLength": currentExtrusionLength,
+                "usedWeight": usedWeight,
+                "usedCost": usedCost,
+                "source": usageSource,
+            }
+            toolSnapshots.append(toolSnapshot)
 
             self._databaseManager.saveSpool(spoolModel)
 
+            # the usage values are carried in the event as well, so a consumer does not have
+            # to poll api_getLastPrintJobUsage() - that snapshot is only written after this
+            # loop, and another plugin's PRINT_DONE handler may read it before we get there.
+            # printStatus is None when this commit comes from a mid-print spool change
+            # (selectSpool with commitCurrentSpoolValues) rather than from the end of a job.
             eventPayload = {
                 "toolId": toolIndex,
                 "databaseId": spoolModel.databaseId,
@@ -1929,6 +1933,11 @@ class SpoolmanagerPlugin(
                 "material": spoolModel.material,
                 "colorName": spoolModel.colorName,
                 "remainingWeight": spoolModel.remainingWeight,
+                "usedLength": toolSnapshot["usedLength"],
+                "usedWeight": toolSnapshot["usedWeight"],
+                "usedCost": toolSnapshot["usedCost"],
+                "source": toolSnapshot["source"],
+                "printStatus": printStatus,
             }
             self._sendPayload2EventBus(
                 EventBusKeys.EVENT_BUS_SPOOL_WEIGHT_UPDATED_AFTER_PRINT, eventPayload
