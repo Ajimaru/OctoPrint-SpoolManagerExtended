@@ -7,6 +7,12 @@ on:
     # Each day at 1:30am run the action
     - cron: '30 1 * * *'
 
+# The workflow only marks and closes issues; it never writes to the repository
+# contents and never touches pull requests.
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   stale:
     runs-on: ubuntu-latest
