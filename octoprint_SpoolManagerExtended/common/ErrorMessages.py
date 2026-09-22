@@ -83,3 +83,41 @@ def userFacingError(action, hint=None):
     if hint:
         message = message + " " + hint
     return message
+
+
+def classifyFetchError(exception):
+    """Reduces a download failure to its class, for the cache status fields.
+
+    str(requests.RequestException) carries the whole urllib3 chain: the source URL, the
+    resolved address, the port and the underlying OS error. The status dicts that hold this
+    are returned by the SpoolmanDB and TigerTag endpoints, and the settings dialog only ever
+    displays `status`, `vendor_count` and the counts - so there is nothing to lose by
+    reporting the class instead, and the full exception is logged either way.
+
+    Returns None for None, so a caller can pass an absent error straight through.
+    """
+    if exception is None:
+        return None
+    text = str(exception).lower()
+    if "timed out" in text or "timeout" in text:
+        return "timeout"
+    if "ssl" in text or "certificate" in text:
+        return "tls"
+    if (
+        "name or service not known" in text
+        or "nodename nor servname" in text
+        or "failed to resolve" in text
+        or "name resolution" in text
+    ):
+        return "dns"
+    if "connection refused" in text or "connection error" in text:
+        return "connection"
+    # HTTPError renders as "404 Client Error: ... for url: ..." - keep only the status code
+    for status in ("400", "401", "403", "404", "429", "500", "502", "503", "504"):
+        if status + " " in text:
+            return "http-" + status
+    if "exceeds the configured size limit" in text:
+        return "too-large"
+    if "json" in text or "decode" in text or "codec" in text:
+        return "parse"
+    return "error"

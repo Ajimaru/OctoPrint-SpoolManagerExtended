@@ -155,5 +155,85 @@ class TestUserFacingError(unittest.TestCase):
         self.assertNotIn("Errno", message)
 
 
+class TestClassifyFetchError(unittest.TestCase):
+    # A real urllib3 chain, of the shape requests actually produces
+    _CONNECT_FAILURE = (
+        "HTTPSConnectionPool(host='raw.githubusercontent.com', port=443): Max retries "
+        "exceeded with url: /SpoolmanDB/filaments.json (Caused by NewConnectionError("
+        "'<urllib3.connection.HTTPSConnection object at 0x7f9c1a2b3c40>: Failed to "
+        "establish a new connection: [Errno 111] Connection refused'))"
+    )
+
+    def test_none_stays_none(self):
+        # a successful refresh must not grow an "error" key, and must never report the
+        # literal string "None" - that was the TigerTag bug
+        self.assertIsNone(ErrorMessages.classifyFetchError(None))
+        self.assertNotEqual("None", ErrorMessages.classifyFetchError(None))
+
+    def test_timeout(self):
+        self.assertEqual(
+            "timeout",
+            ErrorMessages.classifyFetchError(Exception("Read timed out after 10s")),
+        )
+
+    def test_dns_failure(self):
+        self.assertEqual(
+            "dns",
+            ErrorMessages.classifyFetchError(
+                Exception("[Errno -2] Name or service not known")
+            ),
+        )
+
+    def test_connection_refused(self):
+        self.assertEqual(
+            "connection",
+            ErrorMessages.classifyFetchError(Exception(self._CONNECT_FAILURE)),
+        )
+
+    def test_http_status_is_kept(self):
+        self.assertEqual(
+            "http-404",
+            ErrorMessages.classifyFetchError(
+                Exception(
+                    "404 Client Error: Not Found for url: https://example.org/a.json"
+                )
+            ),
+        )
+
+    def test_parse_failure(self):
+        self.assertEqual(
+            "parse",
+            ErrorMessages.classifyFetchError(
+                Exception("Expecting value: line 1 column 1 (char 0) json decode")
+            ),
+        )
+
+    def test_size_limit(self):
+        self.assertEqual(
+            "too-large",
+            ErrorMessages.classifyFetchError(
+                Exception("SpoolmanDB response exceeds the configured size limit")
+            ),
+        )
+
+    def test_unknown_falls_back_to_error(self):
+        self.assertEqual(
+            "error", ErrorMessages.classifyFetchError(Exception("something else"))
+        )
+
+    def test_no_url_or_host_survives_classification(self):
+        # the security property: the class must not carry the transport detail
+        result = ErrorMessages.classifyFetchError(Exception(self._CONNECT_FAILURE))
+        for marker in (
+            "raw.githubusercontent.com",
+            "443",
+            "urllib3",
+            "Errno",
+            "SpoolmanDB",
+            "0x7f9c1a2b3c40",
+        ):
+            self.assertNotIn(marker, result)
+
+
 if __name__ == "__main__":
     unittest.main()

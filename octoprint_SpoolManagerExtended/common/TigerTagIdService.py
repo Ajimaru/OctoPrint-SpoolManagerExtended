@@ -21,6 +21,8 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
+from octoprint_SpoolManagerExtended.common import ErrorMessages
+
 
 class TigerTagIdService:
     SOURCE_BASE_URL = (
@@ -304,7 +306,15 @@ class TigerTagIdService:
             fallback = self._read_fallback()
             return (
                 fallback,
-                self._status(None, "error", ttl_days=ttl_days, error=str(last_error)),
+                # error class only - see FilamentDatabaseService for the reasoning.
+                # classifyFetchError(None) is None, so a failure with no recorded
+                # exception no longer reports the literal string "None".
+                self._status(
+                    None,
+                    "error",
+                    ttl_days=ttl_days,
+                    error=ErrorMessages.classifyFetchError(last_error),
+                ),
             )
 
         cache = self._write_cache(new_data, new_etags)
@@ -315,7 +325,7 @@ class TigerTagIdService:
                 cache,
                 state,
                 ttl_days=ttl_days,
-                error=str(last_error) if last_error else None,
+                error=ErrorMessages.classifyFetchError(last_error),
             ),
         )
 
