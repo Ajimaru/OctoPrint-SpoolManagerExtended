@@ -815,6 +815,11 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                         <span class="help-block" style="margin-bottom: 0;" data-bind="visible: spoolDialog.remainingBlockReason">
                                             <small data-bind="text: spoolDialog.remainingBlockReason"></small>
                                         </span>
+                                        {# Zero-point hint, not an error: the reading above stays usable, so this is
+                                           styled as a warning and never hides or blocks the value. #}
+                                        <span class="help-block text-warning" style="margin-bottom: 0;" data-bind="visible: spoolDialog.octoScaleWeighing.zeroStateWarning">
+                                            <small><i class="fas fa-exclamation-triangle"></i> <span data-bind="text: spoolDialog.octoScaleWeighing.zeroStateWarning"></span></small>
+                                        </span>
                                         <span class="help-block text-error" style="margin-bottom: 0;" data-bind="visible: spoolDialog.octoScaleWeighing.errorMessage">
                                             <small><i class="fas fa-exclamation-triangle"></i> <span data-bind="text: spoolDialog.octoScaleWeighing.errorMessage"></span></small>
                                         </span>

@@ -29,6 +29,24 @@ const OCTOSCALE_WRITE_STATUS_TIMEOUT_MS = 20000;
 // are tolerated before an error is shown - and the last known value stays on screen meanwhile.
 const OCTOSCALE_TOLERATED_CONSECUTIVE_FAILURES = 3;
 
+// The device reports how much it still trusts its stored zero point alongside every weight
+// (backend field "zeroState"; null when the firmware is too old to send one). Only "ok"
+// means the zero point was confirmed at boot - the other three are shown as a hint next to
+// the readout. The weight itself stays valid in all of them, so none of this blocks a
+// reading or the "use this value" button.
+//
+// The texts state what the device observed, not why: the firmware reports that the zero
+// point deviates, and deliberately does not name a cause (a load left on the scale, drift,
+// a knocked sensor all look alike from there). Do not tighten these into an explanation.
+const OCTOSCALE_ZERO_STATE_WARNINGS = {
+    unverified:
+        "Zero point not verified - the scale had no stored zero point to compare against at startup.",
+    suspect:
+        "Zero point may be off - at startup the scale read a different zero point than the stored one. It was kept, not re-tared.",
+    unstable:
+        "Zero point not verified - the reading at startup was too unsteady to check it."
+};
+
 function SpoolManagerOctoScaleWeighing(apiClient, pluginSettings) {
     var self = this;
 
@@ -40,11 +58,23 @@ function SpoolManagerOctoScaleWeighing(apiClient, pluginSettings) {
     self.currentWeight = ko.observable(null);
     self.errorMessage = ko.observable(null);
     self.isTaring = ko.observable(false);
+    // null while there is no reading, or when the firmware sends no zero-point state
+    self.zeroState = ko.observable(null);
 
     var pollTimerId = null;
 
     self.hasReading = ko.pureComputed(function () {
         return self.currentWeight() != null;
+    });
+
+    self.zeroStateWarning = ko.pureComputed(function () {
+        var state = self.zeroState();
+        if (state == null) {
+            return null;
+        }
+        // "ok" and any state this version does not know stay silent - a warning nobody can
+        // act on is worse than none
+        return OCTOSCALE_ZERO_STATE_WARNINGS[state] || null;
     });
 
     self.currentWeightText = ko.pureComputed(function () {
@@ -70,6 +100,9 @@ function SpoolManagerOctoScaleWeighing(apiClient, pluginSettings) {
             if (responseData && responseData.success === true) {
                 consecutiveFailures = 0;
                 self.currentWeight(responseData.grams);
+                self.zeroState(
+                    responseData.zeroState != null ? responseData.zeroState : null
+                );
                 self.errorMessage(null);
                 return;
             }
@@ -80,6 +113,7 @@ function SpoolManagerOctoScaleWeighing(apiClient, pluginSettings) {
                 return;
             }
             self.currentWeight(null);
+            self.zeroState(null);
             self.errorMessage(
                 responseData && responseData.error
                     ? responseData.error
@@ -106,6 +140,7 @@ function SpoolManagerOctoScaleWeighing(apiClient, pluginSettings) {
         }
         self.isActive(false);
         self.currentWeight(null);
+        self.zeroState(null);
         self.errorMessage(null);
     };
 
