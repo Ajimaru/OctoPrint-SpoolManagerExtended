@@ -24,6 +24,7 @@ from octoprint_SpoolManagerExtended import DatabaseManager
 from octoprint_SpoolManagerExtended.api import Transformer
 from octoprint_SpoolManagerExtended.common import (
     CSVExportImporter,
+    ErrorMessages,
     FilamentTagKeys,
     FilamentTagModel,
     FilamentTagParsers,
@@ -1011,7 +1012,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 # - assign temp-offset here, because after the print is started (event: ) it is too late Events.PRINT_STARTED
                 try:
                     self.set_temp_offsets(toolIndex, spoolModel)
-                except Exception as e:
+                except Exception:
                     self._logger.exception(
                         "Temperature offsets for Spool '"
                         + str(spoolModel.displayName)
@@ -1022,7 +1023,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                         "Temperature offsets for Spool '"
                         + str(spoolModel.displayName)
                         + "' failed to set!",
-                        str(e),
+                        ErrorMessages.userFacingError("apply the temperature offsets"),
                     )
 
         return flask.jsonify({"result": "goForIt"})
@@ -1059,9 +1060,12 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
         try:
             self.set_temp_offsets(toolIndex, spoolModel)
-        except Exception as e:
+        except Exception:
+            self._logger.exception("set_temp_offsets")
             self._sendMessageToClient(
-                "warning", "Temperature offsets failed to set!", str(e)
+                "warning",
+                "Temperature offsets failed to set!",
+                ErrorMessages.userFacingError("apply the temperature offsets"),
             )
 
         self.checkRemainingFilament()
@@ -2871,8 +2875,13 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 payloadBase64 = base64.b64encode(
                     OpenPrintTag.buildTagPayload(spoolModel)
                 ).decode("ascii")
-            except (OpenPrintTag.UnresolvedFieldKeyError, ValueError) as e:
-                encodingError = str(e)
+            except (OpenPrintTag.UnresolvedFieldKeyError, ValueError):
+                self._logger.exception(
+                    "getOpenPrintTagPayload: could not build payload"
+                )
+                encodingError = ErrorMessages.userFacingError(
+                    "build the tag payload for this spool"
+                )
 
         return flask.jsonify(
             {
@@ -3712,9 +3721,13 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                     "mandatory backup was created): " + str(csvError)
                 )
 
-        except Exception as e:
+        except Exception:
+            # an OSError from the backup file write names the absolute baseFolder
             self._logger.exception("createImportBackup")
-            return flask.make_response("Backup before import failed: " + str(e), 400)
+            return flask.make_response(
+                ErrorMessages.userFacingError("create the backup before the import"),
+                400,
+            )
 
         return flask.jsonify(
             {
