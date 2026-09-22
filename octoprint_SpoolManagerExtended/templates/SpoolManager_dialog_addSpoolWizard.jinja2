@@ -332,6 +332,11 @@
                             {{ _('Use this value') }}
                         </button>
                     </div>
+                    {# Zero-point hint, not an error: the reading above stays usable, so this is
+                       styled as a warning and never hides or blocks the value. #}
+                    <div class="text-warning" style="margin-top: 6px;" data-bind="visible: octoScaleWeighing.zeroStateWarning">
+                        <i class="fas fa-exclamation-triangle"></i> <span data-bind="text: octoScaleWeighing.zeroStateWarning"></span>
+                    </div>
                     <div class="text-error" style="margin-top: 6px;" data-bind="visible: octoScaleWeighing.errorMessage">
                         <i class="fas fa-exclamation-triangle"></i> <span data-bind="text: octoScaleWeighing.errorMessage"></span>
                     </div>

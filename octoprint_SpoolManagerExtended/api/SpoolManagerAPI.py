@@ -30,6 +30,7 @@ from octoprint_SpoolManagerExtended.common import (
     FilamentTagReader,
     FilamentTagToSpool,
     OctoScaleUrl,
+    OctoScaleWeight,
     OpenPrintTag,
     RfidKeyCollision,
     RfidTeachIn,
@@ -1561,14 +1562,15 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             return (None, errorMessage)
         return (response, None)
 
-    def _octoScaleFloatOrError(self, response):
+    def _octoScaleWeightOrError(self, response):
+        # Implementation lives in common/OctoScaleWeight.py so it can be unit-tested
+        # without flask/OctoPrint; it accepts both the bare-float body of older firmware
+        # and the "<grams>|<zeroState>|<zeroDelta>" body current firmware sends.
         try:
-            return (float(response.text.strip()), None)
-        except (ValueError, AttributeError):
-            return (
-                None,
-                "OctoScale sent an unreadable value: '" + str(response.text)[:80] + "'",
-            )
+            body = response.text
+        except AttributeError:
+            return (None, "OctoScale sent an empty answer")
+        return OctoScaleWeight.parseWeightBody(body)
 
     @octoprint.plugin.BlueprintPlugin.route(
         "/octoscale/testConnection", methods=["PUT"]
@@ -1608,11 +1610,21 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         if errorMessage is not None:
             return flask.jsonify({"success": False, "error": errorMessage})
 
-        grams, errorMessage = self._octoScaleFloatOrError(response)
+        reading, errorMessage = self._octoScaleWeightOrError(response)
         if errorMessage is not None:
             return flask.jsonify({"success": False, "error": errorMessage})
 
-        return flask.jsonify({"success": True, "grams": grams})
+        # zeroState/zeroDeltaGrams are null when talking to firmware that predates the
+        # three-field body. They describe the stored zero point, not this reading, so they
+        # ride along as a warning the UI can show - the weight stays usable either way.
+        return flask.jsonify(
+            {
+                "success": True,
+                "grams": reading["grams"],
+                "zeroState": reading["zeroState"],
+                "zeroDeltaGrams": reading["zeroDeltaGrams"],
+            }
+        )
 
     @octoprint.plugin.BlueprintPlugin.route("/octoscale/tare", methods=["POST"])
     @no_firstrun_access
