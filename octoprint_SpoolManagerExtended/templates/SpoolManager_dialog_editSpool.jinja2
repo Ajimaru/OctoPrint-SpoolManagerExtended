@@ -788,13 +788,13 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                 <div class="control-group">
                                     <label class="control-label">Weigh</label>
                                     <div class="controls">
-                                        <button type="button" class="btn btn-small" data-bind="click: spoolDialog.toggleOctoScaleWeighing">
+                                        <button type="button" class="btn btn-small" data-bind="click: spoolDialog.toggleOctoScaleWeighing, enable: spoolDialog.octoScaleWeighing.canWeigh">
                                             <i class="fas" data-bind="css: spoolDialog.octoScaleWeighing.isActive() ? 'fa-stop' : 'fa-play'"></i>
                                             <span data-bind="text: spoolDialog.octoScaleWeighing.isActive() ? 'Stop' : 'Read weight'"></span>
                                         </button>
                                         <button type="button" class="btn btn-small"
                                                 data-bind="click: spoolDialog.octoScaleWeighing.tare,
-                                                           enable: spoolDialog.octoScaleWeighing.isActive() && !spoolDialog.octoScaleWeighing.isTaring()">Tare</button>
+                                                           enable: spoolDialog.octoScaleWeighing.canWeigh() && spoolDialog.octoScaleWeighing.isActive() && !spoolDialog.octoScaleWeighing.isTaring()">Tare</button>
                                         <span style="margin-left: 10px; font-size: 15px;" data-bind="text: spoolDialog.octoScaleWeighing.currentWeightText"></span>
                                         {# Two buttons rather than one: a reading alone does not say whether the
                                            user is setting up a full spool or checking how much is left. #}
@@ -822,6 +822,20 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                         </span>
                                         <span class="help-block text-error" style="margin-bottom: 0;" data-bind="visible: spoolDialog.octoScaleWeighing.errorMessage">
                                             <small><i class="fas fa-exclamation-triangle"></i> <span data-bind="text: spoolDialog.octoScaleWeighing.errorMessage"></span></small>
+                                        </span>
+                                        {# Shown instead of a silently greyed-out button: a blocked control has to say
+                                           what would unblock it, and updating the firmware is not guessable. #}
+                                        <span class="help-block text-error" style="margin-bottom: 0;" data-bind="visible: spoolDialog.octoScaleWeighing.firmwareTooOld">
+                                            <small><i class="fas fa-exclamation-triangle"></i> <span data-bind="text: spoolDialog.octoScaleWeighing.firmwareTooOldReason"></span></small>
+                                        </span>
+                                        {# Nothing is blocked here - this only explains why the panel stayed silent
+                                           about the firmware, and offers the one action that can change it. #}
+                                        <span class="help-block muted" style="margin-bottom: 0;" data-bind="visible: spoolDialog.octoScaleWeighing.firmwareUnverified">
+                                            <small>
+                                                <i class="fas fa-info-circle"></i> <span data-bind="text: spoolDialog.octoScaleWeighing.firmwareUnverifiedReason"></span>
+                                                <a href="#" data-bind="click: spoolDialog.octoScaleWeighing.recheckFirmware, visible: !spoolDialog.octoScaleWeighing.firmwareChecking()">Re-check</a>
+                                                <span data-bind="visible: spoolDialog.octoScaleWeighing.firmwareChecking"><i class="fas fa-spinner fa-spin"></i></span>
+                                            </small>
                                         </span>
                                     </div>
                                 </div>
@@ -868,6 +882,18 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                             <button type="button" class="btn btn-small" data-bind="click: spoolDialog.stopTagWriting">Cancel</button>
                                             <div style="margin-top: 4px;" data-bind="visible: !spoolDialog.octoScaleTagWriter.tagPresent()">
                                                 <i class="fas fa-spinner fa-spin"></i> <small>Place a tag on the reader...</small>
+                                            </div>
+                                            {# Firmware state of the reader itself. Too old blocks the buttons above;
+                                               unverified blocks nothing and only explains the silence. #}
+                                            <div class="text-error" style="margin-top: 4px;" data-bind="visible: spoolDialog.octoScaleTagWriter.firmwareTooOld">
+                                                <small><i class="fas fa-exclamation-triangle"></i> <span data-bind="text: spoolDialog.octoScaleTagWriter.firmwareTooOldReason"></span></small>
+                                            </div>
+                                            <div class="muted" style="margin-top: 4px;" data-bind="visible: spoolDialog.octoScaleTagWriter.firmwareUnverified">
+                                                <small>
+                                                    <i class="fas fa-info-circle"></i> <span data-bind="text: spoolDialog.octoScaleTagWriter.firmwareUnverifiedReason"></span>
+                                                    <a href="#" data-bind="click: spoolDialog.octoScaleTagWriter.recheckFirmware, visible: !spoolDialog.octoScaleTagWriter.firmwareChecking()">Re-check</a>
+                                                    <span data-bind="visible: spoolDialog.octoScaleTagWriter.firmwareChecking"><i class="fas fa-spinner fa-spin"></i></span>
+                                                </small>
                                             </div>
                                             <div style="margin-top: 4px;" data-bind="visible: spoolDialog.octoScaleTagWriter.tagPresent">
                                                 <i class="fas fa-check text-success"></i> <small>Tag detected<!--

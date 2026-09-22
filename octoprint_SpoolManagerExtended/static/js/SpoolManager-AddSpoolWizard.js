@@ -1491,6 +1491,13 @@ function SpoolManagerAddSpoolWizard() {
         self.weighingSkipped(false);
         self.vendorTagApplied(false);
 
+        // Learn the firmware verdict before anything is clicked, so a blocked control is
+        // already blocked (and says why) rather than only after the first failed attempt.
+        if (self.isOctoScaleEnabled() && self.octoScaleWeighing != null) {
+            self.octoScaleWeighing.refreshFirmwareVerdict();
+            self.octoScaleTagWriter.refreshFirmwareVerdict();
+        }
+
         // The integration can be enabled from the settings dialog after the page's initial
         // bindings ran. Reload vendor suggestions here so the first wizard opened afterward
         // immediately reflects that setting without requiring a browser reload.

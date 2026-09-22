@@ -317,6 +317,11 @@ class U1RfidManager(object):
         feature unlocks on `filament_detect` being present, so U1-like hardware and
         future models keep working. Never a firmware version check - the paxx12 version
         is not exposed over the API at all.
+
+        That is a statement about THIS device, not a project-wide rule: OctoScale does
+        publish a version over /version and is gated on it (see
+        common/OctoScaleFirmware.py). Here there is nothing to gate on, so capability
+        detection is the only option available.
         """
         chain = {
             self.STAGE_CONNECTOR: False,
@@ -392,7 +397,12 @@ class U1RfidManager(object):
             return None
 
     def _fetchPrinterInfo(self, host, port):
-        """Model/name/firmware for the settings status - informative, never a gate."""
+        """Model/name/firmware for the settings status - informative, never a gate.
+
+        The firmware string here is the printer's, not the paxx12 reader's, so it says
+        nothing about whether RFID reading will work. Contrast OctoScale, whose /version
+        does describe the device being gated - see common/OctoScaleFirmware.py.
+        """
         payload = self._httpGet(host, port, "/machine/system_info")
         if not payload:
             return {}
