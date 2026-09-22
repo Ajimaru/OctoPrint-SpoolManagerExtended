@@ -33,11 +33,24 @@ STATUS_OK = "ok"
 STATUS_TOO_OLD = "tooOld"
 STATUS_UNKNOWN = "unknown"
 
-# Deliberately tolerant: it looks for the first "<major>.<minor>.<patch>" anywhere in the
-# body rather than anchoring on the "OctoScale " prefix or the "(Build ...)" tail. Both of
-# those are firmware cosmetics that have changed before and carry no meaning for this
-# decision, so depending on them would turn a harmless reword into a device-wide block.
-_VERSION_PATTERN = re.compile(r"v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.\-]+))?")
+# Deliberately tolerant about what surrounds the version: it does not anchor on the
+# "OctoScale " prefix or the "(Build ...)" tail, because both are firmware cosmetics that
+# have changed before and carry no meaning for this decision - depending on them would turn
+# a harmless reword into a device-wide block.
+#
+# It IS anchored at the start of the (optionally prefixed) body, which an earlier version
+# was not. A bare search() retries "(\d+)\." at every position, so a body of N digits with
+# no match costs O(N^2): 20k digits measured at 1.8s, 60k at 15.8s, on a thread OctoPrint
+# needs back (CodeQL alert 44). The device only ever puts the version at the front, so
+# scanning the whole body bought nothing and cost exactly that.
+_VERSION_PATTERN = re.compile(
+    r"^[A-Za-z ]{0,32}v?(\d{1,9})\.(\d{1,9})\.(\d{1,9})(?:-([0-9A-Za-z.\-]{1,64}))?"
+)
+
+# A /version answer is one short line. Anything beyond this is not a version string, and
+# reading megabytes into a regex is how the alert above becomes reachable in the first
+# place - so the body is cut before it is ever matched.
+MAX_VERSION_BODY_LENGTH = 256
 
 
 def formatVersion(numbers, suffix=None):
@@ -64,7 +77,11 @@ def parseVersionBody(body):
     if not raw:
         return (None, "OctoScale sent an empty answer")
 
-    match = _VERSION_PATTERN.search(raw)
+    # Truncate before matching, not after: the point is to never hand an oversized string
+    # to the regex engine. A real answer is far below this, so nothing legitimate is lost.
+    raw = raw[:MAX_VERSION_BODY_LENGTH]
+
+    match = _VERSION_PATTERN.match(raw)
     if match is None:
         return (
             None,

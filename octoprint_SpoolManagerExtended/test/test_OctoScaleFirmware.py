@@ -10,6 +10,7 @@
 import importlib.util
 import os
 import sys
+import time
 import types
 import unittest
 
@@ -187,6 +188,57 @@ class TestEvaluateVersionBody(unittest.TestCase):
         self.assertEqual(sorted(reachable.keys()), sorted(unreachable.keys()))
         self.assertEqual(OctoScaleFirmware.STATUS_UNKNOWN, unreachable["status"])
         self.assertEqual("Could not reach OctoScale", unreachable["message"])
+
+
+class TestHostileInput(unittest.TestCase):
+    """The body comes off the network, so a malformed one must stay cheap and harmless.
+
+    CodeQL alert 44: the original pattern used search(), which retries at every position.
+    A body of N digits with no match cost O(N^2) - 20k digits measured at 1.8s, 60k at
+    15.8s, blocking an OctoPrint request thread the whole time.
+    """
+
+    def test_long_digit_run_is_fast(self):
+        # The exact shape CodeQL flagged. The budget is generous on purpose: it is there to
+        # catch a return to quadratic behaviour, not to measure the machine.
+        body = "9" * 100000
+        start = time.time()
+        result = OctoScaleFirmware.evaluateVersionBody(body)
+        elapsed = time.time() - start
+        self.assertEqual(OctoScaleFirmware.STATUS_UNKNOWN, result["status"])
+        self.assertLess(
+            elapsed,
+            1.0,
+            "parsing %d digits took %.2fs - quadratic again?" % (len(body), elapsed),
+        )
+
+    def test_long_suffix_is_fast(self):
+        body = "0.0.4-" + ("a" * 100000)
+        start = time.time()
+        OctoScaleFirmware.evaluateVersionBody(body)
+        self.assertLess(time.time() - start, 1.0)
+
+    def test_oversized_body_is_truncated_before_matching(self):
+        # A version hidden past the limit must not be found: that is the limit working, not
+        # a parsing bug. Anything that far into the body is not a version answer.
+        body = ("x" * OctoScaleFirmware.MAX_VERSION_BODY_LENGTH) + "v0.0.4"
+        self.assertEqual(
+            OctoScaleFirmware.STATUS_UNKNOWN,
+            OctoScaleFirmware.evaluateVersionBody(body)["status"],
+        )
+
+    def test_error_message_never_echoes_the_whole_body(self):
+        # the message is shown in the UI; a megabyte of it must not be
+        result = OctoScaleFirmware.evaluateVersionBody("q" * 100000)
+        self.assertLess(len(result["message"]), 200)
+
+    def test_absurd_version_numbers_do_not_crash(self):
+        # int() on an unbounded digit run is its own denial of service
+        result = OctoScaleFirmware.evaluateVersionBody(("9" * 5000) + ".0.4")
+        self.assertIn(
+            result["status"],
+            (OctoScaleFirmware.STATUS_OK, OctoScaleFirmware.STATUS_UNKNOWN),
+        )
 
 
 class TestFormatVersion(unittest.TestCase):

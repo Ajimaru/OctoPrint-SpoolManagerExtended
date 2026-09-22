@@ -1650,9 +1650,20 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 ),
             )
         except requests.exceptions.Timeout:
-            return (None, "OctoScale did not answer in time (" + url + ")")
+            # URL goes to the log rather than into the message, same reasoning as below.
+            self._logger.warning("OctoScale: request to " + url + " timed out")
+            return (None, "OctoScale did not answer in time.")
         except requests.exceptions.RequestException as e:
-            return (None, "Could not reach OctoScale: " + str(e))
+            # The exception text carries the full urllib3 chain - internal host, port, and
+            # the underlying OS error - and these messages are handed to the browser and
+            # shown in dialogs (CodeQL alerts 45/46). Log the detail for whoever is
+            # debugging, return a sentence the user can act on.
+            self._logger.warning("OctoScale: request to " + url + " failed: " + str(e))
+            return (
+                None,
+                "Could not reach OctoScale. Check that the device is switched on and"
+                " that its address in the SpoolManager settings is correct.",
+            )
 
         # /nfcwritespool and /nfcwriteid answer 202 "started" for an accepted async write -
         # that is success, not an error, so 2xx is accepted wholesale rather than just 200.

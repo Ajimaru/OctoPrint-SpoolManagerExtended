@@ -146,6 +146,30 @@ class TestFakeMatchesProduction(unittest.TestCase):
                 + " is gone from SpoolManagerAPI.py - update the copy in this test",
             )
 
+    def test_transport_errors_are_not_echoed_to_the_client(self):
+        """CodeQL alerts 45/46: str(e) from requests carried the urllib3 chain - host,
+        port, OS error - into JSON the browser renders. The detail belongs in the log.
+
+        Checked against the source rather than by calling it, because the leak was in a
+        branch that only a dead socket reaches. If this fails, look at whether a new
+        `"... " + str(e)` was handed to a caller that returns it, not at this test.
+        """
+        source = self._productionSource()
+        start = source.index("def _callOctoScale(")
+        end = source.index("def _octoScaleWeightOrError(")
+        body = source[start:end]
+
+        self.assertNotIn(
+            'return (None, "Could not reach OctoScale: " + str(e))',
+            body,
+            "the raw exception text is being returned to the caller again",
+        )
+        self.assertIn(
+            "self._logger.warning(",
+            body,
+            "the exception detail must still be logged, only not returned",
+        )
+
     def test_reprobe_condition_still_matches(self):
         # The single most important line: drop the "unknown" clause and the recovery path
         # from a powered-off device disappears, with every test here still passing.
