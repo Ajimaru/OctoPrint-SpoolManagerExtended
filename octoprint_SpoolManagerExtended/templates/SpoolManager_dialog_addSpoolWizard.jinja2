@@ -319,11 +319,11 @@
                      data-bind="visible: isOctoScaleEnabled">
                     <strong>{{ _('Weigh with OctoScale') }}</strong>
                     <div style="margin-top: 8px;">
-                        <button type="button" class="btn btn-small" data-bind="click: toggleWeighing">
+                        <button type="button" class="btn btn-small" data-bind="click: toggleWeighing, enable: octoScaleWeighing.canWeigh">
                             <i class="fas" data-bind="css: octoScaleWeighing.isActive() ? 'fa-stop' : 'fa-play'"></i>
                             <span data-bind="text: octoScaleWeighing.isActive() ? '{{ _('Stop reading') }}' : '{{ _('Read weight') }}'"></span>
                         </button>
-                        <button type="button" class="btn btn-small" data-bind="click: octoScaleWeighing.tare, enable: octoScaleWeighing.isActive() && !octoScaleWeighing.isTaring()">
+                        <button type="button" class="btn btn-small" data-bind="click: octoScaleWeighing.tare, enable: octoScaleWeighing.canWeigh() && octoScaleWeighing.isActive() && !octoScaleWeighing.isTaring()">
                             {{ _('Tare') }}
                         </button>
                         <span style="margin-left: 12px; font-size: 18px;" data-bind="text: octoScaleWeighing.currentWeightText"></span>
@@ -339,6 +339,18 @@
                     </div>
                     <div class="text-error" style="margin-top: 6px;" data-bind="visible: octoScaleWeighing.errorMessage">
                         <i class="fas fa-exclamation-triangle"></i> <span data-bind="text: octoScaleWeighing.errorMessage"></span>
+                    </div>
+                    {# Shown instead of a silently greyed-out button: a blocked control has to say
+                       what would unblock it, and updating the firmware is not guessable. #}
+                    <div class="text-error" style="margin-top: 6px;" data-bind="visible: octoScaleWeighing.firmwareTooOld">
+                        <i class="fas fa-exclamation-triangle"></i> <span data-bind="text: octoScaleWeighing.firmwareTooOldReason"></span>
+                    </div>
+                    {# Nothing is blocked here - this only explains why the panel stayed silent
+                       about the firmware, and offers the one action that can change it. #}
+                    <div class="muted" style="margin-top: 6px;" data-bind="visible: octoScaleWeighing.firmwareUnverified">
+                        <i class="fas fa-info-circle"></i> <span data-bind="text: octoScaleWeighing.firmwareUnverifiedReason"></span>
+                        <a href="#" data-bind="click: octoScaleWeighing.recheckFirmware, visible: !octoScaleWeighing.firmwareChecking()">{{ _('Re-check') }}</a>
+                        <span data-bind="visible: octoScaleWeighing.firmwareChecking"><i class="fas fa-spinner fa-spin"></i></span>
                     </div>
                 </div>
 

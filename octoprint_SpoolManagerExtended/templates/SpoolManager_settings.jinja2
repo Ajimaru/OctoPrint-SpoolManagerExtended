@@ -943,6 +943,34 @@ FPE;	2.16
                         </span>
                     </div>
                 </div>
+                <div class="control-group" data-bind="visible: octoScaleFirmwareTooOld">
+                    <div class="controls">
+                        <div class="alert alert-error">
+                            <strong>{{ _('OctoScale firmware is too old') }}</strong><br>
+                            {{ _('The device reports') }}
+                            <span data-bind="text: octoScaleFirmwareVersion"></span>,
+                            {{ _('but this plugin requires') }}
+                            <span data-bind="text: octoScaleFirmwareRequired"></span>
+                            {{ _('or newer. Weighing, tare and NFC tag reading and writing stay disabled until the device firmware is updated.') }}
+                            <div style="margin-top: 8px;">
+                                <button class="btn btn-small" data-bind="click: recheckOctoScaleFirmware, enable: !octoScaleFirmwareChecking()">
+                                    <i class="fas fa-spinner fa-spin" data-bind="visible: octoScaleFirmwareChecking"></i>
+                                    {{ _('Re-check firmware') }}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="control-group" data-bind="visible: octoScaleFirmwareUnverified">
+                    <div class="controls">
+                        <span class="help-block muted" style="margin-bottom: 0;">
+                            <i class="fas fa-info-circle"></i>
+                            {{ _('Firmware not checked yet - the device did not answer. It is not blocked; this only means its version is unknown.') }}
+                            <a href="#" data-bind="click: recheckOctoScaleFirmware, visible: !octoScaleFirmwareChecking()">{{ _('Re-check') }}</a>
+                            <span data-bind="visible: octoScaleFirmwareChecking"><i class="fas fa-spinner fa-spin"></i></span>
+                        </span>
+                    </div>
+                </div>
                 <div class="control-group">
                     <label class="control-label">{{ _('NFC tag format (writing)') }}</label>
                     <div class="controls">

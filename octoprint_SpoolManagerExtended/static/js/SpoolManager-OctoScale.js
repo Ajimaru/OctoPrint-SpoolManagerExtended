@@ -47,12 +47,117 @@ const OCTOSCALE_ZERO_STATE_WARNINGS = {
         "Zero point not verified - the reading at startup was too unsteady to check it."
 };
 
+// Shown wherever a firmware that is too old blocks something. The required version is
+// filled in from the backend answer rather than hardcoded, so raising the minimum stays a
+// one-line change in common/OctoScaleFirmware.py.
+const OCTOSCALE_FIRMWARE_TOO_OLD_REASON =
+    "The OctoScale firmware is too old for this plugin. Update the device firmware, then" +
+    " re-check it in the SpoolManager settings.";
+
+// Shown when no version could be read at all. States the situation and its consequence
+// without demanding anything: nothing is blocked here, and the most common cause is a
+// device that is simply switched off.
+const OCTOSCALE_FIRMWARE_UNVERIFIED_REASON =
+    "OctoScale firmware not verified - the device did not answer. Weighing and NFC may not" +
+    " work until it is reachable.";
+
+// Adds firmwareTooOld() to a viewmodel that has an apiClient, plus a refresh function to
+// call when the viewmodel becomes active. Shared by the weighing and tag-writer viewmodels
+// so both read one verdict from one place.
+//
+// Only "tooOld" blocks: an unknown verdict (device unreachable, unreadable answer) leaves
+// everything enabled on purpose, so a device that was off when OctoPrint started does not
+// lock the user out with no way back. The backend gate fails open the same way - see
+// _getOctoScaleBaseUrlChecked in SpoolManagerAPI.py.
+function octoScaleAttachFirmwareVerdict(self) {
+    self.firmwareStatus = ko.observable("unknown");
+    self.firmwareVersion = ko.observable(null);
+    self.firmwareRequiredVersion = ko.observable(null);
+    self.firmwareChecking = ko.observable(false);
+    // Whether the backend considers OctoScale configured at all. Starts false so nothing
+    // is claimed before the first answer arrives - an unconfigured install must never be
+    // told about hardware it does not have.
+    self.firmwareDeviceConfigured = ko.observable(false);
+
+    self.firmwareTooOld = ko.pureComputed(function () {
+        return self.firmwareStatus() === "tooOld";
+    });
+
+    // "We could not read a version" - the device was off, unreachable, or answered with
+    // something unparseable. Deliberately NOT a block (see OctoScaleFirmware.py): it is
+    // shown so the silence is explained, not to stop anyone from trying.
+    self.firmwareUnverified = ko.pureComputed(function () {
+        return (
+            self.firmwareDeviceConfigured() === true &&
+            self.firmwareStatus() === "unknown"
+        );
+    });
+
+    self.firmwareUnverifiedReason = ko.pureComputed(function () {
+        if (self.firmwareUnverified() !== true) {
+            return null;
+        }
+        return OCTOSCALE_FIRMWARE_UNVERIFIED_REASON;
+    });
+
+    self.firmwareTooOldReason = ko.pureComputed(function () {
+        if (self.firmwareTooOld() !== true) {
+            return null;
+        }
+        var have = self.firmwareVersion();
+        var need = self.firmwareRequiredVersion();
+        if (have && need) {
+            return (
+                "OctoScale firmware " +
+                have +
+                " is too old - " +
+                need +
+                " or newer is required. Update the device firmware."
+            );
+        }
+        return OCTOSCALE_FIRMWARE_TOO_OLD_REASON;
+    });
+
+    // recheck=false reads the cached verdict and never waits on the device; recheck=true is
+    // the explicit "ask it again" behind the Re-check buttons, which can take a few seconds
+    // against a device that is still off.
+    self.refreshFirmwareVerdict = function (recheck) {
+        if (self.apiClient == null || self.apiClient.getOctoScaleFirmwareStatus == null) {
+            return;
+        }
+        self.firmwareChecking(true);
+        self.apiClient.getOctoScaleFirmwareStatus(
+            recheck === true,
+            function (responseData) {
+                self.firmwareChecking(false);
+                if (responseData == null || responseData.success !== true) {
+                    return;
+                }
+                self.firmwareStatus(responseData.status || "unknown");
+                self.firmwareVersion(responseData.firmwareVersion || null);
+                self.firmwareRequiredVersion(responseData.requiredVersion || null);
+                // Both flags must hold: "enabled but no address" is not something to nag
+                // about in a spool dialog either.
+                self.firmwareDeviceConfigured(
+                    responseData.enabled === true && responseData.configured === true
+                );
+            }
+        );
+    };
+
+    self.recheckFirmware = function () {
+        self.refreshFirmwareVerdict(true);
+    };
+}
+
 function SpoolManagerOctoScaleWeighing(apiClient, pluginSettings) {
     var self = this;
 
     self.apiClient = apiClient;
     // only used to pick the unit of the readout label; currentWeight() stays in grams
     self.pluginSettings = pluginSettings;
+
+    octoScaleAttachFirmwareVerdict(self);
 
     self.isActive = ko.observable(false);
     self.currentWeight = ko.observable(null);
@@ -129,9 +234,29 @@ function SpoolManagerOctoScaleWeighing(apiClient, pluginSettings) {
         self.isActive(true);
         self.errorMessage(null);
         consecutiveFailures = 0;
+        // Asynchronous, so polling starts immediately rather than waiting on it. A verdict
+        // that arrives as "tooOld" stops the poll below; until then the backend refuses
+        // each call anyway, so nothing can slip through the gap.
+        self.refreshFirmwareVerdict();
         readWeight();
         pollTimerId = setInterval(readWeight, OCTOSCALE_WEIGHT_POLL_INTERVAL_MS);
     };
+
+    // A too-old firmware makes every /weight call a 409, so polling it once a second would
+    // only produce noise. Stop the timer and leave the reason on screen instead.
+    self.firmwareTooOld.subscribe(function (tooOld) {
+        if (tooOld === true && pollTimerId != null) {
+            clearInterval(pollTimerId);
+            pollTimerId = null;
+            self.currentWeight(null);
+            self.errorMessage(self.firmwareTooOldReason());
+        }
+    });
+
+    // Weighing and tare both need a device that works; the button bindings read this.
+    self.canWeigh = ko.pureComputed(function () {
+        return self.firmwareTooOld() !== true;
+    });
 
     self.stop = function () {
         if (pollTimerId != null) {
@@ -390,6 +515,8 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
     // Only used to decide whether the "read tag" affordance is offered at all; the backend
     // enforces the same setting, this just avoids showing a button that would be refused.
     self.pluginSettings = pluginSettings;
+
+    octoScaleAttachFirmwareVerdict(self);
 
     self.isActive = ko.observable(false);
     self.tagPresent = ko.observable(false);
@@ -828,6 +955,10 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
     // attempted - the button being disabled is self-explanatory, a click that does nothing is
     // not. Mirrors canWrite()'s order so the reason names the guard that actually stopped it.
     self.blockedWriteReason = ko.pureComputed(function () {
+        // First, because it is the one blocker no action in this dialog can resolve.
+        if (self.firmwareTooOld()) {
+            return self.firmwareTooOldReason();
+        }
         if (self.targetDatabaseId() == null) {
             return "Save the spool first - it needs a database id before a tag can be written.";
         }
@@ -854,6 +985,9 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
     });
 
     self.canWrite = ko.pureComputed(function () {
+        if (self.firmwareTooOld()) {
+            return false;
+        }
         if (self.isWriting() || self.targetDatabaseId() == null) {
             return false;
         }
@@ -896,6 +1030,7 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
     // for.
     self.canAttemptWrite = ko.pureComputed(function () {
         return (
+            self.firmwareTooOld() != true &&
             self.isWriting() != true &&
             self.targetDatabaseId() != null &&
             self.tagPresent() === true &&
@@ -1007,6 +1142,7 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
         }
         self.isActive(true);
         consecutiveFailures = 0;
+        self.refreshFirmwareVerdict();
         readNfcStatus();
         pollTimerId = setInterval(readNfcStatus, OCTOSCALE_NFC_POLL_INTERVAL_MS);
     };
@@ -1103,6 +1239,7 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
 
     self.canReadTag = ko.pureComputed(function () {
         return (
+            self.firmwareTooOld() !== true &&
             self.tagReadingEnabled() === true &&
             self.tagPresent() === true &&
             self.isReadingTag() !== true &&

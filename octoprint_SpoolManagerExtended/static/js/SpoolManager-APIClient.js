@@ -505,6 +505,34 @@ function SpoolManagerExtendedAPIClient(pluginId, baseUrl) {
         );
     };
 
+    // Reports the cached firmware verdict without touching the device. recheck=true forces
+    // a fresh probe, which is what the "Re-check" button in the settings uses after a
+    // device was powered on or reflashed.
+    this.getOctoScaleFirmwareStatus = function (recheck, responseHandler) {
+        var url = _buildPluginUrl("octoscale/firmwareStatus");
+        if (recheck === true) {
+            url += "?recheck=true";
+        }
+
+        _callApi(
+            url,
+            {method: "GET"},
+            function (data) {
+                responseHandler(
+                    data || {success: false, error: "No answer from the plugin backend."}
+                );
+            },
+            function (body, rawText) {
+                responseHandler(
+                    body || {
+                        success: false,
+                        error: rawText || "Could not read the OctoScale firmware status."
+                    }
+                );
+            }
+        );
+    };
+
     this.getOctoScaleWeight = function (responseHandler) {
         _callApi(
             _buildPluginUrl("octoscale/weight"),

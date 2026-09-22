@@ -29,6 +29,7 @@ from octoprint_SpoolManagerExtended.common import (
     FilamentTagParsers,
     FilamentTagReader,
     FilamentTagToSpool,
+    OctoScaleFirmware,
     OctoScaleUrl,
     OctoScaleWeight,
     OpenPrintTag,
@@ -1487,6 +1488,14 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
     def _getOctoScaleBaseUrl(self):
         # Returns (baseUrl, errorResponse). errorResponse is None when OctoScale is usable.
+        #
+        # This checks configuration only, not the device. Callers that talk to the device
+        # should use _getOctoScaleBaseUrlChecked() below, which adds the firmware gate.
+        #
+        # The "reason" field on the error bodies is the machine-readable form of "error":
+        # the frontend needs to tell "not configured" apart from "firmware too old" to
+        # decide what to say and what to offer, and matching on the prose would break the
+        # moment the wording changes.
         if not self._settings.get_boolean(
             [SettingsKeys.SETTINGS_KEY_OCTOSCALE_ENABLED]
         ):
@@ -1496,6 +1505,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                     jsonify(
                         {
                             "success": False,
+                            "reason": "notEnabled",
                             "error": "OctoScale is not enabled in the SpoolManager settings.",
                         }
                     ),
@@ -1512,6 +1522,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                     jsonify(
                         {
                             "success": False,
+                            "reason": "noAddress",
                             "error": "No OctoScale address configured in the SpoolManager settings.",
                         }
                     ),
@@ -1519,6 +1530,101 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 ),
             )
         return (baseUrl, None)
+
+    # The firmware verdict for the currently configured device, or None before the first
+    # probe. Shape is whatever OctoScaleFirmware.evaluateVersionBody() returns, plus the
+    # "checkedUrl" it was obtained from - a cached verdict must never be read as applying
+    # to an address it was not measured against.
+    #
+    # Held on the instance rather than in the settings on purpose: the verdict describes a
+    # device that may be swapped, reflashed or powered off between restarts, so persisting
+    # it would mean serving a stale block after the user already fixed the cause.
+    _octoScaleFirmwareLock = threading.Lock()
+
+    def _getOctoScaleFirmwareCache(self):
+        # Lazily created: this mixin has no __init__ of its own.
+        return getattr(self, "_octoScaleFirmwareState", None)
+
+    def _setOctoScaleFirmwareCache(self, baseUrl, verdict):
+        entry = dict(verdict)
+        entry["checkedUrl"] = baseUrl
+        with self._octoScaleFirmwareLock:
+            self._octoScaleFirmwareState = entry
+        return entry
+
+    def invalidateOctoScaleFirmwareCache(self):
+        # Called when the address or the enabled flag changes - see on_settings_save.
+        with self._octoScaleFirmwareLock:
+            self._octoScaleFirmwareState = None
+
+    def _probeOctoScaleFirmware(self, baseUrl):
+        # Asks the device for its version and caches the verdict. Returns the cache entry.
+        # Never raises: a probe that fails yields an "unknown" verdict, which by design
+        # blocks nothing (see OctoScaleFirmware.evaluateVersionBody).
+        response, errorMessage = self._callOctoScale(baseUrl, "/version")
+        if errorMessage is not None:
+            verdict = OctoScaleFirmware.evaluateUnreachable(errorMessage)
+        else:
+            verdict = OctoScaleFirmware.evaluateVersionBody(response.text)
+
+        if verdict["status"] == OctoScaleFirmware.STATUS_TOO_OLD:
+            self._logger.warning(
+                "OctoScale at "
+                + str(baseUrl)
+                + " reports firmware "
+                + str(verdict["firmwareVersion"])
+                + ", which is older than the required "
+                + str(verdict["requiredVersion"])
+                + " - OctoScale features are blocked."
+            )
+        return self._setOctoScaleFirmwareCache(baseUrl, verdict)
+
+    def getOctoScaleFirmwareVerdict(self, baseUrl, forceRecheck=False):
+        # Returns the cache entry, probing when there is nothing usable cached for this
+        # address. A cached "unknown" is re-probed rather than reused: it means the device
+        # was unreachable at the time, and the whole point is that the user gets back in
+        # as soon as it answers again, without restarting OctoPrint.
+        cached = self._getOctoScaleFirmwareCache()
+        if (
+            forceRecheck
+            or cached is None
+            or cached.get("checkedUrl") != baseUrl
+            or cached.get("status") == OctoScaleFirmware.STATUS_UNKNOWN
+        ):
+            return self._probeOctoScaleFirmware(baseUrl)
+        return cached
+
+    def _getOctoScaleBaseUrlChecked(self):
+        # Returns (baseUrl, errorResponse), same contract as _getOctoScaleBaseUrl, and
+        # additionally refuses a device whose firmware is known to be too old.
+        #
+        # Deliberately fails OPEN on an unknown version: only a version that was actually
+        # read and found too old blocks anything. An unreachable device stays usable and
+        # fails with its own transport error, so an OctoPrint restart while the device is
+        # powered off cannot lock the user out of every OctoScale feature.
+        baseUrl, errorResponse = self._getOctoScaleBaseUrl()
+        if errorResponse is not None:
+            return (None, errorResponse)
+
+        verdict = self.getOctoScaleFirmwareVerdict(baseUrl)
+        if verdict["status"] != OctoScaleFirmware.STATUS_TOO_OLD:
+            return (baseUrl, None)
+
+        return (
+            None,
+            make_response(
+                jsonify(
+                    {
+                        "success": False,
+                        "reason": "firmwareTooOld",
+                        "error": verdict["message"],
+                        "firmwareVersion": verdict["firmwareVersion"],
+                        "requiredVersion": verdict["requiredVersion"],
+                    }
+                ),
+                409,
+            ),
+        )
 
     def _normalizeOctoScaleUrl(self, baseUrl):
         # Implementation lives in common/OctoScaleUrl.py so it can be unit-tested without
@@ -1596,13 +1702,81 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         if errorMessage is not None:
             return flask.jsonify({"success": False, "error": errorMessage})
 
-        return flask.jsonify({"success": True, "version": response.text.strip()})
+        rawVersion = response.text.strip()
+        verdict = OctoScaleFirmware.evaluateVersionBody(rawVersion)
+
+        # Only cache when the tested address is the one actually configured: this endpoint
+        # exists so an address can be tried before it is saved, and a throwaway test must
+        # not install a verdict for a device the plugin is not talking to.
+        configuredUrl = self._normalizeOctoScaleUrl(
+            self._settings.get([SettingsKeys.SETTINGS_KEY_OCTOSCALE_URL])
+        )
+        if configuredUrl is not None and configuredUrl == baseUrl:
+            self._setOctoScaleFirmwareCache(baseUrl, verdict)
+
+        # success stays True for a too-old device: the connection genuinely worked, and
+        # reporting it as a connection failure would send the user looking at their network
+        # instead of at their firmware. The verdict rides alongside as its own signal.
+        return flask.jsonify(
+            {
+                "success": True,
+                "version": rawVersion,
+                "firmwareStatus": verdict["status"],
+                "firmwareVersion": verdict["firmwareVersion"],
+                "requiredVersion": verdict["requiredVersion"],
+                "firmwareMessage": verdict["message"],
+            }
+        )
+
+    @octoprint.plugin.BlueprintPlugin.route(
+        "/octoscale/firmwareStatus", methods=["GET"]
+    )
+    @no_firstrun_access
+    def getOctoScaleFirmwareStatus(self):
+        # Lets the dialogs learn the verdict without triggering a weighing or a tag write.
+        # Answers 200 in every case, including "not configured" - this is a status report,
+        # not an attempt to use the device, so a disabled OctoScale is an answer, not an
+        # error.
+        recheck = str(request.args.get("recheck", "")).lower() in ("1", "true", "yes")
+
+        enabled = self._settings.get_boolean(
+            [SettingsKeys.SETTINGS_KEY_OCTOSCALE_ENABLED]
+        )
+        baseUrl = self._normalizeOctoScaleUrl(
+            self._settings.get([SettingsKeys.SETTINGS_KEY_OCTOSCALE_URL])
+        )
+
+        if not enabled or baseUrl is None:
+            return flask.jsonify(
+                {
+                    "success": True,
+                    "enabled": enabled,
+                    "configured": baseUrl is not None,
+                    "status": OctoScaleFirmware.STATUS_UNKNOWN,
+                    "firmwareVersion": None,
+                    "requiredVersion": OctoScaleFirmware.MINIMUM_FIRMWARE_DISPLAY,
+                    "message": None,
+                }
+            )
+
+        verdict = self.getOctoScaleFirmwareVerdict(baseUrl, forceRecheck=recheck)
+        return flask.jsonify(
+            {
+                "success": True,
+                "enabled": True,
+                "configured": True,
+                "status": verdict["status"],
+                "firmwareVersion": verdict["firmwareVersion"],
+                "requiredVersion": verdict["requiredVersion"],
+                "message": verdict["message"],
+            }
+        )
 
     @octoprint.plugin.BlueprintPlugin.route("/octoscale/weight", methods=["GET"])
     @no_firstrun_access
     def getOctoScaleWeight(self):
         # Polled roughly once per second while a weighing panel is open, so it stays quiet in the log.
-        baseUrl, errorResponse = self._getOctoScaleBaseUrl()
+        baseUrl, errorResponse = self._getOctoScaleBaseUrlChecked()
         if errorResponse is not None:
             return errorResponse
 
@@ -1629,7 +1803,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     @octoprint.plugin.BlueprintPlugin.route("/octoscale/tare", methods=["POST"])
     @no_firstrun_access
     def tareOctoScale(self):
-        baseUrl, errorResponse = self._getOctoScaleBaseUrl()
+        baseUrl, errorResponse = self._getOctoScaleBaseUrlChecked()
         if errorResponse is not None:
             return errorResponse
 
@@ -1666,7 +1840,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # writes (see TagFormats.py) with whatever subset actually fit on the tag - used
         # by the UI to show a before/after diff when re-writing a tag that already
         # belongs to the target spool, instead of just warning that data exists.
-        baseUrl, errorResponse = self._getOctoScaleBaseUrl()
+        baseUrl, errorResponse = self._getOctoScaleBaseUrlChecked()
         if errorResponse is not None:
             return errorResponse
 
@@ -1808,7 +1982,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         the wrong conclusion from it. idSource is the device's own "done" signal: empty while
         the read is in flight, non-empty for every finished outcome including "no id at all".
         """
-        baseUrl, errorResponse = self._getOctoScaleBaseUrl()
+        baseUrl, errorResponse = self._getOctoScaleBaseUrlChecked()
         if errorResponse is not None:
             return None
 
@@ -1871,7 +2045,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # getOctoScaleWriteStatus below. Treating this call as synchronous (the previous
         # implementation) never reflected a real result, since the firmware already
         # answered immediately.
-        baseUrl, errorResponse = self._getOctoScaleBaseUrl()
+        baseUrl, errorResponse = self._getOctoScaleBaseUrlChecked()
         if errorResponse is not None:
             return errorResponse
 
@@ -2093,6 +2267,12 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # droppedFields, warning}. The device self-clears "done" once it has been read once, so
         # the frontend must stop polling as soon as done=true comes back (see
         # SpoolManager-OctoScale.js).
+        #
+        # Deliberately NOT firmware-gated, unlike every other device call: by the time this
+        # is polled a write is already running on the tag. Blocking the status read would
+        # leave the user with a started write whose outcome they can never learn, which is
+        # worse than the stale verdict it would be protecting them from. The write itself
+        # is gated in writeOctoScaleTag, which is where the decision belongs.
         baseUrl, errorResponse = self._getOctoScaleBaseUrl()
         if errorResponse is not None:
             return errorResponse
@@ -2307,7 +2487,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 409,
             )
 
-        baseUrl, errorResponse = self._getOctoScaleBaseUrl()
+        baseUrl, errorResponse = self._getOctoScaleBaseUrlChecked()
         if errorResponse is not None:
             return errorResponse
 

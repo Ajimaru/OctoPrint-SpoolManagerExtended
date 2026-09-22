@@ -8,6 +8,7 @@ import re
 import shutil
 import socket
 import sqlite3
+import threading
 import time
 import xml.etree.ElementTree as ET
 import zipfile
@@ -2163,7 +2164,38 @@ class SpoolmanagerPlugin(
         # U1 RFID: evaluate the detection chain and start the reader if everything lines
         # up. Never blocks startup - an unreachable U1 just leaves the reader idle.
         self._u1RfidManager.initialize()
+
+        # OctoScale: learn the device's firmware version once, so a too-old device is
+        # already known before the user opens a dialog and clicks something.
+        self._scheduleOctoScaleFirmwareProbe()
         pass
+
+    def _scheduleOctoScaleFirmwareProbe(self):
+        # Probes the OctoScale firmware version off the calling thread. Always off-thread:
+        # an unreachable device costs OCTOSCALE_TIMEOUT_SECONDS (8s), which must not be
+        # added to OctoPrint's startup or to a settings save.
+        #
+        # Failure is not propagated anywhere - a probe that cannot reach the device leaves
+        # the verdict "unknown", which blocks nothing by design (see OctoScaleFirmware).
+        if not self._settings.get_boolean(
+            [SettingsKeys.SETTINGS_KEY_OCTOSCALE_ENABLED]
+        ):
+            return
+        baseUrl = self._normalizeOctoScaleUrl(
+            self._settings.get([SettingsKeys.SETTINGS_KEY_OCTOSCALE_URL])
+        )
+        if baseUrl is None:
+            return
+
+        def probe():
+            try:
+                self._probeOctoScaleFirmware(baseUrl)
+            except Exception as e:
+                self._logger.warning("OctoScale: firmware probe failed: " + str(e))
+
+        threading.Thread(
+            target=probe, name="SpoolManager-OctoScaleFirmware", daemon=True
+        ).start()
 
     def on_shutdown(self):
         u1RfidManager = getattr(self, "_u1RfidManager", None)
@@ -2277,8 +2309,29 @@ class SpoolmanagerPlugin(
             self._settings.get([SettingsKeys.SETTINGS_KEY_MQTT_INSTANCE_NAME]),
         )
 
+        # capture the old OctoScale identity, so a cached firmware verdict cannot outlive
+        # the device it was measured on
+        oldOctoScaleIdentity = (
+            self._settings.get_boolean([SettingsKeys.SETTINGS_KEY_OCTOSCALE_ENABLED]),
+            self._normalizeOctoScaleUrl(
+                self._settings.get([SettingsKeys.SETTINGS_KEY_OCTOSCALE_URL])
+            ),
+        )
+
         # # default save function
         octoprint.plugin.SettingsPlugin.on_settings_save(self, data)
+
+        newOctoScaleIdentity = (
+            self._settings.get_boolean([SettingsKeys.SETTINGS_KEY_OCTOSCALE_ENABLED]),
+            self._normalizeOctoScaleUrl(
+                self._settings.get([SettingsKeys.SETTINGS_KEY_OCTOSCALE_URL])
+            ),
+        )
+        if oldOctoScaleIdentity != newOctoScaleIdentity:
+            # Pointing at a different device, or turning the feature on, makes any cached
+            # verdict meaningless - drop it and measure the new target.
+            self.invalidateOctoScaleFirmwareCache()
+            self._scheduleOctoScaleFirmwareProbe()
 
         # Clean up any offsets that are turned off
         newToolOffsetEnabled = self._settings.get_boolean(

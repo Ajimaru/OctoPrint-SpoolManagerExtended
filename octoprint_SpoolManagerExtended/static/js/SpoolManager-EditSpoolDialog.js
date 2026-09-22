@@ -2123,6 +2123,12 @@ function SpoolManagerExtendedEditSpoolDialog() {
     ) {
         self.autoUpdateEnabled = false;
         self.closeDialogHandler = closeDialogHandler;
+        // Learn the firmware verdict before anything is clicked, so a blocked control is
+        // already blocked (and says why) rather than only after the first failed attempt.
+        if (self.isOctoScaleEnabled() && self.octoScaleWeighing != null) {
+            self.octoScaleWeighing.refreshFirmwareVerdict();
+            self.octoScaleTagWriter.refreshFirmwareVerdict();
+        }
         // is this spool currently loaded into a tool slot? -> block deletion (see delete button binding)
         self.isLoadedInTool(isLoadedInTool === true);
         // get the current tool caunt

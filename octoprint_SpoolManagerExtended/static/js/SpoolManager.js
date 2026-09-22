@@ -427,6 +427,51 @@ $(function () {
         self.octoScaleTestFailed = ko.observable(false);
         self.octoScaleTestResultMessage = ko.observable("");
 
+        // - OctoScale firmware verdict. "unknown" is the starting point and is NOT a
+        // problem state: it only means nobody has read a version yet, and nothing is
+        // blocked on it (the backend fails open the same way, see OctoScaleFirmware.py).
+        self.octoScaleFirmwareStatus = ko.observable("unknown");
+        self.octoScaleFirmwareVersion = ko.observable(null);
+        self.octoScaleFirmwareRequired = ko.observable(null);
+        self.octoScaleFirmwareChecking = ko.observable(false);
+
+        // Mirrors firmwareDeviceConfigured in SpoolManager-OctoScale.js: nothing is said
+        // about firmware until the backend confirms there is a device to say it about.
+        self.octoScaleFirmwareConfigured = ko.observable(false);
+
+        // The single truth the banner and every disabled button read from.
+        self.octoScaleFirmwareTooOld = ko.pureComputed(function () {
+            return self.octoScaleFirmwareStatus() === "tooOld";
+        });
+
+        // No version could be read. Blocks nothing - it exists so a silent panel has an
+        // explanation, which is what a switched-off device otherwise looks like.
+        self.octoScaleFirmwareUnverified = ko.pureComputed(function () {
+            return (
+                self.octoScaleFirmwareConfigured() === true &&
+                self.octoScaleFirmwareStatus() === "unknown"
+            );
+        });
+
+        var applyFirmwareVerdict = function (responseData) {
+            if (responseData == null) {
+                return;
+            }
+            var status = responseData.firmwareStatus || responseData.status;
+            if (status) {
+                self.octoScaleFirmwareStatus(status);
+            }
+            self.octoScaleFirmwareVersion(responseData.firmwareVersion || null);
+            self.octoScaleFirmwareRequired(responseData.requiredVersion || null);
+            // Only the status endpoint reports these; testConnection does not, and there
+            // the user just proved there is a device by testing it.
+            if (responseData.enabled != null) {
+                self.octoScaleFirmwareConfigured(
+                    responseData.enabled === true && responseData.configured === true
+                );
+            }
+        };
+
         self.testOctoScaleConnection = function () {
             self.octoScaleTestSuccess(false);
             self.octoScaleTestFailed(false);
@@ -443,6 +488,9 @@ $(function () {
                         self.octoScaleTestResultMessage(
                             responseData.version ? "(" + responseData.version + ")" : ""
                         );
+                        // A too-old device still answered, so this stays a successful
+                        // connection - the firmware banner below says what is wrong.
+                        applyFirmwareVerdict(responseData);
                     } else {
                         self.octoScaleTestFailed(true);
                         self.octoScaleTestResultMessage(
@@ -450,9 +498,40 @@ $(function () {
                                 ? responseData.error
                                 : "Connection failed."
                         );
+                        // An address that does not answer tells us nothing about its
+                        // firmware, so the verdict goes back to "unknown" rather than
+                        // keeping a verdict measured on some earlier device.
+                        //
+                        // octoScaleFirmwareConfigured is left alone on purpose: the failed
+                        // test already shows its own error right here, and flipping this
+                        // would stack a second "not verified" line underneath saying the
+                        // same thing in weaker words.
+                        self.octoScaleFirmwareStatus("unknown");
+                        self.octoScaleFirmwareVersion(null);
                     }
                 }
             );
+        };
+
+        // Reads the verdict the backend already holds. Called when the settings dialog
+        // opens; recheck=true is the "Re-check" button, which is the way back for a device
+        // that was switched on after OctoPrint had already started.
+        self.refreshOctoScaleFirmwareStatus = function (recheck) {
+            if (self.apiClient == null) {
+                return;
+            }
+            self.octoScaleFirmwareChecking(true);
+            self.apiClient.getOctoScaleFirmwareStatus(
+                recheck === true,
+                function (responseData) {
+                    self.octoScaleFirmwareChecking(false);
+                    applyFirmwareVerdict(responseData);
+                }
+            );
+        };
+
+        self.recheckOctoScaleFirmware = function () {
+            self.refreshOctoScaleFirmwareStatus(true);
         };
 
         // Collapsed by default - purely a "what does each format actually write" reference
@@ -3137,6 +3216,10 @@ $(function () {
             // The key fields cannot show their own values (admin-restricted), so the status
             // beside them is the only feedback that a stored key exists and validates.
             self.loadOctoScaleTagKeyStatus();
+            // Cached verdict only - no device call, so opening the settings never stalls
+            // on an unreachable OctoScale. The "Re-check" button is the explicit way to
+            // ask the device again.
+            self.refreshOctoScaleFirmwareStatus(false);
             // Never prefill the inputs from a previous visit - an empty field means "leave
             // whatever is stored alone", and a leftover value would silently resave it.
             self.octoScaleTagKeyBambuSalt("");
