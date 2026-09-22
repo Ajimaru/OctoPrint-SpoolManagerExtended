@@ -28,7 +28,11 @@ from octoprint.util.version import (
 
 from octoprint_SpoolManagerExtended.api import Transformer
 from octoprint_SpoolManagerExtended.api.SpoolManagerAPI import SpoolManagerAPI
-from octoprint_SpoolManagerExtended.common import FilamentTagConstants, StringUtils
+from octoprint_SpoolManagerExtended.common import (
+    ErrorMessages,
+    FilamentTagConstants,
+    StringUtils,
+)
 from octoprint_SpoolManagerExtended.common.EventBusKeys import EventBusKeys
 from octoprint_SpoolManagerExtended.common.FilamentDatabaseService import (
     FilamentDatabaseService,
@@ -478,9 +482,10 @@ class SpoolmanagerPlugin(
                     "Migrated %s entries from '%s' to '%s' (originals kept)"
                     % (copiedFiles, legacyDataFolder, newDataFolder)
                 )
-        except Exception as e:
+        except Exception:
+            # str(e) of an OSError names both absolute data folder paths
             self._logger.exception("Legacy data migration failed")
-            return failure("Could not copy the data folder: " + str(e))
+            return failure(ErrorMessages.userFacingError("copy the data folder"))
 
         settingsMigrated = False
         previousSettings = {}
@@ -495,10 +500,12 @@ class SpoolmanagerPlugin(
                     "Migrated settings from 'plugins.%s' to 'plugins.%s'"
                     % (LEGACY_IDENTIFIER, self._identifier)
                 )
-        except Exception as e:
+        except Exception:
             self._logger.exception("Legacy settings migration failed")
             return failure(
-                "Data was copied, but the settings could not be migrated: " + str(e)
+                ErrorMessages.userFacingError(
+                    "migrate the settings", "The data was copied."
+                )
             )
 
         # Written whenever something was actually migrated, not only when files were
@@ -662,11 +669,11 @@ class SpoolmanagerPlugin(
                 self._settings.set([key], selectedValues[key])
             self._settings.save()
             self._writeUndoRecord("settings", [], previousSettings)
-        except Exception as e:
+        except Exception:
             self._logger.exception("Applying legacy settings failed")
             return {
                 "success": False,
-                "errorMessage": "Could not apply the settings: " + str(e),
+                "errorMessage": ErrorMessages.userFacingError("apply the settings"),
                 "appliedCount": 0,
             }
 
@@ -696,11 +703,12 @@ class SpoolmanagerPlugin(
         try:
             with open(undoFilePath) as undoFile:
                 record = json.load(undoFile)
-        except Exception as e:
+        except Exception:
+            # JSONDecodeError text, or an OSError naming the plugin data folder
             self._logger.exception("Could not read the migration undo record")
             return {
                 "success": False,
-                "errorMessage": "Could not read the undo record: " + str(e),
+                "errorMessage": ErrorMessages.userFacingError("read the undo record"),
                 "restoredFiles": 0,
                 "restoredSettings": 0,
             }
@@ -717,11 +725,11 @@ class SpoolmanagerPlugin(
                     os.remove(targetPath)
                 os.rename(backupPath, targetPath)
                 restoredFiles += 1
-        except Exception as e:
+        except Exception:
             self._logger.exception("Restoring the replaced files failed")
             return {
                 "success": False,
-                "errorMessage": "Could not restore the files: " + str(e),
+                "errorMessage": ErrorMessages.userFacingError("restore the files"),
                 "restoredFiles": restoredFiles,
                 "restoredSettings": 0,
             }
@@ -736,12 +744,13 @@ class SpoolmanagerPlugin(
                 restoredSettings += 1
             if previousSettings:
                 self._settings.save()
-        except Exception as e:
+        except Exception:
             self._logger.exception("Restoring the previous settings failed")
             return {
                 "success": False,
-                "errorMessage": "Files were restored, but the settings were not: "
-                + str(e),
+                "errorMessage": ErrorMessages.userFacingError(
+                    "restore the settings", "The files were restored."
+                ),
                 "restoredFiles": restoredFiles,
                 "restoredSettings": restoredSettings,
             }
