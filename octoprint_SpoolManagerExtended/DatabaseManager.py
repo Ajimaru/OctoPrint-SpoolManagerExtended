@@ -20,7 +20,7 @@ from peewee import (
 from playhouse.shortcuts import model_to_dict
 
 from octoprint_SpoolManagerExtended.api import Transformer
-from octoprint_SpoolManagerExtended.common import StringUtils
+from octoprint_SpoolManagerExtended.common import ErrorMessages, StringUtils
 from octoprint_SpoolManagerExtended.models.PluginMetaDataModel import (
     PluginMetaDataModel,
 )
@@ -1000,7 +1000,10 @@ class DatabaseManager(object):
             # 	self._isConnected = True
             self._isConnected = True
         except Exception as e:
-            errorMessage = str(e)
+            # _currentErrorMessageDict is shown to the user (connection-problem popup in
+            # __init__.py) and appended to several API error bodies, so the raw driver text -
+            # host, port, user, internals - must not go in. The full exception is in the log.
+            errorMessage = ErrorMessages.classifyConnectionError(e)
             self._logger.exception("connectoToDatabase")
             self.closeDatabase()
             # type, title, message
@@ -1234,10 +1237,12 @@ class DatabaseManager(object):
                     )
             finally:
                 connection.close()
-        except Exception as e:
+        except Exception:
+            # str(e) of a sqlite3/OS error names the uploaded temp file path
+            self._logger.exception("_validateUploadedSQLiteFile")
             return (
                 False,
-                "The uploaded file is not a valid SQLite database: " + str(e),
+                "The uploaded file is not a valid SQLite database.",
             )
         return (True, None)
 
@@ -1310,9 +1315,11 @@ class DatabaseManager(object):
                     self.closeDatabase()
             else:
                 result["errorMessage"] = "Invalid restore mode: " + str(mode)
-        except Exception as e:
+        except Exception:
             self._logger.exception("restoreFromSQLiteFile")
-            result["errorMessage"] = str(e)
+            result["errorMessage"] = ErrorMessages.userFacingError(
+                "restore the database from the uploaded file"
+            )
             try:
                 self.closeDatabase()
             except Exception:
@@ -1440,6 +1447,8 @@ class DatabaseManager(object):
         try:
             connected = self.connectoToDatabase(sendErrorPopUp=False)
             if not connected:
+                # _currentErrorMessageDict["message"] is already classified by
+                # connectoToDatabase, so appending it carries no connection details.
                 errorMessage = "Could not connect to the external MySQL database."
                 if self._currentErrorMessageDict is not None:
                     errorMessage = (
@@ -1454,9 +1463,15 @@ class DatabaseManager(object):
                 "dump": self._generateMySQLDumpText(),
                 "errorMessage": None,
             }
-        except Exception as e:
+        except Exception:
             self._logger.exception("exportMySQLDatabaseDump")
-            return {"success": False, "dump": None, "errorMessage": str(e)}
+            return {
+                "success": False,
+                "dump": None,
+                "errorMessage": ErrorMessages.userFacingError(
+                    "export the database dump"
+                ),
+            }
         finally:
             self.closeDatabase()
 
@@ -1481,9 +1496,11 @@ class DatabaseManager(object):
                 return result
             result["backupFilePath"] = backupFilePath
             result["success"] = True
-        except Exception as e:
+        except Exception:
             self._logger.exception("createLocalDatabaseBackup")
-            result["errorMessage"] = str(e)
+            result["errorMessage"] = ErrorMessages.userFacingError(
+                "create the database backup"
+            )
         finally:
             self.closeDatabase()
         return result
@@ -1521,6 +1538,7 @@ class DatabaseManager(object):
                     else "Could not connect to the local database."
                 )
                 if self._currentErrorMessageDict is not None:
+                    # already classified by connectoToDatabase
                     errorMessage = (
                         errorMessage
                         + " "
@@ -1536,9 +1554,10 @@ class DatabaseManager(object):
                         == PluginMetaDataModel.KEY_DATABASE_SCHEME_VERSION
                     ).value
                 )
-            except Exception as e:
-                result["errorMessage"] = (
-                    "Could not read the database scheme version: " + str(e)
+            except Exception:
+                self._logger.exception("Could not read the database scheme version")
+                result["errorMessage"] = ErrorMessages.userFacingError(
+                    "read the database scheme version"
                 )
                 return result
 
@@ -1595,13 +1614,13 @@ class DatabaseManager(object):
                             + backupFilePath
                             + "'"
                         )
-                    except Exception as e:
+                    except Exception:
                         self._logger.exception(
                             "Could not create the backup dump, scheme upgrade aborted"
                         )
-                        result["errorMessage"] = (
-                            "Could not create the backup dump, scheme upgrade aborted: "
-                            + str(e)
+                        result["errorMessage"] = ErrorMessages.userFacingError(
+                            "create the backup dump",
+                            "The scheme upgrade was aborted.",
                         )
                         return result
                 else:
@@ -1615,13 +1634,13 @@ class DatabaseManager(object):
                     try:
                         backupFilePath = self.backupDatabaseFile()
                         result["backupFilePath"] = backupFilePath
-                    except Exception as e:
+                    except Exception:
                         self._logger.exception(
                             "Could not create the database file backup, scheme upgrade aborted"
                         )
-                        result["errorMessage"] = (
-                            "Could not create the database file backup, scheme upgrade aborted: "
-                            + str(e)
+                        result["errorMessage"] = ErrorMessages.userFacingError(
+                            "create the database file backup",
+                            "The scheme upgrade was aborted.",
                         )
                         return result
                 else:
@@ -1645,9 +1664,11 @@ class DatabaseManager(object):
             )
             self._schemeUpgradeNeeded = False
             result["success"] = True
-        except Exception as e:
+        except Exception:
             self._logger.exception("upgradeExternalDatabaseScheme")
-            result["errorMessage"] = str(e)
+            result["errorMessage"] = ErrorMessages.userFacingError(
+                "upgrade the database scheme"
+            )
         finally:
             self.closeDatabase()
 
@@ -1727,6 +1748,7 @@ class DatabaseManager(object):
             if not connected:
                 errorMessage = "Could not connect to the external MySQL database."
                 if self._currentErrorMessageDict is not None:
+                    # already classified by connectoToDatabase
                     errorMessage = (
                         errorMessage
                         + " "
@@ -1772,14 +1794,13 @@ class DatabaseManager(object):
                                 key=PluginMetaDataModel.KEY_DATABASE_SCHEME_VERSION,
                                 value=CURRENT_DATABASE_SCHEME_VERSION,
                             )
-                except Exception as e:
+                except Exception:
                     # only counts are logged, row contents could include user data
                     self._logger.exception("importMySQLDatabaseDump: row import failed")
-                    result["errorMessage"] = (
-                        "Row import failed: "
-                        + str(e)
-                        + ". The database might be partially restored. "
-                        "Use 'ReCreate Database' and import again."
+                    result["errorMessage"] = ErrorMessages.userFacingError(
+                        "import the rows",
+                        "The database might be partially restored."
+                        " Use 'ReCreate Database' and import again.",
                     )
                     return result
             else:
@@ -1805,9 +1826,11 @@ class DatabaseManager(object):
 
             result["success"] = True
             return result
-        except Exception as e:
+        except Exception:
             self._logger.exception("importMySQLDatabaseDump")
-            result["errorMessage"] = str(e)
+            result["errorMessage"] = ErrorMessages.userFacingError(
+                "import the database dump"
+            )
             return result
         finally:
             self.closeDatabase()
@@ -2083,7 +2106,9 @@ class DatabaseManager(object):
                 localSpoolItemCount = self.countSpoolsByQuery()
                 self.closeDatabase()
             except Exception as e:
-                errorMessage = "local database: " + str(e)
+                errorMessage = (
+                    "local database: " + ErrorMessages.classifyConnectionError(e)
+                )
                 self._logger.error("Connecting to local database not possible")
                 self._logger.exception(e)
                 try:
@@ -2106,7 +2131,9 @@ class DatabaseManager(object):
                 self.closeDatabase()
             loadResult = True
         except Exception as e:
-            errorMessage = str(e)
+            # this is what testDatabaseConnection surfaces, so it must stay informative
+            # without naming host, port, user or the driver internals
+            errorMessage = ErrorMessages.classifyConnectionError(e)
             self._logger.exception(e)
             try:
                 self.closeDatabase()

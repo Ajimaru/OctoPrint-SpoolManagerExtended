@@ -12,6 +12,8 @@ from urllib.parse import urlparse
 
 import requests
 
+from octoprint_SpoolManagerExtended.common import ErrorMessages
+
 
 class FilamentDatabaseService:
     SOURCE_URL = "https://icezaza2543.github.io/SpoolmanDB-Community/filaments.json"
@@ -463,15 +465,19 @@ class FilamentDatabaseService:
                 )
                 self._sleep(delay_seconds)
 
+        # The detail goes to the log; the status dict only carries the error CLASS.
+        # str(requests.RequestException) contains the source URL, the resolved address and
+        # the OS error, and the settings dialog never displays this field anyway.
         self._logger.warning("SpoolmanDB refresh failed: %s", last_error)
+        errorClass = ErrorMessages.classifyFetchError(last_error)
         if cache:
             return (
                 cache,
-                self._status(cache, "stale", ttl_days=ttl_days, error=str(last_error)),
+                self._status(cache, "stale", ttl_days=ttl_days, error=errorClass),
             )
         return (
             None,
-            self._status(None, "error", ttl_days=ttl_days, error=str(last_error)),
+            self._status(None, "error", ttl_days=ttl_days, error=errorClass),
         )
 
     def vendors(self, ttl_days=1):

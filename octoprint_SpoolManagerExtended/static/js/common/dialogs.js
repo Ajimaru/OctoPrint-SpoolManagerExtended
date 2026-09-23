@@ -26,6 +26,24 @@ SPOOLMANAGER_DIALOGS = {
     },
 
     /**
+     * Strips HTML tags for plain-text contexts (confirm(), notification titles).
+     * Loops until the result stops changing: a single pass lets a crafted input
+     * re-form a tag out of the leftovers, e.g. "<<a>script>" -> "<script>".
+     */
+    stripHtmlTags: function (value) {
+        if (value == null) {
+            return "";
+        }
+        var text = String(value);
+        var previous;
+        do {
+            previous = text;
+            text = text.replace(/<[^>]*>/g, "");
+        } while (text !== previous);
+        return text;
+    },
+
+    /**
      * Builds an <ul> from an array of already-escaped (or trusted) strings.
      * Used for the "these tools/spools are affected" enumerations that previously
      * were "\n- " joined plain text.
@@ -53,8 +71,8 @@ SPOOLMANAGER_DIALOGS = {
                     .filter(function (part) {
                         return part != null && part != "";
                     })
-                    .join("\n\n")
-                    .replace(/<[^>]+>/g, "");
+                    .join("\n\n");
+                plainText = SPOOLMANAGER_DIALOGS.stripHtmlTags(plainText);
                 resolve(confirm(plainText) ? 0 : null);
                 return;
             }

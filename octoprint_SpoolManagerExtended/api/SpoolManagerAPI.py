@@ -24,6 +24,7 @@ from octoprint_SpoolManagerExtended import DatabaseManager
 from octoprint_SpoolManagerExtended.api import Transformer
 from octoprint_SpoolManagerExtended.common import (
     CSVExportImporter,
+    ErrorMessages,
     FilamentTagKeys,
     FilamentTagModel,
     FilamentTagParsers,
@@ -1011,7 +1012,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 # - assign temp-offset here, because after the print is started (event: ) it is too late Events.PRINT_STARTED
                 try:
                     self.set_temp_offsets(toolIndex, spoolModel)
-                except Exception as e:
+                except Exception:
                     self._logger.exception(
                         "Temperature offsets for Spool '"
                         + str(spoolModel.displayName)
@@ -1022,7 +1023,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                         "Temperature offsets for Spool '"
                         + str(spoolModel.displayName)
                         + "' failed to set!",
-                        str(e),
+                        ErrorMessages.userFacingError("apply the temperature offsets"),
                     )
 
         return flask.jsonify({"result": "goForIt"})
@@ -1059,9 +1060,12 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
         try:
             self.set_temp_offsets(toolIndex, spoolModel)
-        except Exception as e:
+        except Exception:
+            self._logger.exception("set_temp_offsets")
             self._sendMessageToClient(
-                "warning", "Temperature offsets failed to set!", str(e)
+                "warning",
+                "Temperature offsets failed to set!",
+                ErrorMessages.userFacingError("apply the temperature offsets"),
             )
 
         self.checkRemainingFilament()
@@ -2871,8 +2875,13 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 payloadBase64 = base64.b64encode(
                     OpenPrintTag.buildTagPayload(spoolModel)
                 ).decode("ascii")
-            except (OpenPrintTag.UnresolvedFieldKeyError, ValueError) as e:
-                encodingError = str(e)
+            except (OpenPrintTag.UnresolvedFieldKeyError, ValueError):
+                self._logger.exception(
+                    "getOpenPrintTagPayload: could not build payload"
+                )
+                encodingError = ErrorMessages.userFacingError(
+                    "build the tag payload for this spool"
+                )
 
         return flask.jsonify(
             {
@@ -3712,9 +3721,13 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                     "mandatory backup was created): " + str(csvError)
                 )
 
-        except Exception as e:
+        except Exception:
+            # an OSError from the backup file write names the absolute baseFolder
             self._logger.exception("createImportBackup")
-            return flask.make_response("Backup before import failed: " + str(e), 400)
+            return flask.make_response(
+                ErrorMessages.userFacingError("create the backup before the import"),
+                400,
+            )
 
         return flask.jsonify(
             {
@@ -4067,7 +4080,11 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     @no_firstrun_access
     def undoLegacyMigration(self, undoKind):
         if undoKind not in ("database", "settings"):
-            return flask.make_response("Unknown undo kind: " + str(undoKind), 400)
+            # Same reasoning as exportInventoryReport: the rejected value is not echoed
+            # back, because make_response() serves a plain string as text/html.
+            return flask.make_response(
+                "Unknown undo kind. Use 'database' or 'settings'.", 400
+            )
 
         undoResult = self._undoLegacyMigration(undoKind)
 
@@ -4182,8 +4199,10 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
         reportFormat = flask.request.values.get("format", "pdf").lower()
         if reportFormat not in ("pdf", "csv", "xlsx"):
+            # Do not echo the rejected value back: make_response() with a plain string
+            # serves it as text/html, which turns this branch into reflected XSS.
             return flask.make_response(
-                "Unsupported report format: " + reportFormat, 400
+                "Unsupported report format. Use pdf, csv or xlsx.", 400
             )
 
         # Build a table query from the current tab filter/sort state (passed as query params).
