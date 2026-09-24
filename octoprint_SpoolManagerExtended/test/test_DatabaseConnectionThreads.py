@@ -28,6 +28,8 @@ import tempfile
 import threading
 import unittest
 
+import peewee
+
 from octoprint_SpoolManagerExtended.DatabaseManager import (
     SAVE_OUTCOME_DATABASE_ERROR,
     SAVE_OUTCOME_DELETED,
@@ -286,6 +288,60 @@ class TestSaveOutcome(_DatabaseManagerTestCase):
         self.assertIsNone(manager.saveSpool(spoolModel))
         self.assertEqual(manager.getLastSaveOutcome(), SAVE_OUTCOME_DATABASE_ERROR)
         self.assertEqual(manager.loadSpool(databaseId).version, versionInDatabase)
+
+
+class TestErrorMessagePerThread(_DatabaseManagerTestCase):
+    # A failed connect stores its error, and the caller reads it back afterwards (the
+    # connection-problem dialog on client open, dump export/import, scheme upgrade). Every
+    # connect and close resets the stored error, so with one value for all threads another
+    # request cleared or replaced it in between.
+
+    ACCESS_DENIED = "Access denied. Check the user name and password."
+
+    def _failConnects(self, exceptionForThisThread, exceptionForOtherThreads=None):
+        # Only the connect fails, the database file is fine - so a thread that is not told
+        # to fail really connects.
+        database = self.databaseManager._getOrBuildBoundDatabase()
+        realConnect = database.connect
+        thisThread = threading.current_thread()
+
+        def connect(*args, **kwargs):
+            if threading.current_thread() is thisThread:
+                raise exceptionForThisThread
+            if exceptionForOtherThreads is not None:
+                raise exceptionForOtherThreads
+            return realConnect(*args, **kwargs)
+
+        database.connect = connect
+        self.addCleanup(delattr, database, "connect")
+
+    def test_otherThreadsConnectDoesNotClearThisThreadsError(self):
+        manager = self.databaseManager
+        databaseId = self._createSpool()
+        self._failConnects(peewee.OperationalError("Access denied for user"))
+
+        self.assertFalse(manager.connectoToDatabase(sendErrorPopUp=False))
+        self.assertIsNotNone(_runInOtherThread(lambda: manager.loadSpool(databaseId)))
+
+        errorMessageDict = manager.getCurrentErrorMessageDict()
+        self.assertIsNotNone(errorMessageDict)
+        self.assertEqual(errorMessageDict["message"], self.ACCESS_DENIED)
+
+    def test_otherThreadsErrorDoesNotReplaceThisThreadsError(self):
+        manager = self.databaseManager
+        self._failConnects(
+            peewee.OperationalError("Access denied for user"),
+            peewee.OperationalError("Connection refused"),
+        )
+
+        self.assertFalse(manager.connectoToDatabase(sendErrorPopUp=False))
+        self.assertFalse(
+            _runInOtherThread(lambda: manager.connectoToDatabase(sendErrorPopUp=False))
+        )
+
+        self.assertEqual(
+            manager.getCurrentErrorMessageDict()["message"], self.ACCESS_DENIED
+        )
 
 
 if __name__ == "__main__":
