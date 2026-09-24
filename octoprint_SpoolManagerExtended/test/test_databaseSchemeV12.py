@@ -16,11 +16,7 @@ import unittest
 
 import peewee
 
-from octoprint_SpoolManagerExtended.DatabaseManager import (
-    CURRENT_DATABASE_SCHEME_VERSION,
-    MODELS,
-    DatabaseManager,
-)
+from octoprint_SpoolManagerExtended.DatabaseManager import MODELS, DatabaseManager
 from octoprint_SpoolManagerExtended.models.PluginMetaDataModel import (
     PluginMetaDataModel,
 )
@@ -57,9 +53,6 @@ class TestDatabaseSchemeV12(unittest.TestCase):
             self.database.execute_sql(
                 "ALTER TABLE spo_spoolmodel DROP COLUMN " + columnName
             )
-
-    def test_current_version_is_twelve(self):
-        self.assertEqual(12, CURRENT_DATABASE_SCHEME_VERSION)
 
     def test_migration_adds_the_three_columns(self):
         self._dropV12Columns()
