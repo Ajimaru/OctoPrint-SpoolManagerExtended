@@ -2839,15 +2839,16 @@ $(function () {
                     var prefix = withToolPrefix === false ? "" : item.toolIndex + ": ";
                     var label = prefix + "'" + item.material + " - " + item.spoolName;
 
-                    if (
-                        item.remainingWeight != null &&
-                        typeof item.remainingWeight === "number"
-                    ) {
-                        label =
-                            label +
-                            " (" +
-                            self.formatWeightForDisplay(item.remainingWeight) +
-                            ")";
+                    var remaining = [];
+                    if (typeof item.remainingWeight === "number") {
+                        remaining.push(self.formatWeightForDisplay(item.remainingWeight));
+                    }
+                    // only present when the spool has a total length
+                    if (typeof item.remainingLength === "number") {
+                        remaining.push(self.formatLengthForDisplay(item.remainingLength));
+                    }
+                    if (remaining.length > 0) {
+                        label = label + " (" + remaining.join(" / ") + ")";
                     }
                     label = label + "'";
                     return SPOOLMANAGER_DIALOGS.escapeHtml(label);
