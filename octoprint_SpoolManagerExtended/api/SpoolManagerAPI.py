@@ -862,6 +862,10 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                                 "spoolName": unusedToolSpoolModel.displayName,
                                 "material": unusedToolSpoolModel.material,
                                 "remainingWeight": unusedToolSpoolModel.remainingWeight,
+                                "remainingLength": Transformer.calculateRemainingWeight(
+                                    unusedToolSpoolModel.usedLength or 0,
+                                    unusedToolSpoolModel.totalLength,
+                                ),
                             }
                         )
                     continue
@@ -877,6 +881,15 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 ),
                 "material": spoolModel.material if spoolModel else "",
                 "remainingWeight": spoolModel.remainingWeight if spoolModel else "",
+                # calculateRemainingWeight() is a generic total - used, the name is historical;
+                # a fresh spool has no usedLength yet, which means nothing used
+                "remainingLength": (
+                    Transformer.calculateRemainingWeight(
+                        spoolModel.usedLength or 0, spoolModel.totalLength
+                    )
+                    if spoolModel
+                    else ""
+                ),
                 "toolOffset": spoolModel.offsetTemperature if spoolModel else "",
                 "bedOffset": spoolModel.offsetBedTemperature if spoolModel else "",
                 "enclosureOffset": (
