@@ -404,7 +404,7 @@ class TestDetectionChain(unittest.TestCase):
         manager, plugin = _makeManager(
             connectionState={
                 "connector": "moonraker",
-                "host": "10.0.0.5",
+                "host": "198.51.100.5",
                 "port": 7125,
             }
         )
