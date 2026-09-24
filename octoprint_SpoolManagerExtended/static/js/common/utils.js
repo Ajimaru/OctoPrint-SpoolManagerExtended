@@ -482,7 +482,8 @@ SPOOLMANAGER_U1RFID = {
     // never clears an existing value - this is a suggestion, not a takeover.
     //
     // `rfidTagKey` is the stable matching key derived by the backend
-    // (U1RfidManager.deriveRfidTagKey(), last 4 hex chars of the UID) and passed through
+    // (U1RfidManager.deriveRfidTagKey(): last 4 hex chars of a 4-byte UID, the whole UID
+    // of a 7/8-byte one) and passed through
     // from the u1RfidUnknownTag push / getUnknownTags() response - NOT recomputed here,
     // so there is exactly one place that owns the derivation rule.
     //

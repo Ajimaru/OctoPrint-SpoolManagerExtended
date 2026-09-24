@@ -2547,11 +2547,12 @@ $(function () {
                 return;
             }
             var spoolName = data.spoolName || "Spool";
-            // A tag is matched on the last 4 hex characters of its UID, so two spools can
-            // end up sharing a key - see common/RfidKeyCollision.py. This path selects a
-            // spool without anyone confirming it, so a tie resolved silently by newest-first
-            // ordering is worth saying out loud. Absent "match" (older backend) stays silent
-            // rather than claiming the match was checked.
+            // A tag is matched on a key derived from its UID (for a 4-byte UID only its last
+            // 4 hex characters), so two spools can end up sharing a key - see
+            // common/RfidKeyCollision.py. This path selects a spool without anyone
+            // confirming it, so a tie resolved silently by newest-first ordering is worth
+            // saying out loud. Absent "match" (older backend) stays silent rather than
+            // claiming the match was checked.
             var matchCaveat = "";
             if (data.match != null && data.match.ambiguous === true) {
                 matchCaveat =

@@ -1104,11 +1104,13 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         The caveat for a spool that was found through its rfidTagKey, as
         {"foreignTag": bool, "ambiguous": bool} - or None when no such lookup happened.
 
-        A tag is matched on the last few hex characters of its UID, which is deliberate (a
-        two-tag spool's tags share that suffix) but leaves a small key space. Observed on real
-        hardware: a foreign tag and a spool's own tag shared a suffix and resolved to the same
-        spool. The lookup result is not changed - callers get the same spool they got before -
-        but it is no longer presented as if it were unique.
+        A tag with a 4-byte UID is matched on the last few hex characters of its UID, which
+        is deliberate (a two-tag spool's tags share that suffix) but leaves a small key space;
+        7/8-byte UIDs are matched in full (see U1RfidManager.deriveRfidTagKey()). Observed on
+        real hardware, while 7-byte UIDs were still matched on their suffix: a foreign tag and
+        a spool's own tag shared a suffix and resolved to the same spool. The lookup result is
+        not changed - callers get the same spool they got before - but it is no longer
+        presented as if it were unique.
 
         idSource (the firmware's verdict) and tagFormat (what a parser made of the tag) are
         both optional: a caller that never saw the tag - a typed code, a stored key - passes
@@ -1152,10 +1154,10 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             # Fallback: `code` is deliberately no longer set from an RFID UID (see
             # U1RfidManager.deriveRfidTagKey()'s PRELIMINARY collision note - a Snapmaker
             # spool's two physical tags report different full UIDs, so U1RfidManager now
-            # matches on the last-4-hex-chars rfidTagKey instead). A caller here (e.g.
-            # OctoScale) may still pass a full tag UID it just scanned; try the same
-            # derivation before giving up, so spools taught in via the U1 flow remain
-            # resolvable through this endpoint too.
+            # matches on the rfidTagKey instead: the last 4 hex chars of a 4-byte UID, the
+            # whole UID of a 7/8-byte one). A caller here (e.g. OctoScale) may still pass a
+            # full tag UID it just scanned; try the same derivation before giving up, so
+            # spools taught in via the U1 flow remain resolvable through this endpoint too.
             #
             # Normalized first: deriveRfidTagKey() expects an already-normalized UID and does
             # no case folding or separator stripping of its own, while `code` arrives here
@@ -2728,9 +2730,9 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                     matchedSpool.displayName if matchedSpool is not None else None
                 ),
                 # Whether matchedSpool is really this tag's spool, or only the spool whose
-                # key suffix it happens to share - see common/RfidKeyCollision.py. The parsed
+                # key it happens to share - see common/RfidKeyCollision.py. The parsed
                 # format is the evidence here: a TigerTag or OpenPrintTag carries no
-                # SpoolManager id, so any spool found for it was found by suffix alone.
+                # SpoolManager id, so any spool found for it was found by its UID key alone.
                 # Null when no spool matched.
                 "match": (
                     self._describeRfidMatch(

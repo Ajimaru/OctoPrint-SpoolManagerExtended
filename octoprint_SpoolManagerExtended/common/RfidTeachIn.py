@@ -17,6 +17,29 @@ REASON_EXISTING_KEY_DIFFERS = "existingKeyDiffers"
 REASON_COLLISION = "collision"
 REASON_TAUGHT = "taught"
 
+# Length of a key derived under the suffix rule - U1RfidManager.RFID_TAG_KEY_LENGTH, kept
+# as a literal so this module stays free of plugin imports (see the header).
+_SUFFIX_KEY_LENGTH = 4
+
+
+def isLegacySuffixKeyOf(existingKey, newKey):
+    """
+    True when existingKey equals what the old suffix rule derives from newKey's UID.
+
+    7- and 8-byte UIDs used to be keyed on their last 4 hex characters and are now keyed
+    on the whole UID (see U1RfidManager.deriveRfidTagKey()). A spool taught in under the
+    old rule still carries the short key, which such a tag no longer presents. Replacing
+    it with the full UID upgrades that stale key rather than competing with it, so it is
+    not blocked as "existing key differs".
+    """
+    if not existingKey or not newKey:
+        return False
+    return (
+        len(existingKey) == _SUFFIX_KEY_LENGTH
+        and len(newKey) > _SUFFIX_KEY_LENGTH
+        and newKey.endswith(existingKey)
+    )
+
 
 def evaluateTeachIn(
     newKey, existingKeyOnTargetSpool, conflictingSpoolId, targetSpoolId, force
@@ -35,6 +58,9 @@ def evaluateTeachIn(
     Returns (shouldSave, reason). shouldSave is True only when the caller should write
     newKey onto the target spool; reason is always one of the REASON_* constants above and
     explains the outcome either way (including the non-error "unchanged"/"taught" cases).
+
+    An existing key that is only the legacy suffix form of newKey (isLegacySuffixKeyOf())
+    does not block: it is replaced without force, and reported as "taught".
     """
     if not newKey:
         return False, REASON_NO_UID
@@ -42,7 +68,11 @@ def evaluateTeachIn(
     if existingKeyOnTargetSpool == newKey:
         return False, REASON_UNCHANGED
 
-    if existingKeyOnTargetSpool and not force:
+    if (
+        existingKeyOnTargetSpool
+        and not force
+        and not isLegacySuffixKeyOf(existingKeyOnTargetSpool, newKey)
+    ):
         return False, REASON_EXISTING_KEY_DIFFERS
 
     if (
