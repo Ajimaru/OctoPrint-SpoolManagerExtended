@@ -429,7 +429,10 @@ function SpoolManagerExtendedAPIClient(pluginId, baseUrl) {
                         currentSpool: body.spool // undefined for "deleted"
                     };
                 }
-                responseHandler(false, validationErrors, conflict);
+                // any other failure the server explained (e.g. HTTP 503 on a database
+                // error) - so the dialog can say what went wrong instead of guessing
+                var serverError = body && body.error ? body.error : null;
+                responseHandler(false, validationErrors, conflict, null, serverError);
             }
         );
     };

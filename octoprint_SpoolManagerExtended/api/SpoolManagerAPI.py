@@ -42,6 +42,10 @@ from octoprint_SpoolManagerExtended.common import (
 )
 from octoprint_SpoolManagerExtended.common.EventBusKeys import EventBusKeys
 from octoprint_SpoolManagerExtended.common.SettingsKeys import SettingsKeys
+from octoprint_SpoolManagerExtended.DatabaseManager import (
+    SAVE_OUTCOME_DELETED,
+    SAVE_OUTCOME_VERSION_CONFLICT,
+)
 from octoprint_SpoolManagerExtended.models.SpoolModel import SpoolModel
 from octoprint_SpoolManagerExtended.U1RfidManager import (
     deriveRfidTagKey,
@@ -1326,6 +1330,25 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         self._databaseManager.closeDatabase()
 
         if savedDatabaseId is None:
+            if self._databaseManager.getLastSaveOutcome() not in (
+                SAVE_OUTCOME_VERSION_CONFLICT,
+                SAVE_OUTCOME_DELETED,
+            ):
+                # The database failed, not the spool's version: a 409 here reported a
+                # change to the spool that never happened.
+                self._logger.error(
+                    "Could not store measured weight for spool with database id '"
+                    + str(databaseId)
+                    + "', database error."
+                )
+                return make_response(
+                    jsonify(
+                        {
+                            "error": "Could not store the measured weight because of a database error. Please try again."
+                        }
+                    ),
+                    503,
+                )
             # saveSpool returns None on a version conflict or a deleted row - without this
             # check we would answer 200 while nothing was written.
             self._logger.warning(
@@ -4599,6 +4622,41 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         )
 
         if newDatabaseId is None:
+            saveOutcome = self._databaseManager.getLastSaveOutcome()
+            if saveOutcome not in (SAVE_OUTCOME_VERSION_CONFLICT, SAVE_OUTCOME_DELETED):
+                # The database failed, not the spool's version. Answered with a 409, the
+                # dialog said the spool was "modified elsewhere" when nothing had changed -
+                # seen when a parallel request closed the connection in the middle of a save.
+                self._databaseManager.closeDatabase()
+                self._logger.error(
+                    "Save spool failed for database id '"
+                    + str(databaseId)
+                    + "', database error."
+                )
+                return make_response(
+                    jsonify(
+                        {
+                            "error": "The spool could not be saved because of a database error. Please try again."
+                        }
+                    ),
+                    503,
+                )
+            if saveOutcome == SAVE_OUTCOME_DELETED:
+                self._databaseManager.closeDatabase()
+                self._logger.warning(
+                    "Save spool failed for database id '"
+                    + str(databaseId)
+                    + "', deleted in the meantime."
+                )
+                return make_response(
+                    jsonify(
+                        {
+                            "conflict": "deleted",
+                            "error": "This spool no longer exists, it was deleted in the meantime.",
+                        }
+                    ),
+                    409,
+                )
             # saveSpool signals a version conflict only via a socket message and returns None.
             # Answering 200 here made the dialog close as if everything had been stored, so the
             # user silently lost the edit - now the client gets a 409 plus the current server

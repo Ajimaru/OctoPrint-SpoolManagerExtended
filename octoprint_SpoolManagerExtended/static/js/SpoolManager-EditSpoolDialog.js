@@ -2787,7 +2787,7 @@ function SpoolManagerExtendedEditSpoolDialog() {
 
         self.apiClient.callSaveSpool(
             self.spoolItemForEditing,
-            function (success, validationErrors, conflict, savedSpool) {
+            function (success, validationErrors, conflict, savedSpool, serverError) {
                 if (conflict != null) {
                     // someone else changed this spool while the dialog was open (e.g. a scale
                     // writing a measured weight via the API). The save did NOT happen - explain
@@ -2797,7 +2797,9 @@ function SpoolManagerExtendedEditSpoolDialog() {
                 }
                 if (success === false) {
                     // server rejected the save - keep the dialog open and tell the user why
-                    var message = "Spool could not be saved.";
+                    var message = serverError
+                        ? SPOOLMANAGER_DIALOGS.escapeHtml(serverError)
+                        : "Spool could not be saved.";
                     if (validationErrors && validationErrors.length > 0) {
                         var escapedErrors = validationErrors.map(
                             function (validationError) {
