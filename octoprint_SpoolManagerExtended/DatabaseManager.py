@@ -93,7 +93,8 @@ class DatabaseManager(object):
         # Connection state is per thread, because the connection is: peewee keeps one
         # connection per thread on a database object. A single shared flag let one request's
         # closeDatabase() report "Database not connected" to another request still in the
-        # middle of its own work. Created before _isConnected, which is stored in here.
+        # middle of its own work. Created before _isConnected and _currentErrorMessageDict,
+        # which are stored in here.
         self._threadState = threading.local()
         # One database object per database the settings point at - see
         # _getOrBuildBoundDatabase(). _databaseSignature says which one it was built for.
@@ -117,6 +118,19 @@ class DatabaseManager(object):
     @_isConnected.setter
     def _isConnected(self, value):
         self._threadState.isConnected = value
+
+    # The connection error of the calling thread's last connect. Every connect and close
+    # resets it, and every request connects and closes - with a single shared value, another
+    # request cleared or replaced an error between its writer storing it and reading it back
+    # (connection-problem dialog, dump export/import, scheme upgrade). Every reader runs in
+    # the thread that stored the error, so nothing needs to see another thread's value.
+    @property
+    def _currentErrorMessageDict(self):
+        return getattr(self._threadState, "currentErrorMessageDict", None)
+
+    @_currentErrorMessageDict.setter
+    def _currentErrorMessageDict(self, value):
+        self._threadState.currentErrorMessageDict = value
 
     ################################################################################################## private functions
     # "databaseSettings"] = {
