@@ -1,22 +1,26 @@
 # coding=utf-8
 
+import contextlib
 import copy
 import datetime
 import json
 import logging
 import os
+import pathlib
 import re
-import shutil
 import sqlite3
+import tempfile
 import threading
 
 from peewee import (
     DoesNotExist,
     MySQLDatabase,
     PostgresqlDatabase,
+    SchemaManager,
     SqliteDatabase,
     chunked,
     fn,
+    sort_models,
 )
 from playhouse.shortcuts import ReconnectMixin, model_to_dict
 
@@ -216,6 +220,54 @@ class DatabaseManager(object):
                     except Exception:
                         pass  # ignore close exception
             return self._database
+
+    @contextlib.contextmanager
+    def _separateDatabase(self, databaseSettings):
+        # A connection of its own to the database the settings point at, for work on a
+        # database other than - or besides - the active one: the Storage tab's metadata and
+        # its admin actions. Queries inside are bound to it explicitly (query.bind(database)),
+        # so the process-wide model binding and every other thread using it stay untouched.
+        # Switching the active settings instead sent every request running meanwhile - the
+        # sidebar, the spool dialog, the usage a finishing print books - to that database.
+        database = self._buildDatabaseConnection(databaseSettings)
+        database.connect()
+        try:
+            yield database
+        finally:
+            database.close()
+
+    @staticmethod
+    def _readSchemeVersion(database):
+        return (
+            PluginMetaDataModel.select()
+            .where(
+                PluginMetaDataModel.key
+                == PluginMetaDataModel.KEY_DATABASE_SCHEME_VERSION
+            )
+            .bind(database)
+            .get()
+            .value
+        )
+
+    @staticmethod
+    def _copySQLiteFile(sourcePath, targetPath):
+        # Copies a SQLite database through SQLite's backup API rather than as a plain file.
+        # A file copy took no notice of other connections: taken from a database being
+        # written it could come out torn, and copied over one it went underneath connections
+        # that still had the file open - their next commit then wrote their pages into the
+        # new content. The backup API takes SQLite's own locks and waits while the target is
+        # busy. The source is opened read-only, so a missing one raises instead of being
+        # created empty.
+        sourceUri = pathlib.Path(os.path.abspath(sourcePath)).as_uri() + "?mode=ro"
+        source = sqlite3.connect(sourceUri, uri=True)
+        try:
+            target = sqlite3.connect(targetPath)
+            try:
+                source.backup(target)
+            finally:
+                target.close()
+        finally:
+            source.close()
 
     def _createDatabase(self, forceCreateTables):
 
@@ -955,8 +1007,13 @@ class DatabaseManager(object):
         self._logger.info(" Successfully 1 -> 2")
         pass
 
-    def _createDatabaseTables(self):
+    def _createDatabaseTables(self, database=None):
         self._logger.info("Creating new database tables for spoolmanager-plugin")
+        if database is not None:
+            # A database of the caller's own (see _separateDatabase), connected by the caller.
+            self._recreateTables(database)
+            return
+
         self._database.connect(reuse_if_open=True)
         self._database.drop_tables(MODELS)
         self._database.create_tables(MODELS)
@@ -966,6 +1023,32 @@ class DatabaseManager(object):
             value=CURRENT_DATABASE_SCHEME_VERSION,
         )
         self.closeDatabase()
+
+    @staticmethod
+    def _recreateTables(database):
+        # Database.drop_tables()/create_tables() would not do here: they act through each
+        # model's own - process-wide - binding, whichever database they are called on. A
+        # SchemaManager per model takes the database explicitly; the guards are the ones
+        # Model.drop_table()/create_table() apply.
+        for model in reversed(sort_models(MODELS)):
+            tableName = model._meta.table.__name__
+            if not database.safe_drop_index and not database.table_exists(
+                tableName, model._meta.schema
+            ):
+                continue
+            SchemaManager(model, database=database).drop_all(safe=True)
+        for model in sort_models(MODELS):
+            tableName = model._meta.table.__name__
+            if not database.safe_create_index and database.table_exists(
+                tableName, model._meta.schema
+            ):
+                continue
+            SchemaManager(model, database=database).create_all(safe=True)
+
+        PluginMetaDataModel.insert(
+            key=PluginMetaDataModel.KEY_DATABASE_SCHEME_VERSION,
+            value=CURRENT_DATABASE_SCHEME_VERSION,
+        ).bind(database).execute()
 
     def _storeErrorMessage(self, type, title, message, sendErrorPopUp):
         # store current error message
@@ -1029,18 +1112,31 @@ class DatabaseManager(object):
         return self._currentErrorMessageDict
 
     def assignNewDatabaseSettings(self, databaseSettings):
+        # For a change of the configured database (settings saved) only. Work on another
+        # database goes through _separateDatabase() instead: the active settings apply to
+        # every request of this instance at once.
         self._databaseSettings = databaseSettings
 
     def getDatabaseSettings(self):
-        # Return a shallow COPY, not the live object. Callers that temporarily switch the
-        # database (backup -> mutate useExternal -> restore) would otherwise mutate the active
-        # settings in place: a second getDatabaseSettings() call yields the SAME object, so the
-        # "backup" is already modified and restoring it is a no-op. The active DB then stays
-        # switched (e.g. to the outdated internal SQLite) until the next OctoPrint restart.
+        # Return a shallow COPY, not the live object. Callers change it to describe another
+        # database (e.g. useExternal for an export), and on the live object that change
+        # switched the active database in place for every request, until the next restart.
         # DatabaseSettings holds only flat attributes, so copy.copy is sufficient.
         if self._databaseSettings is None:
             return None
         return copy.copy(self._databaseSettings)
+
+    def getLocalDatabaseSettings(self):
+        # The local SQLite file, whichever database is active - as a copy.
+        localSettings = copy.copy(self._databaseSettings)
+        localSettings.type = "sqlite"
+        localSettings.useExternal = False
+        return localSettings
+
+    def isActiveDatabase(self, databaseSettings):
+        return self._connectionSignature(databaseSettings) == self._connectionSignature(
+            self._databaseSettings
+        )
 
     def testDatabaseConnection(self, databaseSettings=None):
         if databaseSettings is not None:
@@ -1197,32 +1293,33 @@ class DatabaseManager(object):
             logger.setLevel(logging.ERROR)
             self._sqlLogger.setLevel(logging.ERROR)
 
-    def backupDatabaseFile(self):
+    def backupDatabaseFile(self, databaseSettings=None):
+        # Backs up the local SQLite file the settings point at (default: the active database).
+        # Scheme version and copy go straight to the file, so it works for a database other
+        # than the active one as well, without a connection through the models' binding.
+        if databaseSettings is None:
+            databaseSettings = self._databaseSettings
 
-        if self._databaseSettings.useExternal:
+        if databaseSettings.useExternal:
             self._logger.info(
                 "No database backup needed, because we are using an external database."
             )
         else:
-            if os.path.exists(self._databaseSettings.fileLocation):
+            if os.path.exists(databaseSettings.fileLocation):
                 self._logger.info("Starting database backup")
                 now = datetime.datetime.now()
                 currentDate = now.strftime("%Y%m%d-%H%M")
                 currentSchemeVersion = "unknown"
                 try:
-                    currentSchemeVersion = PluginMetaDataModel.get(
-                        PluginMetaDataModel.key
-                        == PluginMetaDataModel.KEY_DATABASE_SCHEME_VERSION
-                    )
-                    if currentSchemeVersion is not None:
-                        currentSchemeVersion = str(currentSchemeVersion.value)
+                    with self._separateDatabase(databaseSettings) as database:
+                        currentSchemeVersion = str(self._readSchemeVersion(database))
                 except Exception as e:
                     self._logger.exception(
                         "Could not read databasescheme version:" + str(e)
                     )
 
                 backupDatabaseFilePath = (
-                    self._databaseSettings.fileLocation[0:-3]
+                    databaseSettings.fileLocation[0:-3]
                     + "-backup-V"
                     + currentSchemeVersion
                     + "-"
@@ -1232,8 +1329,8 @@ class DatabaseManager(object):
                 # backupDatabaseFileName = "spoolmanager-backup-"+currentDate+".db"
                 # backupDatabaseFilePath = os.path.join(backupFolder, backupDatabaseFileName)
                 if not os.path.exists(backupDatabaseFilePath):
-                    shutil.copy(
-                        self._databaseSettings.fileLocation, backupDatabaseFilePath
+                    self._copySQLiteFile(
+                        databaseSettings.fileLocation, backupDatabaseFilePath
                     )
                     self._logger.info(
                         "Backup of spoolmanager database created '"
@@ -1250,98 +1347,98 @@ class DatabaseManager(object):
             else:
                 self._logger.info(
                     "No database backup needed, because there is no databasefile '"
-                    + str(self._databaseSettings.fileLocation)
+                    + str(databaseSettings.fileLocation)
                     + "'"
                 )
 
         return None
 
+    def readLocalDatabaseSnapshot(self):
+        # The local SQLite file's content, taken through the backup API (see
+        # _copySQLiteFile) - streamed as the live file, a download could come out torn.
+        # None when there is no local database file.
+        fileLocation = self._databaseSettings.fileLocation
+        if not os.path.exists(fileLocation):
+            return None
+        snapshotFile = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        snapshotFile.close()
+        try:
+            self._copySQLiteFile(fileLocation, snapshotFile.name)
+            with open(snapshotFile.name, "rb") as snapshot:
+                return snapshot.read()
+        finally:
+            os.remove(snapshotFile.name)
+
     def reCreateDatabase(self, databaseSettings=None):
+        # Drops and recreates all tables of the database the settings point at (default: the
+        # active one), over a connection of its own - see _separateDatabase(). Raises when
+        # that database cannot be reached.
         self._currentErrorMessageDict = None
+        if databaseSettings is None:
+            databaseSettings = self._databaseSettings
         self._logger.info("ReCreating Database")
         self._logger.info(databaseSettings)
 
-        backupCurrentDatabaseSettings = None
-        if databaseSettings is not None:
-            backupCurrentDatabaseSettings = self._databaseSettings
-            self._databaseSettings = databaseSettings
-        try:
-            # - connect to dataabase
-            self.connectoToDatabase()
+        with self._separateDatabase(databaseSettings) as database:
+            self._createDatabaseTables(database)
 
-            self._createDatabase(True)
-
-            # - close dataabase
-            self.closeDatabase()
-        finally:
-            # - restore database settings
-            if backupCurrentDatabaseSettings is not None:
-                self._databaseSettings = backupCurrentDatabaseSettings
+    def insertSpools(self, spoolModels, databaseSettings, onProgress=None):
+        # Stores new spools in the database the settings point at, over a connection of its
+        # own and in one transaction - all of them or, on an error, none. Raises on failure.
+        # Each insert is what save() does for a new spool; save() itself would go through
+        # the models' process-wide binding, i.e. to the active database.
+        primaryKeyName = SpoolModel._meta.primary_key.name
+        with self._separateDatabase(databaseSettings) as database:
+            with database.atomic():
+                for index, spoolModel in enumerate(spoolModels):
+                    fieldData = dict(spoolModel.__data__)
+                    fieldData.pop(primaryKeyName, None)
+                    SpoolModel.insert(**fieldData).bind(database).execute()
+                    if onProgress is not None:
+                        onProgress(index + 1)
+        return len(spoolModels)
 
     def copySpoolData(self, databaseSettings=None):
-
+        # Copies all spools of the local SQLite file into the external database the settings
+        # describe (default: the active settings' external database), replacing what is
+        # there. Both sides get a connection of their own: this used to switch the active
+        # settings twice - to the local file for reading, to the external database for
+        # writing - and without an argument it rewrote the live settings object in place.
         loadResult = False
         copySpoolCount = 0
 
-        backupCurrentDatabaseSettings = None
-        if databaseSettings is not None:
-            backupCurrentDatabaseSettings = self._databaseSettings
-        else:
-            # use default settings
-            databaseSettings = self._databaseSettings
-            backupCurrentDatabaseSettings = self._databaseSettings
+        externalSettings = copy.copy(
+            databaseSettings if databaseSettings is not None else self._databaseSettings
+        )
+        externalSettings.useExternal = True
 
+        allSpoolDicts = None
         try:
-            currentDatabaseType = databaseSettings.type
+            with self._separateDatabase(
+                self.getLocalDatabaseSettings()
+            ) as localDatabase:
+                allSpoolDicts = [
+                    model_to_dict(spool)
+                    for spool in SpoolModel.select().bind(localDatabase)
+                ]
+        except Exception as e:
+            self._logger.error("Connecting to local database not possible")
+            self._logger.exception(e)
 
-            # First load meta from local sqlite database
-            databaseSettings.type = "sqlite"
-            databaseSettings.baseFolder = self._databaseSettings.baseFolder
-            databaseSettings.fileLocation = self._databaseSettings.fileLocation
-            databaseSettings.useExternal = False
-            self._databaseSettings = databaseSettings
-
-            allSpoolDicts = None
+        if allSpoolDicts is not None:
             try:
-                self.connectoToDatabase(sendErrorPopUp=False)
-                # materialize the query result before closing the connection,
-                # since peewee's select() is lazy and would otherwise be
-                # evaluated after switching to the external database
-                allSpoolDicts = [model_to_dict(spool) for spool in SpoolModel.select()]
-                self.closeDatabase()
+                with self._separateDatabase(externalSettings) as externalDatabase:
+                    self._createDatabaseTables(externalDatabase)
+                    with externalDatabase.atomic():
+                        for spoolJson in allSpoolDicts:
+                            SpoolModel.insert(spoolJson).bind(
+                                externalDatabase
+                            ).execute()
+                copySpoolCount = len(allSpoolDicts)
+                loadResult = True
             except Exception as e:
-                self._logger.error("Connecting to local database not possible")
+                self._logger.error("Connecting to external database not possible")
                 self._logger.exception(e)
-                try:
-                    self.closeDatabase()
-                except Exception:
-                    pass  # ignore close exception
-
-            databaseSettings.type = currentDatabaseType
-            databaseSettings.useExternal = True
-            self._databaseSettings = databaseSettings
-
-            if allSpoolDicts is not None:
-                try:
-                    self.connectoToDatabase(sendErrorPopUp=False)
-                    self._createDatabase(True)
-                    for spoolJson in allSpoolDicts:
-                        SpoolModel.insert(spoolJson).execute()
-                        copySpoolCount = copySpoolCount + 1
-                    self.closeDatabase()
-                    loadResult = True
-                except Exception as e:
-                    self._logger.error("Connecting to external database not possible")
-                    self._logger.exception(e)
-                    try:
-                        self.closeDatabase()
-                    except Exception:
-                        pass  # ignore close exception
-
-        finally:
-            # restore orig. databasettings
-            if backupCurrentDatabaseSettings is not None:
-                self._databaseSettings = backupCurrentDatabaseSettings
 
         return {"success": loadResult, "copySpoolCount": copySpoolCount}
 
@@ -1410,9 +1507,10 @@ class DatabaseManager(object):
             if mode == "replace":
                 # count the spools we are about to import (for the result message)
                 importedSpools = self._readSpoolDictsFromSQLiteFile(uploadedDbPath)
-                # whole-file swap: close the current connection, copy the uploaded file over it
+                # whole-database swap through SQLite's backup API (see _copySQLiteFile): it
+                # waits for other connections' transactions instead of copying underneath them
                 self.closeDatabase()
-                shutil.copy(uploadedDbPath, targetFileLocation)
+                self._copySQLiteFile(uploadedDbPath, targetFileLocation)
                 # reconnect and ACTUALLY run the local auto-upgrade: an older uploaded .db (e.g.
                 # scheme 7) must be migrated to the current scheme now, otherwise the UI shows the
                 # "outdated scheme" hint with no upgrade button available for the internal database.
@@ -2190,24 +2288,10 @@ class DatabaseManager(object):
 
     def _readMetaInformations(self, databaseSettings):
         # Scheme version and spool count of the database the settings point at, read over a
-        # throwaway connection. Every query is bound to that connection explicitly, so the
-        # process-wide model binding - and every other thread using it - is never touched.
-        database = self._buildDatabaseConnection(databaseSettings)
-        database.connect()
-        try:
-            schemeVersion = (
-                PluginMetaDataModel.select()
-                .where(
-                    PluginMetaDataModel.key
-                    == PluginMetaDataModel.KEY_DATABASE_SCHEME_VERSION
-                )
-                .bind(database)
-                .get()
-                .value
-            )
+        # connection of its own - see _separateDatabase().
+        with self._separateDatabase(databaseSettings) as database:
+            schemeVersion = self._readSchemeVersion(database)
             spoolItemCount = SpoolModel.select().bind(database).count()
-        finally:
-            database.close()
         return schemeVersion, spoolItemCount
 
     def loadDatabaseMetaInformations(self, databaseSettings=None):
@@ -2219,11 +2303,7 @@ class DatabaseManager(object):
         if databaseSettings is None:
             databaseSettings = self._databaseSettings
         externalSettings = copy.copy(databaseSettings)
-        localSettings = copy.copy(databaseSettings)
-        localSettings.type = "sqlite"
-        localSettings.baseFolder = self._databaseSettings.baseFolder
-        localSettings.fileLocation = self._databaseSettings.fileLocation
-        localSettings.useExternal = False
+        localSettings = self.getLocalDatabaseSettings()
 
         # filelocation
         # backupname
@@ -2393,7 +2473,12 @@ class DatabaseManager(object):
             databaseCallMethode, withReusedConnection, "getMaxSpoolDatabaseId"
         )
 
-    def loadAllSpoolsByQuery(self, tableQuery=None, withReusedConnection=False):
+    def loadAllSpoolsByQuery(
+        self, tableQuery=None, withReusedConnection=False, databaseSettings=None
+    ):
+        # With databaseSettings: the spools of that database, read over a connection of its
+        # own (see _separateDatabase) and returned as a list, since the connection is gone
+        # afterwards. Unlike the default path, errors are raised to the caller.
 
         def databaseCallMethode():
             if tableQuery is None:
@@ -2466,6 +2551,10 @@ class DatabaseManager(object):
 
                     self._logger.info("Quering spools: %s" % myQuery)
             return myQuery
+
+        if databaseSettings is not None:
+            with self._separateDatabase(databaseSettings) as database:
+                return list(databaseCallMethode().bind(database))
 
         return self._handleReusableConnection(
             databaseCallMethode, withReusedConnection, "loadAllSpoolsByQuery"
