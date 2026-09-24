@@ -27,8 +27,9 @@ import datetime
 # Two behaviours that make OpenPrintTag different from the other NFC-V formats:
 #  - the spool's SpoolManager database id is NOT stored on the tag (the spec has no field for
 #    it) - a spool must be resolvable by the tag's own UID instead. Reading falls back to
-#    GET /spool/byCode/<uid>, which resolves via the last-4-hex-chars rfidTagKey (see
-#    U1RfidManager.deriveRfidTagKey()) - the same mechanism used for Snapmaker U1 tags.
+#    GET /spool/byCode/<uid>, which resolves via rfidTagKey (see
+#    U1RfidManager.deriveRfidTagKey(); for an NFC-V tag's 8-byte UID that key is the whole
+#    UID) - the same mechanism used for Snapmaker U1 tags.
 #  - capacity overflow is a hard failure on write (no partial/field-dropped write like
 #    OpenSpool) - a spool with a full field set needs a large NFC-V tag (SLIX2/ST25DV,
 #    ~316 bytes+); it will not fit on a 112-byte SLI-X.

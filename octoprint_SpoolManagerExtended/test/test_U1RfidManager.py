@@ -96,8 +96,9 @@ class FakeSpoolModel(object):
 
 
 class FakeDatabaseManager(object):
-    # Keyed by rfidTagKey (last 4 hex chars of the UID), matching production's
-    # loadSpoolByRfidTagKey() - see U1RfidManager.deriveRfidTagKey().
+    # Keyed by rfidTagKey (the last 4 hex chars of a 4-byte UID, the whole UID of a
+    # 7/8-byte one), matching production's loadSpoolByRfidTagKey() - see
+    # U1RfidManager.deriveRfidTagKey().
     def __init__(self, spoolsByRfidTagKey=None):
         self._spoolsByRfidTagKey = spoolsByRfidTagKey or {}
         self.lookedUpRfidTagKeys = []
@@ -215,6 +216,25 @@ class TestDeriveRfidTagKey(unittest.TestCase):
 
     def test_noneReturnsNone(self):
         self.assertIsNone(deriveRfidTagKey(None))
+
+    def test_sevenByteUidIsKeyedWhole(self):
+        # NTAG stickers: their suffix was observed to be shared by many different tags
+        self.assertEqual(deriveRfidTagKey("04A1B2C3D4E5F6"), "04A1B2C3D4E5F6")
+
+    def test_eightByteUidIsKeyedWhole(self):
+        # NFC-V
+        self.assertEqual(deriveRfidTagKey("E004010203040506"), "E004010203040506")
+
+    def test_sevenByteUidsSharingTheirSuffixGetDistinctKeys(self):
+        # Both end in D4E5F6: the suffix rule derived "E5F6" for both, so either sticker
+        # resolved to whichever spool had been taught in with one of them.
+        self.assertNotEqual(
+            deriveRfidTagKey("04A1B2C3D4E5F6"), deriveRfidTagKey("04112233D4E5F6")
+        )
+
+    def test_oddLengthIsNotMistakenForASevenByteUid(self):
+        # 15 hex chars floor-divide to 7 "bytes"; only an exact 14/16 is keyed whole
+        self.assertEqual(deriveRfidTagKey("04A1B2C3D4E5F6A"), "5F6A")
 
 
 ################################################################################################ extractTagMetadata
@@ -550,6 +570,43 @@ class TestChannelHandling(unittest.TestCase):
         manager._handleChannel(2, {"CARD_UID": [0x4D, 0xD7, 0x10, 0x40]})
 
         self.assertEqual(plugin.selectSpoolForToolCalls, [(2, 105), (2, 105)])
+
+    def test_legacySuffixKeyNoLongerCapturesASevenByteTag(self):
+        # The reported failure: a spool taught in under the suffix rule carried "E5F6",
+        # and every NTAG sticker whose UID ended in E5F6 auto-selected it for the tool -
+        # on insert and again on every reconnect. Keyed whole, such a tag is unknown
+        # instead, and the tool keeps whatever was selected before.
+        manager, plugin = _makeManager(
+            spoolsByRfidTagKey={"E5F6": FakeSpoolModel(7, "PLA White")}
+        )
+        manager._handleChannel(
+            3, {"CARD_UID": [0x04, 0xA1, 0xB2, 0xC3, 0xD4, 0xE5, 0xF6]}
+        )
+
+        self.assertEqual(plugin.selectSpoolForToolCalls, [])
+        self.assertEqual(
+            plugin._databaseManager.lookedUpRfidTagKeys, ["04A1B2C3D4E5F6"]
+        )
+        pushed = [m for m in plugin.sentMessages if m["action"] == "u1RfidUnknownTag"]
+        self.assertEqual(len(pushed), 1)
+        self.assertEqual(pushed[0]["rfidTagKey"], "04A1B2C3D4E5F6")
+
+    def test_sevenByteTagsSharingTheirSuffixSelectTheirOwnSpools(self):
+        # Two stickers ending in the same three UID bytes, each taught to its own spool
+        manager, plugin = _makeManager(
+            spoolsByRfidTagKey={
+                "04A1B2C3D4E5F6": FakeSpoolModel(7, "PLA White"),
+                "04112233D4E5F6": FakeSpoolModel(8, "PETG White"),
+            }
+        )
+        manager._handleChannel(
+            0, {"CARD_UID": [0x04, 0xA1, 0xB2, 0xC3, 0xD4, 0xE5, 0xF6]}
+        )
+        manager._handleChannel(
+            3, {"CARD_UID": [0x04, 0x11, 0x22, 0x33, 0xD4, 0xE5, 0xF6]}
+        )
+
+        self.assertEqual(sorted(plugin.selectSpoolForToolCalls), [(0, 7), (3, 8)])
 
 
 ################################################################################################ websocket message parsing

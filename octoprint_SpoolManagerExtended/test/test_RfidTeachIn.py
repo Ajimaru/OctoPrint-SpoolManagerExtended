@@ -133,6 +133,64 @@ class TestEvaluateTeachIn(unittest.TestCase):
         self.assertFalse(shouldSave)
         self.assertEqual(reason, RfidTeachIn.REASON_NO_UID)
 
+    def test_legacy_suffix_key_is_upgraded_without_force(self):
+        # Taught in while 7-byte UIDs were still keyed on their last 4 hex chars, the
+        # spool carries "E5F6"; the tag now derives its whole UID. Blocking this as
+        # "existing key differs" would ask the user to confirm replacing a key the tag no
+        # longer presents.
+        shouldSave, reason = RfidTeachIn.evaluateTeachIn(
+            newKey="04A1B2C3D4E5F6",
+            existingKeyOnTargetSpool="E5F6",
+            conflictingSpoolId=None,
+            targetSpoolId=42,
+            force=False,
+        )
+        self.assertTrue(shouldSave)
+        self.assertEqual(reason, RfidTeachIn.REASON_TAUGHT)
+
+    def test_unrelated_short_key_still_blocks_a_full_uid(self):
+        # Only the suffix of the new UID counts as its legacy form - any other short key
+        # is a different tag's key and stays protected.
+        shouldSave, reason = RfidTeachIn.evaluateTeachIn(
+            newKey="04A1B2C3D4E5F6",
+            existingKeyOnTargetSpool="1040",
+            conflictingSpoolId=None,
+            targetSpoolId=42,
+            force=False,
+        )
+        self.assertFalse(shouldSave)
+        self.assertEqual(reason, RfidTeachIn.REASON_EXISTING_KEY_DIFFERS)
+
+    def test_legacy_upgrade_still_respects_a_collision(self):
+        shouldSave, reason = RfidTeachIn.evaluateTeachIn(
+            newKey="04A1B2C3D4E5F6",
+            existingKeyOnTargetSpool="E5F6",
+            conflictingSpoolId=7,
+            targetSpoolId=42,
+            force=False,
+        )
+        self.assertFalse(shouldSave)
+        self.assertEqual(reason, RfidTeachIn.REASON_COLLISION)
+
+
+class TestIsLegacySuffixKeyOf(unittest.TestCase):
+    def test_suffix_of_a_full_uid_is_legacy(self):
+        self.assertTrue(RfidTeachIn.isLegacySuffixKeyOf("E5F6", "04A1B2C3D4E5F6"))
+
+    def test_other_short_key_is_not_legacy(self):
+        self.assertFalse(RfidTeachIn.isLegacySuffixKeyOf("1040", "04A1B2C3D4E5F6"))
+
+    def test_equal_short_keys_are_not_legacy(self):
+        # two 4-byte UIDs keyed on the same suffix - that is a collision, not an upgrade
+        self.assertFalse(RfidTeachIn.isLegacySuffixKeyOf("E5F6", "E5F6"))
+
+    def test_full_uid_is_never_the_legacy_form_of_a_short_key(self):
+        self.assertFalse(RfidTeachIn.isLegacySuffixKeyOf("04A1B2C3D4E5F6", "E5F6"))
+
+    def test_missing_keys_are_not_legacy(self):
+        self.assertFalse(RfidTeachIn.isLegacySuffixKeyOf(None, "04A1B2C3D4E5F6"))
+        self.assertFalse(RfidTeachIn.isLegacySuffixKeyOf("E5F6", None))
+
 
 if __name__ == "__main__":
     unittest.main()

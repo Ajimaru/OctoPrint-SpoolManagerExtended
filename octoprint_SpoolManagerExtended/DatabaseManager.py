@@ -2207,9 +2207,10 @@ class DatabaseManager(object):
 
     def loadSpoolByRfidTagKey(self, rfidTagKey, withReusedConnection=False):
         # Resolves a spool by its `rfidTagKey` field - the stable per-spool key derived
-        # from the last 4 hex chars of a U1 RFID tag's CARD_UID (see
-        # U1RfidManager.deriveRfidTagKey()). Separate from loadSpoolByCode()/`code`,
-        # which is a free-text field a spool may already use for its own serial number.
+        # from a tag's UID: its last 4 hex chars for a 4-byte UID, the whole UID for a
+        # 7/8-byte one (see U1RfidManager.deriveRfidTagKey()). Separate from
+        # loadSpoolByCode()/`code`, which is a free-text field a spool may already use
+        # for its own serial number.
         # Same template-exclusion and newest-match-wins semantics as loadSpoolByCode().
         def databaseCallMethode():
             if rfidTagKey is None or len(str(rfidTagKey).strip()) == 0:
@@ -2235,7 +2236,8 @@ class DatabaseManager(object):
         # How many spools loadSpoolByRfidTagKey() had to choose between. That method returns
         # the newest match and says nothing about the others, so a caller cannot tell an
         # unambiguous hit from an arbitrary pick - see common/RfidKeyCollision.py for why that
-        # distinction matters (4 hex characters of key space, real collision measured).
+        # distinction matters (4-byte UIDs are keyed on 4 hex characters, real collision
+        # measured).
         #
         # Deliberately a separate method rather than a change to loadSpoolByRfidTagKey(): every
         # existing caller of that one keeps behaving exactly as before.

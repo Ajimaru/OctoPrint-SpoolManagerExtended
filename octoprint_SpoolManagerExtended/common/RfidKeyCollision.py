@@ -4,12 +4,13 @@
 # Split out of the API layer so the branching is testable without flask or a database - same
 # reasoning as RfidTeachIn.py next to it.
 #
-# A spool is matched through `rfidTagKey`, the last few hex characters of the tag's UID (see
-# U1RfidManager.deriveRfidTagKey()). The truncation is deliberate: some spools carry two
-# physical tags whose UIDs differ in their leading bytes but share the trailing ones, so a
-# short key finds the spool from either side. The cost is a small key space, and collisions
-# have been observed on real hardware - including a tag from another ecosystem resolving to an
-# unrelated spool.
+# A spool is matched through `rfidTagKey`: for a 4-byte UID the last few hex characters, for
+# a 7/8-byte UID the whole UID (see U1RfidManager.deriveRfidTagKey()). The truncation is
+# deliberate: some spools carry two physical tags whose 4-byte UIDs differ in their leading
+# bytes but share the trailing ones, so a short key finds the spool from either side. The cost
+# is a small key space, and collisions have been observed on real hardware - including a tag
+# from another ecosystem resolving to an unrelated spool. That case was a TigerTag, i.e. a
+# 7-byte NTAG UID, back when those were still keyed on their suffix too.
 #
 # This module never changes how a tag resolves; it only says whether the answer deserves a
 # caveat. A warning, never a block: for a two-tag spool a shared-suffix match is the normal,
@@ -62,7 +63,7 @@ def isForeignTagPayload(idSource):
     The OctoScale firmware reports "extendedNoId" for a tag whose format it recognized and
     verified but which holds no SpoolManager id - TigerTag and OpenPrintTag. Such a tag cannot
     legitimately belong to any spool in this database, so a spool found for it was found by
-    UID suffix alone and is a collision, not an identification. This is the signal that catches
+    its UID key alone and is a collision, not an identification. This is the signal that catches
     the reported case, where a foreign tag resolved to an unrelated spool.
 
     Every other value answers False, including the empty string an unfinished read or an older

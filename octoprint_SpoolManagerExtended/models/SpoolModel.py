@@ -43,20 +43,25 @@ class SpoolModel(BaseModel):
     code = CharField(null=True)
     # Manufacturer batch/lot number, shared by spools of the same production batch # since V8
     batchNumber = CharField(null=True)
-    # Stable key for matching a U1 RFID tag back to this spool, derived from the last 4
-    # hex chars of the tag's CARD_UID (see U1RfidManager.deriveRfidTagKey()). Deliberately
-    # NOT the `code` field: a spool may carry its own independent barcode/serial there,
-    # unrelated to what an RFID tag reports. since V10
+    # Stable key for matching an RFID tag back to this spool, derived from the tag's UID
+    # (see U1RfidManager.deriveRfidTagKey()): the last 4 hex chars of a 4-byte UID, the
+    # whole UID for a 7/8-byte one. Deliberately NOT the `code` field: a spool may carry
+    # its own independent barcode/serial there, unrelated to what an RFID tag reports.
+    # since V10
     #
-    # PRELIMINARY: Snapmaker spools carry two physical RFID tags (one per side), each
-    # reporting a different CARD_UID. Live testing (4/4 spools) showed the last 4 hex
-    # characters of CARD_UID are identical between both tags of the same physical spool -
-    # this field exists to match on that stable suffix instead of the full, side-dependent
-    # UID. Only 16 bits of key space (65536 values): a COLLISION IS POSSIBLE if many spools
-    # of the same material/color/batch are registered, since two different physical spools
-    # could end up with the same last-4-hex suffix by chance. Acceptable for typical
-    # collection sizes; loadSpoolByRfidTagKey() resolves ties by newest match, and the
-    # teach-in flow should warn on a pre-existing match rather than silently overwrite.
+    # PRELIMINARY (4-byte UIDs): Snapmaker spools carry two physical RFID tags (one per
+    # side), each reporting a different CARD_UID. Live testing (4/4 spools) showed the
+    # last 4 hex characters of CARD_UID are identical between both tags of the same
+    # physical spool - the key matches on that stable suffix instead of the full,
+    # side-dependent UID. Only 16 bits of key space (65536 values): a COLLISION IS
+    # POSSIBLE if many spools are registered, since two different physical spools could
+    # end up with the same last-4-hex suffix by chance. Acceptable for typical collection
+    # sizes; loadSpoolByRfidTagKey() resolves ties by newest match, and the teach-in flow
+    # should warn on a pre-existing match rather than silently overwrite.
+    #
+    # 7/8-byte UIDs (NTAG stickers, NFC-V tags) are keyed on the whole UID: their suffix
+    # was observed to be shared by many different tags. A spool taught in before that
+    # change still carries a 4-character key such a tag no longer presents.
     rfidTagKey = CharField(null=True, index=True)
 
     firstUse = DateTimeField(null=True)

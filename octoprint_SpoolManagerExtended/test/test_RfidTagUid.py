@@ -91,7 +91,7 @@ class TestTruncatedUidProducesWrongKey(unittest.TestCase):
         fullUid = normalizeCardUid("04A1B2C3D4E5F6")
         fragment = normalizeCardUid("04A1B2")
 
-        self.assertEqual("E5F6", deriveRfidTagKey(fullUid))
+        self.assertEqual("04A1B2C3D4E5F6", deriveRfidTagKey(fullUid))
         self.assertEqual("A1B2", deriveRfidTagKey(fragment))
         self.assertNotEqual(deriveRfidTagKey(fullUid), deriveRfidTagKey(fragment))
 

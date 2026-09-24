@@ -107,6 +107,12 @@ RFID_TAG_KEY_LENGTH = 4
 # levels), 8 for NFC-V. Nothing else is a valid UID.
 _PLAUSIBLE_UID_BYTE_COUNTS = (4, 7, 8)
 
+# Hex lengths of the UIDs (7 and 8 bytes) whose key is the whole UID rather than its
+# RFID_TAG_KEY_LENGTH suffix - see deriveRfidTagKey(). Exact hex lengths, never
+# len() // 2: an odd-length string from normalizeCardUid()'s free-text path must not
+# pass as a 7- or 8-byte UID.
+_FULL_UID_KEY_HEX_LENGTHS = (14, 16)
+
 
 def isPlausibleTagUid(normalizedUid):
     """
@@ -116,8 +122,9 @@ def isPlausibleTagUid(normalizedUid):
     firmware's NFC-A anticollision runs in two cascade levels, and an abort in the second
     one leaves a 3-byte fragment of a 7-byte UID that is still reported as a good read.
     Such a fragment is not merely cosmetic - it derives a DIFFERENT rfidTagKey than the
-    same tag's full UID ("04A1B2" -> "A1B2" instead of "E5F6"), so storing it would bind
-    the spool to a key the tag will never present again, and the tag would never be found.
+    same tag's full UID ("04A1B2" -> "A1B2" instead of "04A1B2C3D4E5F6"), so storing
+    it would bind the spool to a key the tag will never present again, and the tag
+    would never be found.
 
     deriveRfidTagKey() alone cannot catch this: it only requires 4 hex characters, which a
     truncated UID has. Callers that persist a derived key must check this first.
@@ -130,27 +137,37 @@ def isPlausibleTagUid(normalizedUid):
 def deriveRfidTagKey(normalizedUid):
     """
     Derives the stable per-spool matching key from an already-normalized hex UID
-    (see normalizeCardUid()) - the last RFID_TAG_KEY_LENGTH hex characters.
+    (see normalizeCardUid()): the whole UID for 7- and 8-byte UIDs, the last
+    RFID_TAG_KEY_LENGTH hex characters for everything else.
 
-    PRELIMINARY: Snapmaker spools carry two physical RFID tags, one per side, and the
-    U1 reader only sees whichever side faces it. Live testing (4/4 spools, both sides
-    read and compared) showed the full 8-character CARD_UID differs between the two
-    tags of the same physical spool, but the last 4 hex characters were identical on
-    both - that suffix is what this function extracts, and what loadSpoolByRfidTagKey()
-    matches on instead of the full UID.
+    4-byte UIDs - PRELIMINARY: Snapmaker spools carry two physical RFID tags, one per
+    side, and the U1 reader only sees whichever side faces it. Live testing (4/4
+    spools, both sides read and compared) showed the full 8-character CARD_UID differs
+    between the two tags of the same physical spool, but the last 4 hex characters
+    were identical on both - that suffix is what this function extracts, and what
+    loadSpoolByRfidTagKey() matches on instead of the full UID. Only 16 bits of key
+    space (65536 possible values): a COLLISION IS POSSIBLE if many spools get taught
+    in - an accepted limitation for typical collection sizes; the teach-in flow warns
+    if the derived key already resolves to a different spool rather than silently
+    overwriting.
+
+    7- and 8-byte UIDs (NTAG stickers, NFC-V tags) are matched on the whole UID.
+    Observed on real hardware: seven of eight NTAG stickers seen shared their last
+    three UID bytes, so all seven derived the same 4-character suffix key and resolved
+    to the one spool that had been taught in with any of them - on the U1 that
+    auto-selected the wrong spool for a tool. A spool is expected to carry a single
+    such tag, so there is no second side a suffix would have to bridge. Keys taught in
+    under the old suffix rule no longer match these tags; such a tag reports as unknown
+    and has to be taught in again. Deliberately no suffix fallback: that fallback is
+    exactly what picked the wrong spool.
 
     This key is intentionally NOT stored in SpoolModel.code - code is a free-text
     bar/QR-code field a spool may already use for its own, unrelated serial number.
-
-    Only 16 bits of key space (65536 possible values): a COLLISION IS POSSIBLE if many
-    spools of the same material/color/batch get taught in - two different physical
-    spools could end up sharing the same last-4-hex suffix by chance. This is a known,
-    accepted limitation for typical collection sizes, not a bug; the teach-in flow
-    should surface a warning if the derived key already resolves to a different spool,
-    rather than silently overwriting.
     """
     if not normalizedUid or len(normalizedUid) < RFID_TAG_KEY_LENGTH:
         return None
+    if len(normalizedUid) in _FULL_UID_KEY_HEX_LENGTHS:
+        return normalizedUid
     return normalizedUid[-RFID_TAG_KEY_LENGTH:]
 
 
@@ -679,8 +696,9 @@ class U1RfidManager(object):
     ################################################################################################ spool resolution
 
     def _findSpoolByUid(self, uid):
-        # Matches on the rfidTagKey (last 4 hex chars of the UID), not the full UID -
-        # see deriveRfidTagKey() for why (two physical tags per Snapmaker spool).
+        # Matches on the rfidTagKey, not on the raw UID - for a 4-byte UID that key is only
+        # the last 4 hex chars (two physical tags per Snapmaker spool), for 7/8-byte UIDs
+        # the whole UID. See deriveRfidTagKey().
         if not uid:
             return None
         rfidTagKey = deriveRfidTagKey(uid)
@@ -748,10 +766,11 @@ class U1RfidManager(object):
         #
         # Only the ambiguity half is answerable here. This path is fed by the printer's own
         # RFID reader, which reports a UID and nothing else - there is no parsed format and no
-        # firmware idSource to say whether the tag belongs to another ecosystem. A foreign tag
-        # on a U1 spool holder is also not a case that arises: these are the printer's own
-        # spools. describeMatch() therefore answers foreignTag False, which is honest here
-        # rather than a cleared check.
+        # firmware idSource to say whether the tag belongs to another ecosystem.
+        # describeMatch() therefore answers foreignTag False - "not checked", not "checked
+        # and fine". Non-Snapmaker tags do reach this reader: an OctoScale-written NTAG
+        # sticker on a third-party spool was read here and, while such tags were still
+        # matched by UID suffix, resolved to an unrelated spool (see deriveRfidTagKey()).
         rfidTagKey = deriveRfidTagKey(uid) if uid else None
         if not rfidTagKey:
             return None
