@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import sqlite3
+import threading
 
 from peewee import (
     DoesNotExist,
@@ -17,7 +18,7 @@ from peewee import (
     chunked,
     fn,
 )
-from playhouse.shortcuts import model_to_dict
+from playhouse.shortcuts import ReconnectMixin, model_to_dict
 
 from octoprint_SpoolManagerExtended.api import Transformer
 from octoprint_SpoolManagerExtended.common import ErrorMessages, StringUtils
@@ -40,6 +41,22 @@ DATABASE_FILE_NAME = "spoolmanager.db"
 
 # List all Models
 MODELS = [PluginMetaDataModel, SpoolModel]
+
+# Why the calling thread's last DatabaseManager.saveSpool() returned what it did - see
+# getLastSaveOutcome(). saveSpool() itself keeps answering "databaseId or None" for all of
+# its callers; these tell a caller that has to explain a None which None it got.
+SAVE_OUTCOME_SAVED = "saved"
+SAVE_OUTCOME_VERSION_CONFLICT = "versionConflict"
+SAVE_OUTCOME_DELETED = "deleted"
+SAVE_OUTCOME_DATABASE_ERROR = "databaseError"
+
+
+class _ReconnectingMySQLDatabase(ReconnectMixin, MySQLDatabase):
+    # A thread's connection now stays open until that thread closes it, so a pool thread
+    # that idles longer than the server's wait_timeout can come back to a connection the
+    # server has dropped. ReconnectMixin reopens it on "server has gone away" instead of
+    # failing the request - never inside a transaction, where it re-raises.
+    pass
 
 
 class DatabaseManager(object):
@@ -73,13 +90,33 @@ class DatabaseManager(object):
             parentLogger.name + "." + self.__class__.__name__ + ".SQL"
         )
 
+        # Connection state is per thread, because the connection is: peewee keeps one
+        # connection per thread on a database object. A single shared flag let one request's
+        # closeDatabase() report "Database not connected" to another request still in the
+        # middle of its own work. Created before _isConnected, which is stored in here.
+        self._threadState = threading.local()
+        # One database object per database the settings point at - see
+        # _getOrBuildBoundDatabase(). _databaseSignature says which one it was built for.
         self._database = None
+        self._databaseSignature = None
+        self._databaseBuildLock = threading.Lock()
         self._databaseSettings = None
         self._sendDataToClient = None
         self._isConnected = False
         self._currentErrorMessageDict = None
         # True when an external database still has an old scheme (auto-upgrade only runs for local SQLite)
         self._schemeUpgradeNeeded = False
+
+    # Whether the calling thread holds a connection it opened through connectoToDatabase() -
+    # see _threadState in __init__. Tests set it directly to hand the manager a connection
+    # they opened themselves.
+    @property
+    def _isConnected(self):
+        return getattr(self._threadState, "isConnected", False)
+
+    @_isConnected.setter
+    def _isConnected(self, value):
+        self._threadState.isConnected = value
 
     ################################################################################################## private functions
     # "databaseSettings"] = {
@@ -90,18 +127,23 @@ class DatabaseManager(object):
     # "user": "",
     # "password": ""
 
-    def _buildDatabaseConnection(self):
+    def _buildDatabaseConnection(self, databaseSettings=None):
+        # Builds an unbound, unconnected database object for the given settings (default:
+        # the active ones). Callers that only look at another database - metadata, a
+        # connection test - query it through query.bind(database) and never bind the models.
+        if databaseSettings is None:
+            databaseSettings = self._databaseSettings
         database = None
-        if not self._databaseSettings.useExternal:
+        if not databaseSettings.useExternal:
             # local database`
-            database = SqliteDatabase(self._databaseSettings.fileLocation)
+            database = SqliteDatabase(databaseSettings.fileLocation)
         else:
-            databaseType = self._databaseSettings.type
-            databaseName = self._databaseSettings.name
-            host = self._databaseSettings.host
-            port = int(self._databaseSettings.port)
-            user = self._databaseSettings.user
-            password = self._databaseSettings.password
+            databaseType = databaseSettings.type
+            databaseName = databaseSettings.name
+            host = databaseSettings.host
+            port = int(databaseSettings.port)
+            user = databaseSettings.user
+            password = databaseSettings.password
             if "postgres" == databaseType:
                 # Connect to a Postgres database.
                 database = PostgresqlDatabase(
@@ -109,11 +151,57 @@ class DatabaseManager(object):
                 )
             else:
                 # Connect to a MySQL database on network.
-                database = MySQLDatabase(
+                database = _ReconnectingMySQLDatabase(
                     databaseName, user=user, password=password, host=host, port=port
                 )
 
         return database
+
+    @staticmethod
+    def _connectionSignature(databaseSettings):
+        # What identifies the database a settings object points at. Computed from the
+        # current values on every connect, so a settings object changed in place is noticed
+        # just like a replaced one.
+        if databaseSettings is None:
+            return None
+        if not databaseSettings.useExternal:
+            return ("sqlite", databaseSettings.fileLocation)
+        return (
+            databaseSettings.type,
+            databaseSettings.host,
+            str(databaseSettings.port),
+            databaseSettings.name,
+            databaseSettings.user,
+            databaseSettings.password,
+        )
+
+    def _getOrBuildBoundDatabase(self):
+        # Builds and binds a database object only when the settings point at a different
+        # database than the current object does. It used to be rebuilt and re-bound on every
+        # connect: each call got an object of its own and re-pointed the process-wide model
+        # binding at it, so a request running in parallel suddenly queried through an object
+        # it had never connected - its transaction on one object, its writes on another.
+        signature = self._connectionSignature(self._databaseSettings)
+        with self._databaseBuildLock:
+            if self._database is None or signature != self._databaseSignature:
+                previousDatabase = self._database
+                database = self._buildDatabaseConnection()
+                DatabaseManager.db = database
+                database.bind(MODELS)
+                self._database = database
+                self._databaseSignature = signature
+                if previousDatabase is not None:
+                    # only this thread's connection can be closed from here; other threads
+                    # drop theirs with the object
+                    try:
+                        if (
+                            not previousDatabase.is_closed()
+                            and not previousDatabase.in_transaction()
+                        ):
+                            previousDatabase.close()
+                    except Exception:
+                        pass  # ignore close exception
+            return self._database
 
     def _createDatabase(self, forceCreateTables):
 
@@ -941,14 +1029,33 @@ class DatabaseManager(object):
         return copy.copy(self._databaseSettings)
 
     def testDatabaseConnection(self, databaseSettings=None):
-        result = None
-        backupCurrentDatabaseSettings = None
-        try:
-            # use provided database settings or default if not provided
-            if databaseSettings is not None:
-                backupCurrentDatabaseSettings = self._databaseSettings
-                self._databaseSettings = databaseSettings
+        if databaseSettings is not None:
+            # Candidate settings get a throwaway connection of their own. Switching
+            # self._databaseSettings for the test sent every request running in the
+            # meantime to the candidate database.
+            database = None
+            try:
+                database = self._buildDatabaseConnection(databaseSettings)
+                database.connect()
+                return None
+            except Exception as e:
+                self._logger.exception("testDatabaseConnection")
+                self._storeErrorMessage(
+                    "error",
+                    "connection problem",
+                    ErrorMessages.classifyConnectionError(e),
+                    True,
+                )
+                return self.getCurrentErrorMessageDict()
+            finally:
+                try:
+                    if database is not None:
+                        database.close()
+                except Exception:
+                    pass  # ignore close exception
 
+        result = None
+        try:
             succesful = self.connectoToDatabase()
             if not succesful:
                 result = self.getCurrentErrorMessageDict()
@@ -957,8 +1064,6 @@ class DatabaseManager(object):
                 self.closeDatabase()
             except Exception:
                 pass  # do nothing
-            if backupCurrentDatabaseSettings is not None:
-                self._databaseSettings = backupCurrentDatabaseSettings
 
         return result
 
@@ -969,20 +1074,26 @@ class DatabaseManager(object):
     def connectoToDatabase(self, withMetaCheck=False, sendErrorPopUp=True):
         # reset current errorDict
         self._currentErrorMessageDict = None
-        self._isConnected = False
 
         # build connection
         try:
             if self.sqlLoggingEnabled:
                 self._logger.info("Database connection with...")
                 self._logger.info(self._databaseSettings)
-            self._database = self._buildDatabaseConnection()
+            database = self._getOrBuildBoundDatabase()
 
             # connect to Database
-            DatabaseManager.db = self._database
-            self._database.bind(MODELS)
-
-            self._database.connect()
+            if (
+                not self._isConnected
+                and not database.is_closed()
+                and not database.in_transaction()
+            ):
+                # This thread still holds a connection nobody accounted for - opened by
+                # autoconnect after a close, or left open by a missing close. It may have
+                # been idle for hours, so start fresh instead of handing it out again.
+                database.close()
+            # a nested connect in the same thread keeps the connection it already has
+            database.connect(reuse_if_open=True)
             if self.sqlLoggingEnabled:
                 self._logger.info(
                     "Database connection successful. Checking Scheme versions"
@@ -1018,6 +1129,7 @@ class DatabaseManager(object):
     ):
         self._currentErrorMessageDict = None
         try:
+            # closes the calling thread's connection only - peewee keeps one per thread
             self._database.close()
             pass
         except Exception:
@@ -2062,15 +2174,43 @@ class DatabaseManager(object):
                 pass  # do nothing
         pass
 
-    def loadDatabaseMetaInformations(self, databaseSettings=None):
+    def _readMetaInformations(self, databaseSettings):
+        # Scheme version and spool count of the database the settings point at, read over a
+        # throwaway connection. Every query is bound to that connection explicitly, so the
+        # process-wide model binding - and every other thread using it - is never touched.
+        database = self._buildDatabaseConnection(databaseSettings)
+        database.connect()
+        try:
+            schemeVersion = (
+                PluginMetaDataModel.select()
+                .where(
+                    PluginMetaDataModel.key
+                    == PluginMetaDataModel.KEY_DATABASE_SCHEME_VERSION
+                )
+                .bind(database)
+                .get()
+                .value
+            )
+            spoolItemCount = SpoolModel.select().bind(database).count()
+        finally:
+            database.close()
+        return schemeVersion, spoolItemCount
 
-        backupCurrentDatabaseSettings = None
-        if databaseSettings is not None:
-            backupCurrentDatabaseSettings = self._databaseSettings
-        else:
-            # use default settings
+    def loadDatabaseMetaInformations(self, databaseSettings=None):
+        # Works on copies and never assigns self._databaseSettings. It used to switch the
+        # active settings to the local SQLite file for the local half - with no argument (the
+        # Storage tab) by rewriting the live settings object in place - and connect through
+        # the process-wide model binding, so every request running in the meantime, writes
+        # included, went to the local SQLite file instead of the configured database.
+        if databaseSettings is None:
             databaseSettings = self._databaseSettings
-            backupCurrentDatabaseSettings = self._databaseSettings
+        externalSettings = copy.copy(databaseSettings)
+        localSettings = copy.copy(databaseSettings)
+        localSettings.type = "sqlite"
+        localSettings.baseFolder = self._databaseSettings.baseFolder
+        localSettings.fileLocation = self._databaseSettings.fileLocation
+        localSettings.useExternal = False
+
         # filelocation
         # backupname
         # scheme version
@@ -2082,67 +2222,30 @@ class DatabaseManager(object):
         externalSpoolItemCount = "-"
         errorMessage = ""
         loadResult = False
-        # - save current DatbaseSettings
-        # currentDatabaseSettings = self._databaseSettings
-        # currentDatabase = self._database
-        # externalConnected = False
         # always read local meta data
         try:
-            currentDatabaseType = databaseSettings.type
-            currentUseExternal = databaseSettings.useExternal
-
-            # First load meta from local sqlite database
-            databaseSettings.type = "sqlite"
-            databaseSettings.baseFolder = self._databaseSettings.baseFolder
-            databaseSettings.fileLocation = self._databaseSettings.fileLocation
-            databaseSettings.useExternal = False
-            self._databaseSettings = databaseSettings
             try:
-                self.connectoToDatabase(sendErrorPopUp=False)
-                localSchemeVersionFromDatabaseModel = PluginMetaDataModel.get(
-                    PluginMetaDataModel.key
-                    == PluginMetaDataModel.KEY_DATABASE_SCHEME_VERSION
-                ).value
-                localSpoolItemCount = self.countSpoolsByQuery()
-                self.closeDatabase()
+                localSchemeVersionFromDatabaseModel, localSpoolItemCount = (
+                    self._readMetaInformations(localSettings)
+                )
             except Exception as e:
                 errorMessage = (
                     "local database: " + ErrorMessages.classifyConnectionError(e)
                 )
                 self._logger.error("Connecting to local database not possible")
                 self._logger.exception(e)
-                try:
-                    self.closeDatabase()
-                except Exception:
-                    pass  # ignore close exception
 
-            # Use origin Database type to collect the other metadata (if needed)
-            databaseSettings.type = currentDatabaseType
-            databaseSettings.useExternal = currentUseExternal
-            if databaseSettings.useExternal:
+            if externalSettings.useExternal:
                 # External DB
-                self._databaseSettings = databaseSettings
-                self.connectoToDatabase(sendErrorPopUp=False)
-                externalSchemeVersionFromDatabaseModel = PluginMetaDataModel.get(
-                    PluginMetaDataModel.key
-                    == PluginMetaDataModel.KEY_DATABASE_SCHEME_VERSION
-                ).value
-                externalSpoolItemCount = self.countSpoolsByQuery()
-                self.closeDatabase()
+                externalSchemeVersionFromDatabaseModel, externalSpoolItemCount = (
+                    self._readMetaInformations(externalSettings)
+                )
             loadResult = True
         except Exception as e:
             # this is what testDatabaseConnection surfaces, so it must stay informative
             # without naming host, port, user or the driver internals
             errorMessage = ErrorMessages.classifyConnectionError(e)
             self._logger.exception(e)
-            try:
-                self.closeDatabase()
-            except Exception:
-                pass  # ignore close exception
-        finally:
-            # restore orig. database settings
-            if backupCurrentDatabaseSettings is not None:
-                self._databaseSettings = backupCurrentDatabaseSettings
 
         return {
             "success": loadResult,
@@ -2474,6 +2577,7 @@ class DatabaseManager(object):
                             databaseId, withReusedConnection
                         )
                         if currentSpoolModel is None:
+                            self._threadState.lastSaveOutcome = SAVE_OUTCOME_DELETED
                             if not suppressConflictMessage:
                                 self._passMessageToClient(
                                     "error",
@@ -2493,6 +2597,9 @@ class DatabaseManager(object):
                                 else 1
                             )
                             if versionFromUI != versionFromDatabase:
+                                self._threadState.lastSaveOutcome = (
+                                    SAVE_OUTCOME_VERSION_CONFLICT
+                                )
                                 if not suppressConflictMessage:
                                     self._passMessageToClient(
                                         "error",
@@ -2513,6 +2620,7 @@ class DatabaseManager(object):
                     databaseId = spoolModel.get_id()
                     # do expicit commit
                     transaction.commit()
+                    self._threadState.lastSaveOutcome = SAVE_OUTCOME_SAVED
                 except Exception:
                     # Because this block of code is wrapped with "atomic", a
                     # new transaction will begin automatically after the call
@@ -2525,6 +2633,10 @@ class DatabaseManager(object):
                         "DatabaseManager",
                         "Could not insert the spool into the database. See OctoPrint.log for details!",
                     )
+                    # Nothing was written. Answering with the id - still set from the
+                    # update check above - reported the failed save as stored, and the
+                    # caller adopted the version bumped above for its next save.
+                    databaseId = None
                 pass
 
             return databaseId
@@ -2540,9 +2652,18 @@ class DatabaseManager(object):
             )
             spoolModel.remainingWeight = remainingWeight
 
+        # stays at "database error" unless databaseCallMethode() gets far enough to say
+        # otherwise - e.g. when _handleReusableConnection() finds no connection at all
+        self._threadState.lastSaveOutcome = SAVE_OUTCOME_DATABASE_ERROR
         return self._handleReusableConnection(
             databaseCallMethode, withReusedConnection, "saveSpool"
         )
+
+    def getLastSaveOutcome(self):
+        # Why the calling thread's last saveSpool() returned what it did - one of the
+        # SAVE_OUTCOME_* values, or None before the first save. Per thread, like the
+        # connection state, so a parallel save cannot overwrite the answer.
+        return getattr(self._threadState, "lastSaveOutcome", None)
 
     def countSpoolsByQuery(self, tableQuery=None, withReusedConnection=False):
         def databaseCallMethode():
