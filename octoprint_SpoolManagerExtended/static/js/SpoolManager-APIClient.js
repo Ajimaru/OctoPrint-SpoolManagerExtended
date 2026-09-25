@@ -382,12 +382,14 @@ function SpoolManagerExtendedAPIClient(pluginId, baseUrl) {
     };
 
     ///////////////////////////////////////////////////////////////////////////////////////////////// LOAD Spool by Id
+    // The response is passed on as well: a 404 (spool deleted) and a failed request both
+    // arrive with an undefined body, and only the status tells them apart.
     this.callLoadSpoolById = function (databaseId, responseHandler) {
         _callApi(
             _buildPluginUrl("spool/" + databaseId),
             {method: "GET"},
-            function (data) {
-                responseHandler(data);
+            function (data, response) {
+                responseHandler(data, response);
             }
         );
     };
