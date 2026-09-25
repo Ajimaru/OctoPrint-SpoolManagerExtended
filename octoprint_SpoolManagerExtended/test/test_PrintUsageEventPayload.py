@@ -73,6 +73,9 @@ class FakePlugin(object):
     commitOdometerData = SpoolmanagerPlugin.commitOdometerData
     _sendPayload2EventBus = SpoolmanagerPlugin._sendPayload2EventBus
     _calculateWeight = SpoolmanagerPlugin._calculateWeight
+    _moonrakerUsagePerTool = SpoolmanagerPlugin._moonrakerUsagePerTool
+    _printJobFileLocation = SpoolmanagerPlugin._printJobFileLocation
+    _printJobIdentity = SpoolmanagerPlugin._printJobIdentity
     MINIMUM_PRINT_DURATION_FOR_SLICED_USAGE = (
         SpoolmanagerPlugin.MINIMUM_PRINT_DURATION_FOR_SLICED_USAGE
     )
@@ -86,6 +89,10 @@ class FakePlugin(object):
         self._mqttManager = None
         self._lastPrintJobUsage = None
         self._slicedUsageAlreadyBooked = False
+        self._printJobStartedTimestamp = None
+        self._printJobStartFileLocation = (None, None)
+        self._moonrakerUsageBooked = 0.0
+        self._printJobUsageReported = False
         self.metaDataFilamentLengths = []
         self.myFilamentOdometer = FakeOdometer(extrusionAmounts)
         self._selectedSpools = selectedSpools
@@ -93,6 +100,10 @@ class FakePlugin(object):
 
     def loadSelectedSpools(self):
         return self._selectedSpools
+
+    def _getCurrentJobFileLocation(self):
+        # a job OctoPrint streams itself, so Moonraker is never asked
+        return "local", "job.gcode"
 
     def _readingFilamentMetaData(self):
         self.metaDataReadCount += 1
