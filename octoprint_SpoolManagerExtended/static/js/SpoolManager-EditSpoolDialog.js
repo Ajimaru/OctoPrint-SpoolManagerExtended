@@ -2115,7 +2115,99 @@ function SpoolManagerExtendedEditSpoolDialog() {
         self.templateSpools(spoolItemsArray);
     };
 
+    // Identifies the most recent showDialog() call, so a slow spool fetch cannot open the
+    // dialog after the user has already asked for a different spool (or a new one).
+    self._pendingDialogOpen = null;
+    self._sourceSpoolItem = null;
+
+    // An existing spool is re-read from the database before the form is filled. The item
+    // handed in comes from the table or the sidebar, which only refresh on events this
+    // instance sees: a weight booked through another OctoPrint instance sharing the same
+    // database (e.g. the one OctoScale reports to) left the table - and every dialog opened
+    // from it - showing values the database no longer held.
     this.showDialog = function (
+        spoolItem,
+        closeDialogHandler,
+        isLoadedInTool,
+        u1RfidContext
+    ) {
+        var openRequest = {};
+        self._pendingDialogOpen = openRequest;
+
+        var databaseId = spoolItem != null ? ko.unwrap(spoolItem.databaseId) : null;
+        if (databaseId == null || self.apiClient == null) {
+            self._showDialogWithSpoolItem(
+                spoolItem,
+                closeDialogHandler,
+                isLoadedInTool,
+                u1RfidContext
+            );
+            return;
+        }
+
+        self.apiClient.callLoadSpoolById(databaseId, function (responseData, response) {
+            if (self._pendingDialogOpen !== openRequest) {
+                // superseded by a later showDialog() call
+                return;
+            }
+            self._pendingDialogOpen = null;
+
+            if (response != null && response.status === 404) {
+                SPOOLMANAGER_DIALOGS.notify({
+                    title: "Spool no longer exists",
+                    message:
+                        "This spool was deleted in the meantime. The list is refreshed.",
+                    type: "info"
+                });
+                closeDialogHandler(true);
+                return;
+            }
+
+            var freshSpool = responseData != null ? responseData.spool : null;
+            if (freshSpool == null) {
+                // Better stale values than no dialog at all - but say so, the user opened
+                // it expecting the current state.
+                SPOOLMANAGER_DIALOGS.notify({
+                    title: "Could not load the latest spool values",
+                    message:
+                        "The dialog shows the values from the list, which may be out of date.",
+                    type: "error"
+                });
+                self._showDialogWithSpoolItem(
+                    spoolItem,
+                    closeDialogHandler,
+                    isLoadedInTool,
+                    u1RfidContext
+                );
+                return;
+            }
+
+            // Updated in place rather than copied: the row the dialog was opened from is
+            // just as stale, and would show the old values again once the dialog closes.
+            // The SpoolItem constructor runs the same update(), so the result is identical
+            // to a freshly created item. selectedForTool/selectedFromQRCode are not stored
+            // in the database - the caller sets them on the row before opening (see
+            // showSpoolDialogAction and the QR code selection) - so they are kept.
+            var spoolItemToShow = spoolItem;
+            var freshSpoolData = $.extend({}, freshSpool, {
+                selectedForTool: ko.unwrap(spoolItem.selectedForTool),
+                selectedFromQRCode: ko.unwrap(spoolItem.selectedFromQRCode)
+            });
+            if (typeof spoolItem.update === "function") {
+                spoolItem.update(freshSpoolData, {catalogs: self.catalogs});
+            } else {
+                spoolItemToShow = self.createSpoolItemForTable(freshSpoolData);
+            }
+            self._showDialogWithSpoolItem(
+                spoolItemToShow,
+                closeDialogHandler,
+                isLoadedInTool,
+                u1RfidContext
+            );
+        });
+    };
+
+    self._showDialogWithSpoolItem = function (
         spoolItem,
         closeDialogHandler,
         isLoadedInTool,
@@ -2123,6 +2215,8 @@ function SpoolManagerExtendedEditSpoolDialog() {
     ) {
         self.autoUpdateEnabled = false;
         self.closeDialogHandler = closeDialogHandler;
+        // the table/sidebar row behind the dialog, kept in step by _applyServerSpool()
+        self._sourceSpoolItem = spoolItem;
         // Learn the firmware verdict before anything is clicked, so a blocked control is
         // already blocked (and says why) rather than only after the first failed attempt.
         if (self.isOctoScaleEnabled() && self.octoScaleWeighing != null) {
@@ -2605,9 +2699,9 @@ function SpoolManagerExtendedEditSpoolDialog() {
         {key: "rfidTagKey", label: "RFID tag key"}
     ];
 
-    // Compares what the dialog holds against the server's current state and returns a
-    // human readable list of the differences ("Remaining weight: 612.4 -> 0.0").
-    self._describeConflictChanges = function (currentSpool) {
+    // Compares what the dialog holds against the server's current state and returns the
+    // differing fields as {label, serverText, myText}.
+    self._collectServerDifferences = function (currentSpool) {
         var changes = [];
         if (currentSpool == null) {
             return changes;
@@ -2643,17 +2737,202 @@ function SpoolManagerExtendedEditSpoolDialog() {
                 isDifferent = myText !== serverText;
             }
             if (isDifferent && (myText.length > 0 || serverText.length > 0)) {
-                changes.push(
-                    field.label +
-                        ": " +
-                        (serverText || "-") +
-                        " (server) vs. " +
-                        (myText || "-") +
-                        " (yours)"
-                );
+                changes.push({
+                    label: field.label,
+                    serverText: serverText,
+                    myText: myText
+                });
             }
         });
         return changes;
+    };
+
+    // Same comparison as a human readable list ("Remaining weight: 612.4 (server) vs. 0.0 (yours)").
+    self._describeConflictChanges = function (currentSpool) {
+        return self._collectServerDifferences(currentSpool).map(function (change) {
+            return (
+                change.label +
+                ": " +
+                (change.serverText || "-") +
+                " (server) vs. " +
+                (change.myText || "-") +
+                " (yours)"
+            );
+        });
+    };
+
+    // Replaces the form content with the spool as the server currently has it. The fields
+    // the caller set on the row before opening (tool slot, QR selection) are not part of
+    // the server's answer and SpoolItem.update() would clear them, so they are carried
+    // over - losing selectedForTool meant a later save no longer refreshed the sidebar.
+    self._applyServerSpool = function (serverSpool) {
+        var spoolData = $.extend({}, serverSpool, {
+            selectedForTool: self.spoolItemForEditing.selectedForTool(),
+            selectedFromQRCode: self.spoolItemForEditing.selectedFromQRCode()
+        });
+        self._updateActiveSpoolItem(spoolData);
+        // the form now shows the server's state, so that is the new baseline
+        self._resetFormSnapshot();
+        self._reColorFilamentIcon(self.spoolItemForEditing.color());
+
+        // Same values for the row the dialog was opened from, otherwise it shows the old
+        // state again once the dialog is closed without saving.
+        var sourceSpoolItem = self._sourceSpoolItem;
+        if (
+            sourceSpoolItem != null &&
+            typeof sourceSpoolItem.update === "function" &&
+            ko.unwrap(sourceSpoolItem.databaseId) === serverSpool.databaseId
+        ) {
+            sourceSpoolItem.update(
+                $.extend({}, serverSpool, {
+                    selectedForTool: ko.unwrap(sourceSpoolItem.selectedForTool),
+                    selectedFromQRCode: ko.unwrap(sourceSpoolItem.selectedFromQRCode)
+                }),
+                {catalogs: self.catalogs}
+            );
+        }
+    };
+
+    // Re-reads the spool while the dialog is open and adopts a newer version. Covers a change
+    // made after the dialog was opened - a scale booking a weight is the typical one, and it
+    // may well arrive through another OctoPrint instance, so no event reaches this browser.
+    // Unchanged form: the new values are taken over silently (with a notice). Edited form:
+    // the user decides, since reloading throws the edits away.
+    //
+    // onDone is called once the check is over, also when nothing changed or the request
+    // failed: the check only ever precedes an action, it never blocks it. The one exception
+    // is a call made while a check is still running - it is dropped, onDone included, so a
+    // double click does not read the tag twice.
+    self._spoolRefreshInProgress = false;
+    self._refreshSpoolIfChangedElsewhere = function (onDone) {
+        var done = typeof onDone === "function" ? onDone : function () {};
+        var databaseId = self.spoolItemForEditing.databaseId();
+        if (
+            self.isExistingSpool() !== true ||
+            databaseId == null ||
+            self.apiClient == null
+        ) {
+            done();
+            return;
+        }
+        if (self._spoolRefreshInProgress === true) {
+            // a second click while the first check is still out - the first one continues
+            return;
+        }
+        self._spoolRefreshInProgress = true;
+
+        self.apiClient.callLoadSpoolById(databaseId, function (responseData, response) {
+            self._spoolRefreshInProgress = false;
+            // the dialog was closed or switched to another spool in the meantime
+            if (
+                self.spoolDialog.is(":visible") !== true ||
+                self.spoolItemForEditing.databaseId() !== databaseId
+            ) {
+                return;
+            }
+
+            if (response != null && response.status === 404) {
+                // Nothing to reload into. Saving runs into the existing "deleted" conflict
+                // handling, which offers to close the dialog.
+                SPOOLMANAGER_DIALOGS.notify({
+                    title: "Spool no longer exists",
+                    message: "This spool was deleted while the dialog was open.",
+                    type: "error"
+                });
+                done();
+                return;
+            }
+
+            var serverSpool = responseData != null ? responseData.spool : null;
+            if (serverSpool == null) {
+                console.warn(
+                    "SpoolManager: could not re-read spool " +
+                        databaseId +
+                        ", continuing with the values in the dialog."
+                );
+                done();
+                return;
+            }
+            if (
+                String(serverSpool.version) === String(self.spoolItemForEditing.version())
+            ) {
+                done();
+                return;
+            }
+
+            var changes = self._collectServerDifferences(serverSpool);
+            var unsavedChanges = self._getUnsavedChanges();
+            if (unsavedChanges.length === 0) {
+                self._applyServerSpool(serverSpool);
+                SPOOLMANAGER_DIALOGS.notify({
+                    title: "Spool was changed elsewhere",
+                    message:
+                        "The dialog now shows the current values." +
+                        (changes.length > 0
+                            ? SPOOLMANAGER_DIALOGS.buildHtmlList(
+                                  changes.map(function (change) {
+                                      return SPOOLMANAGER_DIALOGS.escapeHtml(
+                                          change.label +
+                                              ": " +
+                                              (change.myText || "-") +
+                                              " -> " +
+                                              (change.serverText || "-")
+                                      );
+                                  })
+                              )
+                            : ""),
+                    type: "info"
+                });
+                done();
+                return;
+            }
+
+            SPOOLMANAGER_DIALOGS.confirm({
+                title: "Spool was changed elsewhere",
+                message:
+                    "<p>This spool was saved elsewhere after the dialog was opened (for" +
+                    " example by a scale).</p>" +
+                    (changes.length > 0
+                        ? SPOOLMANAGER_DIALOGS.buildHtmlList(
+                              changes.map(function (change) {
+                                  return SPOOLMANAGER_DIALOGS.escapeHtml(
+                                      change.label +
+                                          ": " +
+                                          (change.serverText || "-") +
+                                          " (current) vs. " +
+                                          (change.myText || "-") +
+                                          " (in this dialog)"
+                                  );
+                              })
+                          )
+                        : "") +
+                    self._buildUnsavedChangesMessage(unsavedChanges),
+                question: "Load the current values and discard your unsaved changes?",
+                cancel: "Keep my changes",
+                proceed: "Load current values",
+                proceedClass: "primary"
+            }).then(function (confirmed) {
+                if (confirmed === true) {
+                    self._applyServerSpool(serverSpool);
+                }
+                // Keeping the edits is safe: the dialog still holds the old version, so a
+                // save runs into the conflict dialog instead of overwriting the new values.
+                done();
+            });
+        });
+    };
+
+    // "Read tag" on the dialog: the tag is compared against the form, so the form has to
+    // show the database's current state first. Sequential on purpose - the import dialog
+    // that follows a successful read freezes its comparison rows when it opens.
+    self.readTagWithCurrentSpool = function () {
+        var writer = self.octoScaleTagWriter;
+        if (writer == null || writer.canReadTag() !== true) {
+            return;
+        }
+        self._refreshSpoolIfChangedElsewhere(function () {
+            writer.readTag();
+        });
     };
 
     self._handleSaveConflict = function (conflict) {
@@ -2699,10 +2978,7 @@ function SpoolManagerExtendedEditSpoolDialog() {
                 if (buttonIndex === 0) {
                     // take the server state into the dialog, dropping the local edits
                     if (currentSpool != null) {
-                        self._updateActiveSpoolItem(currentSpool);
-                        // the form now shows the server's state, so that is the new baseline
-                        self._resetFormSnapshot();
-                        self._reColorFilamentIcon(self.spoolItemForEditing.color());
+                        self._applyServerSpool(currentSpool);
                     } else {
                         self._closeSpoolDialog();
                         self.closeDialogHandler(true);

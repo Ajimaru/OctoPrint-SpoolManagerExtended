@@ -867,7 +867,7 @@ Example: {material}-{color}-{id} becomes PETG-Silver-42."><i class="fas fa-info-
                                                string was inline next to Cancel, which read as unrelated to the buttons above it. #}
                                             <span data-bind="visible: spoolDialog.octoScaleTagWriter.shouldOfferTagRead">
                                                 <button type="button" class="btn btn-small"
-                                                        data-bind="click: spoolDialog.octoScaleTagWriter.readTag, enable: spoolDialog.octoScaleTagWriter.canReadTag">
+                                                        data-bind="click: spoolDialog.readTagWithCurrentSpool, enable: spoolDialog.octoScaleTagWriter.canReadTag">
                                                     <i class="fas fa-spinner fa-spin" data-bind="visible: spoolDialog.octoScaleTagWriter.isReadingTag"></i>
                                                     Read tag
                                                 </button>
