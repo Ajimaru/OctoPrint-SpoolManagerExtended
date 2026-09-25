@@ -1,5 +1,6 @@
 # coding=utf-8
 
+import copy
 import json
 import logging
 import math
@@ -102,6 +103,15 @@ class SpoolmanagerPlugin(
         # external consumers (e.g. PrintJobHistoryExtended) can read it race-free; see
         # api_getLastPrintJobUsage()
         self._lastPrintJobUsage = None
+        # the job's file as of its start - a connector may have cleared the current job by
+        # the time the job's end is booked; see _printJobFileLocation()
+        self._printJobStartFileLocation = (None, None)
+        # how much of Klipper's own filament count for this job is booked already, so an end
+        # event that arrives twice books the count once; see _moonrakerUsagePerTool()
+        self._moonrakerUsageBooked = 0.0
+        # set once this job's end has been reported with print_job_usage_booked, so a
+        # repeated end event that books nothing does not replace that report with an empty one
+        self._printJobUsageReported = False
 
         # DATABASE
         self.databaseConnectionProblemConfirmed = False
@@ -1774,6 +1784,9 @@ class SpoolmanagerPlugin(
         self.myFilamentOdometer.reset()
         self._slicedUsageAlreadyBooked = False
         self._printJobStartedTimestamp = time.time()
+        self._printJobStartFileLocation = self._getCurrentJobFileLocation()
+        self._moonrakerUsageBooked = 0.0
+        self._printJobUsageReported = False
 
         reloadTable = False
         selectedSpools = self.loadSelectedSpools()
@@ -1792,6 +1805,137 @@ class SpoolmanagerPlugin(
         if reloadTable:
             self._sendDataToClient(dict(action="reloadTable"))
 
+    def _printJobFileLocation(self):
+        # The job being booked: the current one while the printer still reports it, else the
+        # one this job started with - a connector may clear the job before its end event.
+        origin, path = self._getCurrentJobFileLocation()
+        if origin is not None and path is not None:
+            return origin, path
+        return self._printJobStartFileLocation
+
+    def _printJobIdentity(self):
+        # which job a print_job_usage_booked report belongs to, so a consumer can match it
+        # without guessing from timing
+        origin, path = self._printJobFileLocation()
+        printStartDateTime = None
+        if self._printJobStartedTimestamp is not None:
+            printStartDateTime = datetime.fromtimestamp(
+                self._printJobStartedTimestamp
+            ).isoformat()
+        return {
+            "origin": origin,
+            "path": path,
+            "name": path.rsplit("/", 1)[-1] if path else None,
+            "printStartDateTime": printStartDateTime,
+        }
+
+    # print_stats states in which Klipper's filament count for the job is final
+    MOONRAKER_FINISHED_PRINT_STATES = ("complete", "cancelled", "error")
+
+    def _readMoonrakerFilamentUsed(self, path):
+        """
+        The filament a printer-storage job on a Moonraker printer has actually extruded, in
+        mm, as Klipper counts it (print_stats.filament_used) - or None.
+
+        Such jobs stream nothing through OctoPrint, so the odometer stays at 0. The sliced
+        length stood in for it, but only for a successful job: a canceled or failed one was
+        booked as nothing at all, however much it had extruded. Klipper counts every job up
+        to its end, whichever end that is, and holds the count until the next job starts.
+
+        The count has to be final and this job's: print_stats must report a finished state
+        and this job's file, or the value belongs to the previous or the next job.
+        """
+        connectorParams = self._u1RfidManager._getConnectorParams()
+        if connectorParams is None:
+            return None
+        payload = self._u1RfidManager._httpGet(
+            connectorParams["host"],
+            connectorParams["port"],
+            "/printer/objects/query?print_stats=filament_used,filename,state",
+        )
+        printStats = (((payload or {}).get("result") or {}).get("status") or {}).get(
+            "print_stats"
+        )
+        if not isinstance(printStats, dict):
+            return None
+        if printStats.get("filename") != path:
+            self._logger.info(
+                "Moonraker reports '%s', not this job's '%s' - its filament count is not used"
+                % (printStats.get("filename"), path)
+            )
+            return None
+        if printStats.get("state") not in self.MOONRAKER_FINISHED_PRINT_STATES:
+            self._logger.info(
+                "Moonraker reports the job as '%s' - its filament count is not final yet"
+                % printStats.get("state")
+            )
+            return None
+        try:
+            filamentUsed = float(printStats.get("filament_used"))
+        except (TypeError, ValueError):
+            return None
+        if filamentUsed < 0.0:
+            return None
+        return filamentUsed
+
+    def _slicedLengthsPerTool(self, origin, path):
+        # the job's sliced length per tool index, 0.0 for tools it does not use
+        lengths = []
+        for toolName, toolData in (
+            self.api_getJobFilamentUsage(origin, path) or {}
+        ).items():
+            toolIndex = int(toolName[4:])
+            lengths += [0.0] * (toolIndex + 1 - len(lengths))
+            lengths[toolIndex] = float(toolData["length"])
+        return lengths
+
+    def _moonrakerUsagePerTool(self):
+        """
+        What Klipper counted for the ending job and is not booked yet, split onto the tools:
+        (filamentUsed, {toolIndex: length}, source) - or None, which leaves the odometer and
+        the sliced fallback in charge.
+
+        Klipper keeps one count for the whole job and none per extruder, so the split follows
+        the sliced shares: exact for a job on a single tool ("moonraker"), an estimate
+        otherwise ("moonrakerEstimated").
+        """
+        origin, path = self._printJobFileLocation()
+        if origin != FileDestinations.PRINTER or path is None:
+            return None
+        filamentUsed = self._readMoonrakerFilamentUsed(path)
+        if filamentUsed is None:
+            return None
+        usedTools = [
+            (toolIndex, length)
+            for toolIndex, length in enumerate(self._slicedLengthsPerTool(origin, path))
+            if length > 0.0
+        ]
+        if not usedTools:
+            # nothing says which tool extruded it
+            return None
+
+        notBookedYet = filamentUsed - self._moonrakerUsageBooked
+        if notBookedYet <= 0.0:
+            # the job's end reported again - its count is booked already
+            return filamentUsed, {}, None
+        slicedTotal = sum(length for _, length in usedTools)
+        split = {
+            toolIndex: notBookedYet * length / slicedTotal
+            for toolIndex, length in usedTools
+        }
+        source = "moonraker" if len(usedTools) == 1 else "moonrakerEstimated"
+        self._logger.info(
+            "Klipper counted %.1fmm for job 'printer:%s', booking %.1fmm (%s): %s"
+            % (
+                filamentUsed,
+                path,
+                notBookedYet,
+                source,
+                {"tool%d" % index: round(length, 2) for index, length in split.items()},
+            )
+        )
+        return filamentUsed, split, source
+
     # assign the current extrusion to the current selected spools
 
     # connectors can fire spurious PRINT_DONE events seconds after the job kickoff
@@ -1806,6 +1950,16 @@ class SpoolmanagerPlugin(
             printDuration is None
             or printDuration >= self.MINIMUM_PRINT_DURATION_FOR_SLICED_USAGE
         )
+        # Klipper's own count of a printer-storage job on a Moonraker printer, read once at
+        # the job's end, whichever end it is - see _moonrakerUsagePerTool(). The same guard
+        # against a spurious end event applies as to the sliced fallback below.
+        moonrakerUsage = None
+        if printStatus in ("success", "failed", "canceled") and slicedUsagePlausible:
+            try:
+                moonrakerUsage = self._moonrakerUsagePerTool()
+            except Exception:
+                # must not cost the booking itself - odometer and sliced fallback still work
+                self._logger.exception("Reading Klipper's filament count failed")
         # per-tool snapshot for api_getLastPrintJobUsage(), taken here because it's the
         # last point where the odometer still holds this job's data - reset_extruded_length()
         # below wipes it, and a second plugin's PRINT_DONE handler may run before or after
@@ -1833,6 +1987,15 @@ class SpoolmanagerPlugin(
 
             usageSource = "odometer"
             if (
+                currentExtrusionLength is None or currentExtrusionLength <= 0.0
+            ) and moonrakerUsage is not None:
+                # counted by Klipper - a tool the job does not use keeps its odometer value,
+                # and the sliced fallback below stays out of it
+                moonrakerLength = moonrakerUsage[1].get(toolIndex)
+                if moonrakerLength is not None:
+                    currentExtrusionLength = moonrakerLength
+                    usageSource = moonrakerUsage[2]
+            elif (
                 (currentExtrusionLength is None or currentExtrusionLength <= 0.0)
                 and printStatus == "success"
                 and not self._slicedUsageAlreadyBooked
@@ -1955,7 +2118,18 @@ class SpoolmanagerPlugin(
 
             reload = True
 
-        if printStatus in ("success", "failed", "canceled"):
+        if moonrakerUsage is not None:
+            self._moonrakerUsageBooked = max(
+                self._moonrakerUsageBooked, moonrakerUsage[0]
+            )
+
+        bookedSomething = any(
+            toolSnapshot is not None and (toolSnapshot["usedLength"] or 0.0) > 0.0
+            for toolSnapshot in toolSnapshots
+        )
+        if printStatus in ("success", "failed", "canceled") and (
+            bookedSomething or not self._printJobUsageReported
+        ):
             usedSources = {
                 toolSnapshot["source"]
                 for toolSnapshot in toolSnapshots
@@ -1977,7 +2151,20 @@ class SpoolmanagerPlugin(
                     [SettingsKeys.SETTINGS_KEY_CURRENCY_SYMBOL]
                 ),
                 "tools": toolSnapshots,
+                "job": self._printJobIdentity(),
             }
+            # One report per job end, sent once the snapshot exists - also when nothing was
+            # booked. A consumer can wait for it instead of reading api_getLastPrintJobUsage()
+            # from its own end-of-job handler, which OctoPrint may well run before this one.
+            self._sendPayload2EventBus(
+                EventBusKeys.EVENT_BUS_PRINT_JOB_USAGE_BOOKED,
+                copy.deepcopy(self._lastPrintJobUsage),
+            )
+            self._printJobUsageReported = True
+        elif printStatus in ("success", "failed", "canceled"):
+            self._logger.info(
+                "end of this job reported again, but nothing new to book - the earlier report stands"
+            )
 
         # the snapshot above must be taken before this reset - it discards the odometer's
         # per-tool data that a second plugin's own PRINT_DONE handler could otherwise race us for
@@ -2151,6 +2338,47 @@ class SpoolmanagerPlugin(
         :return: dict, or None
         """
         return self._lastPrintJobUsage
+
+    def api_getJobFilamentUsage(self, origin=None, path=None):
+        """
+        The sliced filament usage per tool of a job file, by the printer's physical tools,
+        shaped like OctoPrint's analysis["filament"]:
+        {"tool3": {"length": 42117.06, "volume": 101.2}}. Tools the job does not use are
+        absent. Without arguments: the current job - or, once the printer has cleared it,
+        the job started last.
+
+        It differs from the file's own analysis where that one is wrong: a printer-storage
+        job on a Moonraker printer is read per extruder from Moonraker (the connector files
+        every job under tool0, see _getFilamentFromMoonraker), and other printer-storage
+        files are read from the file on the printer.
+        :return: dict, or None when nothing is known
+        """
+        if origin is None or path is None:
+            origin, path = self._printJobFileLocation()
+        if origin is None or path is None:
+            return None
+
+        plate = 1
+        currentJob = getattr(self._printer, "current_job", None)
+        if (
+            currentJob is not None
+            and (origin, path) == self._getCurrentJobFileLocation()
+        ):
+            plate = getattr(currentJob, "plate", 1)
+
+        filament = self._getFilamentMetaData(origin, path, plate=plate)
+        if not filament:
+            return None
+        usage = {}
+        for toolName, toolData in filament.items():
+            try:
+                length = float((toolData or {}).get("length") or 0.0)
+            except (TypeError, ValueError, AttributeError):
+                continue
+            if length > 0.0:
+                # a copy: the dict may be one of the metadata caches' entries
+                usage[toolName] = dict(toolData)
+        return usage or None
 
     ######################################################################################### Hooks and public functions
 
@@ -2664,6 +2892,7 @@ class SpoolmanagerPlugin(
     def register_custom_events(*args, **kwargs):
         return [
             EventBusKeys.EVENT_BUS_SPOOL_WEIGHT_UPDATED_AFTER_PRINT,
+            EventBusKeys.EVENT_BUS_PRINT_JOB_USAGE_BOOKED,
             EventBusKeys.EVENT_BUS_SPOOL_WEIGHT_MEASURED,
             EventBusKeys.EVENT_BUS_SPOOL_SELECTED,
             EventBusKeys.EVENT_BUS_SPOOL_DESELECTED,
