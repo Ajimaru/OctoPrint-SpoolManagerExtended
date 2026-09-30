@@ -76,6 +76,7 @@ class FakePlugin(object):
     _moonrakerUsagePerTool = SpoolmanagerPlugin._moonrakerUsagePerTool
     _printJobFileLocation = SpoolmanagerPlugin._printJobFileLocation
     _printJobIdentity = SpoolmanagerPlugin._printJobIdentity
+    _logToolWithoutSpool = SpoolmanagerPlugin._logToolWithoutSpool
     MINIMUM_PRINT_DURATION_FOR_SLICED_USAGE = (
         SpoolmanagerPlugin.MINIMUM_PRINT_DURATION_FOR_SLICED_USAGE
     )
@@ -107,6 +108,10 @@ class FakePlugin(object):
 
     def _readingFilamentMetaData(self):
         self.metaDataReadCount += 1
+
+    def _slicedLengthsPerTool(self, origin, path):
+        # these jobs carry no sliced metadata
+        return []
 
     def _sendDataToClient(self, payloadDict):
         pass

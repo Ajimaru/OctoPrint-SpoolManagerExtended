@@ -84,6 +84,7 @@ class FakePlugin(object):
     _slicedLengthsPerTool = _productionMethod("_slicedLengthsPerTool")
     _printJobFileLocation = _productionMethod("_printJobFileLocation")
     _printJobIdentity = _productionMethod("_printJobIdentity")
+    _logToolWithoutSpool = _productionMethod("_logToolWithoutSpool")
     api_getJobFilamentUsage = _productionMethod("api_getJobFilamentUsage")
     MOONRAKER_FINISHED_PRINT_STATES = getattr(
         SpoolmanagerPlugin, "MOONRAKER_FINISHED_PRINT_STATES", None
@@ -338,6 +339,127 @@ class TestWhenKlipperCountIsNotUsed(_BookingTestCase):
 
         self.assertEqual(plugin._u1RfidManager.requestedPaths, [])
         self.assertEqual(spool.usedLength, 0.0)
+
+
+class TestToolWithoutSpool(_BookingTestCase):
+    # A printer lists all of its tools, a job mostly uses a few. Only a tool the job put
+    # filament through is worth a warning when it has no spool - that usage is lost.
+
+    def _commit(self, plugin, **kwargs):
+        with self.assertLogs(plugin._logger, level="DEBUG") as logs:
+            plugin.commitOdometerData(**kwargs)
+        return [
+            record.getMessage()
+            for record in logs.records
+            if record.levelno >= logging.WARNING
+        ]
+
+    def test_toolsTheJobDoesNotUseDoNotWarn(self):
+        # a U1 job on tool 3 left "Tool 0/1/2: No spool selected" warnings at its end
+        spool, plugin = self._singleToolJob(
+            state="complete", filament_used=COUNTED_LENGTH
+        )
+
+        warnings = self._commit(plugin, printStatus="success", printDuration=13800.0)
+
+        self.assertEqual(warnings, [])
+        self.assertEqual(spool.usedLength, COUNTED_LENGTH)
+
+    def test_toolKlipperCountedForWarnsWithTheCount(self):
+        # CANCELED_COUNT, not SLICED_LENGTH: the warning names what was lost, not the plan
+        spool = self._spool("Tool 0 spool")
+        plugin = self._plugin(
+            [spool, None, None, None], {"tool3": {"length": SLICED_LENGTH}}
+        )
+        plugin._u1RfidManager.printStats = {
+            "filename": JOB_PATH,
+            "state": "cancelled",
+            "filament_used": CANCELED_COUNT,
+        }
+
+        warnings = self._commit(plugin, printStatus="canceled", printDuration=2820.0)
+
+        self.assertEqual(
+            warnings,
+            [
+                "Tool 3: 5737.0mm counted by Klipper (moonraker), but no spool is "
+                "selected - this usage is not booked"
+            ],
+        )
+
+    def test_toolTheJobIsSlicedForWarnsWithoutKlipper(self):
+        # Moonraker unreachable (or not a Moonraker printer): the sliced plan tells which
+        # tools the job uses
+        spool = self._spool("Tool 3 spool")
+        plugin = self._plugin(
+            [None, None, None, spool],
+            {"tool1": {"length": 1234.5}, "tool3": {"length": SLICED_LENGTH}},
+        )
+
+        warnings = self._commit(plugin, printStatus="success", printDuration=13800.0)
+
+        self.assertEqual(
+            warnings,
+            [
+                "Tool 1: job is sliced for 1234.5mm on this tool, but no spool is "
+                "selected - this usage is not booked"
+            ],
+        )
+
+    def test_extrudedFilamentWarnsWithTheOdometerValue(self):
+        # 812.3 is what the odometer counted - the sliced 900.0 must not stand in for it
+        spool = self._spool("Tool 1 spool")
+        plugin = self._plugin(
+            [None, spool],
+            {"tool0": {"length": 900.0}},
+            extrusionAmounts=[812.3, 0.0],
+        )
+        plugin.currentJobLocation = ("local", JOB_PATH)
+        plugin._printJobStartFileLocation = ("local", JOB_PATH)
+
+        warnings = self._commit(plugin, printStatus="canceled", printDuration=600.0)
+
+        self.assertEqual(
+            warnings,
+            [
+                "Tool 0: 812.3mm extruded, but no spool is selected - this usage is "
+                "not booked"
+            ],
+        )
+
+    def test_midPrintCommitWarnsOnlyForWhatWasExtruded(self):
+        # a spool change mid-print: the rest of the sliced plan is still to come, so only
+        # what went through a tool so far counts - and the job's metadata is not read
+        plugin = self._plugin(
+            [None, None, None, None],
+            {"tool2": {"length": 1000.0}, "tool3": {"length": SLICED_LENGTH}},
+            extrusionAmounts=[0.0, 0.0, 0.0, 412.7],
+        )
+
+        warnings = self._commit(plugin)
+
+        self.assertEqual(
+            warnings,
+            [
+                "Tool 3: 412.7mm extruded, but no spool is selected - this usage is "
+                "not booked"
+            ],
+        )
+        self.assertEqual(plugin.filamentMetaDataRequests, [])
+
+    def test_jobMetadataIsNotReadWhenEveryToolHasASpool(self):
+        firstSpool = self._spool("Tool 0 spool")
+        secondSpool = self._spool("Tool 1 spool")
+        plugin = self._plugin(
+            [firstSpool, secondSpool], {}, extrusionAmounts=[100.0, 200.0]
+        )
+        plugin.currentJobLocation = ("local", JOB_PATH)
+        plugin._printJobStartFileLocation = ("local", JOB_PATH)
+
+        warnings = self._commit(plugin, printStatus="success", printDuration=600.0)
+
+        self.assertEqual(warnings, [])
+        self.assertEqual(plugin.filamentMetaDataRequests, [])
 
 
 class TestJobUsageReport(_BookingTestCase):
