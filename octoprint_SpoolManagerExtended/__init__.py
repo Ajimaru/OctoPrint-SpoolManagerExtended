@@ -1936,6 +1936,43 @@ class SpoolmanagerPlugin(
         )
         return filamentUsed, split, source
 
+    def _logToolWithoutSpool(self, toolIndex, moonrakerUsage, jobSlicedLengths):
+        """
+        Log a tool that has no spool selected when a job's usage is booked.
+
+        A printer lists all of its tools and a job mostly uses only some of them - on a
+        four-tool printer, a job on tool 3 left three of these behind at every end. Only a
+        tool the job put filament through is worth a warning: that usage has no spool to go
+        to and is lost.
+        """
+        try:
+            extrudedLength = self.myFilamentOdometer.getExtrusionAmount()[toolIndex]
+        except (KeyError, IndexError):
+            extrudedLength = None
+
+        if extrudedLength is not None and extrudedLength > 0.0:
+            usage = "%.1fmm extruded" % extrudedLength
+        elif moonrakerUsage is not None and toolIndex in moonrakerUsage[1]:
+            usage = "%.1fmm counted by Klipper (%s)" % (
+                moonrakerUsage[1][toolIndex],
+                moonrakerUsage[2],
+            )
+        elif toolIndex < len(jobSlicedLengths) and jobSlicedLengths[toolIndex] > 0.0:
+            usage = (
+                "job is sliced for %.1fmm on this tool" % jobSlicedLengths[toolIndex]
+            )
+        else:
+            self._logger.debug(
+                "Tool %d: no spool selected and no usage of this job to book on it"
+                % toolIndex
+            )
+            return
+
+        self._logger.warning(
+            "Tool %d: %s, but no spool is selected - this usage is not booked"
+            % (toolIndex, usage)
+        )
+
     # assign the current extrusion to the current selected spools
 
     # connectors can fire spurious PRINT_DONE events seconds after the job kickoff
@@ -1966,12 +2003,25 @@ class SpoolmanagerPlugin(
         # ours with no defined order
         toolSnapshots = []
         selectedSpools = self.loadSelectedSpools()
+        # which tools the job is sliced for - only needed to tell whether a tool without a
+        # spool took part, and only when neither the odometer nor Klipper's split can say
+        jobSlicedLengths = []
+        if (
+            printStatus in ("success", "failed", "canceled")
+            and moonrakerUsage is None
+            and any(spoolModel is None for spoolModel in selectedSpools)
+        ):
+            try:
+                jobSlicedLengths = self._slicedLengthsPerTool(
+                    *self._printJobFileLocation()
+                )
+            except Exception:
+                self._logger.debug(
+                    "Could not read the job's sliced usage per tool", exc_info=True
+                )
         for toolIndex, spoolModel in enumerate(selectedSpools):
             if spoolModel is None:
-                self._logger.warning(
-                    "Tool %d: No spool selected, could not update values after print"
-                    % toolIndex
-                )
+                self._logToolWithoutSpool(toolIndex, moonrakerUsage, jobSlicedLengths)
                 toolSnapshots.append(None)
                 continue
 
