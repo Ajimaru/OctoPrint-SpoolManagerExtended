@@ -90,9 +90,24 @@ def _query(path, sql):
     # straight through sqlite3, independent of any model binding
     connection = sqlite3.connect(path)
     try:
-        return connection.execute(sql).fetchall()
+        rows = connection.execute(sql).fetchall()
+        connection.commit()  # an UPDATE is rolled back on close otherwise
+        return rows
     finally:
         connection.close()
+
+
+def _makeOutdated(path, schemeVersion):
+    # what an older scheme looks like to a read: the version row and a column added since
+    _query(
+        path,
+        "UPDATE spo_pluginmetadatamodel SET value = '"
+        + str(schemeVersion)
+        + "' WHERE key = '"
+        + PluginMetaDataModel.KEY_DATABASE_SCHEME_VERSION
+        + "'",
+    )
+    _query(path, "ALTER TABLE spo_spoolmodel DROP COLUMN dryingTemperature")
 
 
 def _displayNames(path):
@@ -269,6 +284,54 @@ class TestFailedExport(_TwoDatabasesTestCase):
         self.assertEqual(self.databaseManager.loadSpool(1).displayName, "external-1")
         self.assertIsNotNone(response)
         self.assertEqual(response.status_code, 500)
+
+    # The message has to tell the outdated scheme apart from any other failed read. The
+    # scheme version 9 is one no other part of the message can produce, and a read that
+    # fails on a current scheme must not be blamed on the scheme.
+    def test_outdatedSchemeIsNamedWithTheSwitchToIt(self):
+        _makeOutdated(self.localFile, 9)
+
+        with _app.test_request_context("/?instance=internal"):
+            response = self.plugin.exportSpoolsData("CSV")
+            message = response.get_data(as_text=True)
+
+        self.assertEqual(response.status_code, 500)
+        self.assertIn("internal database is on scheme version 9,", message)
+        self.assertIn(
+            "older than version " + str(CURRENT_DATABASE_SCHEME_VERSION), message
+        )
+        # not the database in use: the upgrade button would work on the external one
+        self.assertIn("select 'Use local SqLite3 database'", message)
+        self.assertIn("'Upgrade database scheme'", message)
+
+    def test_failureOnACurrentSchemeKeepsTheGenericMessage(self):
+        _query(
+            self.localFile, "ALTER TABLE spo_spoolmodel DROP COLUMN dryingTemperature"
+        )
+
+        with _app.test_request_context("/?instance=internal"):
+            response = self.plugin.exportSpoolsData("CSV")
+            message = response.get_data(as_text=True)
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(
+            message,
+            "Could not export the spools. See the OctoPrint log for details.",
+        )
+
+
+class TestOutdatedActiveDatabaseExport(_TwoDatabasesTestCase):
+    def test_outdatedSchemeOfTheDatabaseInUsePointsAtTheButtonOnly(self):
+        _makeOutdated(self.localFile, 9)
+
+        with _app.test_request_context("/?instance=internal"):
+            response = self.plugin.exportSpoolsData("CSV")
+            message = response.get_data(as_text=True)
+
+        self.assertEqual(response.status_code, 500)
+        self.assertIn("internal database is on scheme version 9,", message)
+        self.assertIn("Press 'Upgrade database scheme' in the Storage tab", message)
+        self.assertNotIn("select '", message)
 
 
 class TestCsvImport(_TwoDatabasesTestCase):

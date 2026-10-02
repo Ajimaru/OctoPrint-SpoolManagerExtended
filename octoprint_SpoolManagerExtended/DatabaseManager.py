@@ -249,6 +249,18 @@ class DatabaseManager(object):
             .value
         )
 
+    def readSchemeVersion(self, databaseSettings):
+        # The scheme version of the database the settings point at, over a connection of
+        # its own - see _separateDatabase(). None when it cannot be read or is no number.
+        try:
+            with self._separateDatabase(databaseSettings) as database:
+                return int(str(self._readSchemeVersion(database)).strip())
+        except Exception as e:
+            self._logger.warning(
+                "Could not read the database scheme version: " + str(e)
+            )
+            return None
+
     @staticmethod
     def _copySQLiteFile(sourcePath, targetPath):
         # Copies a SQLite database through SQLite's backup API rather than as a plain file.
