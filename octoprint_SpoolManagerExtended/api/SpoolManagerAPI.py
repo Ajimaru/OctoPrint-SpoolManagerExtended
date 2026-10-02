@@ -4332,6 +4332,17 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
 
         tableQuery = flask.request.values
 
+        # A request without the table parameters is the caller's mistake, not a database
+        # failure. Left to the query, it raised inside the database layer, which logs an
+        # ERROR and pops a database error up in every open browser tab.
+        validationErrors = self._tableQueryValidationErrors(tableQuery)
+        if validationErrors:
+            self._logger.warning(
+                "Load spools by query rejected, validation errors: "
+                + str(validationErrors)
+            )
+            return make_response(jsonify({"validationErrors": validationErrors}), 400)
+
         try:
             return self._loadAllSpoolsByQueryResponse(tableQuery)
         except Exception:
@@ -4381,6 +4392,42 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             selectedSpoolsAsDicts = []
 
         return flask.jsonify({"selectedSpools": selectedSpoolsAsDicts})
+
+    def _tableQueryValidationErrors(self, tableQuery):
+        """
+        What keeps DatabaseManager.loadAllSpoolsByQuery() from running tableQuery, as a list
+        of messages - empty when the query is complete. Mirrors the keys that method and
+        _applyTableQueryFilters() read without a default.
+        """
+        requiredKeys = ["sortColumn", "sortOrder", "filterName"]
+        # the page size "all" drops the paging, and with it from/to
+        pageSizeAll = (
+            StringUtils.to_native_str(tableQuery.get("selectedPageSize", "")) == "all"
+        )
+        if not pageSizeAll:
+            requiredKeys += ["from", "to"]
+        # a material filter switches on the vendor and colour filters as well
+        if "materialFilter" in tableQuery:
+            requiredKeys += ["vendorFilter", "colorFilter"]
+
+        validationErrors = [
+            "parameter '%s' is missing" % key
+            for key in requiredKeys
+            if key not in tableQuery
+        ]
+        if not pageSizeAll:
+            for key in ("from", "to"):
+                if key not in tableQuery:
+                    continue
+                try:
+                    value = int(tableQuery[key])
+                except (TypeError, ValueError):
+                    value = -1
+                if value < 0:
+                    validationErrors.append(
+                        "parameter '%s' must be a non-negative integer" % key
+                    )
+        return validationErrors
 
     def _loadAllSpoolsByQueryResponse(self, tableQuery):
         allSpools = self._databaseManager.loadAllSpoolsByQuery(tableQuery)
