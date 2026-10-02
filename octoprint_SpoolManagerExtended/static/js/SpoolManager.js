@@ -288,7 +288,9 @@ $(function () {
             localSpoolItemCount: ko.observable(),
             externalSchemeVersionFromDatabaseModel: ko.observable(),
             externalSpoolItemCount: ko.observable(),
-            schemeVersionFromPlugin: ko.observable()
+            schemeVersionFromPlugin: ko.observable(),
+            // "internal" or "external": the database in use, whatever the radio shows
+            activeDatabase: ko.observable()
         };
         self.showInternalSuccessMessage = ko.observable(false);
         self.showInternalDatabaseErrorMessage = ko.observable(false);
@@ -379,6 +381,7 @@ $(function () {
                 self.databaseMetaData.schemeVersionFromPlugin(
                     metadata["schemeVersionFromPlugin"]
                 );
+                self.databaseMetaData.activeDatabase(metadata["activeDatabase"]);
 
                 if (
                     self.databaseMetaData.schemeVersionFromPlugin() !=
@@ -699,7 +702,7 @@ $(function () {
         };
 
         // - external database scheme upgrade (issue #30/#49 follow-up: scheme V8, auto-upgrade only runs for local SQLite)
-        self.isExternalSchemeUpgradeAvailable = ko.pureComputed(function () {
+        self.isExternalSchemeOutdated = ko.pureComputed(function () {
             if (self.pluginSettings.useExternal() != true) {
                 return false;
             }
@@ -715,7 +718,7 @@ $(function () {
         });
         // - local SQLite scheme upgrade: the auto-upgrade normally runs at startup, but if the local
         //   database file was restored/replaced at an old scheme version the user needs a way to re-trigger it
-        self.isLocalSchemeUpgradeAvailable = ko.pureComputed(function () {
+        self.isLocalSchemeOutdated = ko.pureComputed(function () {
             if (self.pluginSettings.useExternal() == true) {
                 return false;
             }
@@ -729,10 +732,30 @@ $(function () {
                 localVersion < pluginVersion
             );
         });
+        self.isSelectedSchemeOutdated = ko.pureComputed(function () {
+            return (
+                self.isExternalSchemeOutdated() == true ||
+                self.isLocalSchemeOutdated() == true
+            );
+        });
+        // The upgrade always works on the database in use. The radio may show the other
+        // one before the settings are saved - upgrading from there hit the database in use
+        // instead, so the button is only offered when the selection is the one in use.
+        self.isSelectedDatabaseInUse = ko.pureComputed(function () {
+            var selectedDatabase =
+                self.pluginSettings.useExternal() == true ? "external" : "internal";
+            return self.databaseMetaData.activeDatabase() == selectedDatabase;
+        });
         self.isSchemeUpgradeAvailable = ko.pureComputed(function () {
             return (
-                self.isExternalSchemeUpgradeAvailable() == true ||
-                self.isLocalSchemeUpgradeAvailable() == true
+                self.isSelectedSchemeOutdated() == true &&
+                self.isSelectedDatabaseInUse() == true
+            );
+        });
+        self.isSchemeUpgradeAfterSave = ko.pureComputed(function () {
+            return (
+                self.isSelectedSchemeOutdated() == true &&
+                self.isSelectedDatabaseInUse() == false
             );
         });
         self.schemeUpgradeInProgress = ko.observable(false);
@@ -952,7 +975,7 @@ $(function () {
                         .then(function () {
                             // backup is on disk and downloaded, run the migration (no second backup)
                             self.apiClient.callUpgradeDatabaseScheme(
-                                {backupDownloaded: true},
+                                {backupDownloaded: true, useExternal: false},
                                 handleUpgradeResponse
                             );
                         })
@@ -979,7 +1002,7 @@ $(function () {
                 .then(function () {
                     // backup is on disk, run the migration
                     self.apiClient.callUpgradeDatabaseScheme(
-                        {backupDownloaded: true},
+                        {backupDownloaded: true, useExternal: true},
                         handleUpgradeResponse
                     );
                 })
@@ -1589,24 +1612,26 @@ $(function () {
                 }
 
                 if ("#spmx-tab-spool-Storage" == activatedTab) {
-                    self.resetDatabaseMessages();
-
-                    self.showLocalBusyIndicator(
-                        self.pluginSettings.useExternal() == false
-                    );
-                    self.showExternalBusyIndicator(
-                        self.pluginSettings.databasePassword() == true
-                    );
-
-                    self.apiClient.loadDatabaseMetaData(function (responseData) {
-                        self.handleDatabaseMetaDataResponse(responseData);
-                        self.showExternalSuccessMessage(false);
-                        self.showInternalSuccessMessage(false);
-                        self.showLocalBusyIndicator(false);
-                        self.showExternalBusyIndicator(false);
-                    });
+                    self.reloadStorageMetaData();
                 }
             });
+
+        self.reloadStorageMetaData = function () {
+            self.resetDatabaseMessages();
+
+            self.showLocalBusyIndicator(self.pluginSettings.useExternal() == false);
+            self.showExternalBusyIndicator(
+                self.pluginSettings.databasePassword() == true
+            );
+
+            self.apiClient.loadDatabaseMetaData(function (responseData) {
+                self.handleDatabaseMetaDataResponse(responseData);
+                self.showExternalSuccessMessage(false);
+                self.showInternalSuccessMessage(false);
+                self.showLocalBusyIndicator(false);
+                self.showExternalBusyIndicator(false);
+            });
+        };
 
         self.isFilamentManagerPluginAvailable = ko.observable(false);
         self.isMqttPluginAvailable = ko.observable(false);
@@ -3212,6 +3237,12 @@ $(function () {
             }
             self.refreshSpoolmanDbStatus();
             self.refreshTigerTagIdsStatus();
+            // The Storage tab loads its metadata when it is switched to. Reopened on that
+            // tab - e.g. after saving another database selection - it would keep showing
+            // the database in use from before the save.
+            if ($("#spmx-tab-spool-Storage").hasClass("active")) {
+                self.reloadStorageMetaData();
+            }
             // re-evaluates the detection chain server-side, so the tab always shows the
             // current state (e.g. after the printer connection changed)
             self.loadU1RfidStatus();

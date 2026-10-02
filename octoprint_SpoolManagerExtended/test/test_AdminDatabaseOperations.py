@@ -1,7 +1,7 @@
 # coding=utf-8
 
 # Tests for the Storage tab's admin actions on a database other than the active one: CSV
-# export and import, delete, copy, and the .db restore.
+# export and import, delete, copy, the .db restore, and the scheme upgrade.
 #
 # These used to switch the active database settings for the duration of the action. The
 # settings apply to the whole process, so every other request of the instance - the sidebar,
@@ -97,8 +97,7 @@ def _query(path, sql):
         connection.close()
 
 
-def _makeOutdated(path, schemeVersion):
-    # what an older scheme looks like to a read: the version row and a column added since
+def _setSchemeVersion(path, schemeVersion):
     _query(
         path,
         "UPDATE spo_pluginmetadatamodel SET value = '"
@@ -107,6 +106,20 @@ def _makeOutdated(path, schemeVersion):
         + PluginMetaDataModel.KEY_DATABASE_SCHEME_VERSION
         + "'",
     )
+
+
+def _schemeVersion(path):
+    return _query(
+        path,
+        "SELECT value FROM spo_pluginmetadatamodel WHERE key = '"
+        + PluginMetaDataModel.KEY_DATABASE_SCHEME_VERSION
+        + "'",
+    )[0][0]
+
+
+def _makeOutdated(path, schemeVersion):
+    # what an older scheme looks like to a read: the version row and a column added since
+    _setSchemeVersion(path, schemeVersion)
     _query(path, "ALTER TABLE spo_spoolmodel DROP COLUMN dryingTemperature")
 
 
@@ -141,6 +154,7 @@ class _FakePlugin(object):
     deleteDatabase = SpoolManagerAPI.deleteDatabase.__wrapped__
     copyDatabase = SpoolManagerAPI.copyDatabase.__wrapped__
     downloadDatabase = SpoolManagerAPI.downloadDatabase.__wrapped__
+    upgradeDatabaseScheme = SpoolManagerAPI.upgradeDatabaseScheme.__wrapped__
     _processCSVUploadAsync = SpoolManagerAPI._processCSVUploadAsync
     _buildDatabaseSettingsFromJson = SpoolManagerAPI._buildDatabaseSettingsFromJson
     _getValueFromJSONOrNone = SpoolManagerAPI._getValueFromJSONOrNone
@@ -150,6 +164,9 @@ class _FakePlugin(object):
         self._databaseManager = databaseManager
         self._settings = _FakeSettings()
         self._logger = logging.getLogger("test.adminDatabase.plugin")
+
+    def _sendDataToClient(self, payload):
+        pass
 
     def selectedSpoolIds(self):
         return self._settings.values[
@@ -510,6 +527,98 @@ class TestCopiesOfTheLocalFile(_TwoDatabasesTestCase):
             snapshotFile.write(content)
         self.assertEqual(_integrityCheck(snapshotPath), "ok")
         self.assertEqual(_displayNames(snapshotPath), ["local-1"])
+
+
+class _SchemeUpgradeTestCase(_TwoDatabasesTestCase):
+    # The Storage tab's 'Upgrade database scheme' button. The upgrade always works on the
+    # database in use, while the button follows the radio - saved or not. The two files
+    # get different old versions, so the fromVersion of an upgrade tells which one it
+    # read. The migrations are replaced by a recorder: which database gets upgraded is
+    # under test here, what a migration does is covered elsewhere.
+    LOCAL_VERSION = CURRENT_DATABASE_SCHEME_VERSION - 2
+    EXTERNAL_VERSION = CURRENT_DATABASE_SCHEME_VERSION - 1
+
+    def setUp(self):
+        super().setUp()
+        _setSchemeVersion(self.localFile, self.LOCAL_VERSION)
+        _setSchemeVersion(self.externalFile, self.EXTERNAL_VERSION)
+        self.upgrades = []
+        self.databaseManager._upgradeDatabase = lambda fromVersion, toVersion: (
+            self.upgrades.append((fromVersion, toVersion))
+        )
+
+    def _pressUpgrade(self, payload):
+        with _app.test_request_context("/", method="PUT", json=payload):
+            return self.plugin.upgradeDatabaseScheme().get_json()["result"]
+
+    def assertNothingUpgraded(self):
+        self.assertEqual(self.upgrades, [])
+        self.assertEqual(_schemeVersion(self.localFile), str(self.LOCAL_VERSION))
+        self.assertEqual(_schemeVersion(self.externalFile), str(self.EXTERNAL_VERSION))
+
+
+class TestSchemeUpgradeWithExternalActive(_SchemeUpgradeTestCase):
+    externalIsActive = True
+
+    # The live case: the local radio selected, not saved. The frontend downloads the local
+    # .db file as the backup and sends backupDownloaded - and the old endpoint then ran
+    # the upgrade on the external database, with no dump taken.
+    def test_localSelectionDoesNotUpgradeTheExternalDatabase(self):
+        self.databaseManager._isExternalMySQL = lambda: True
+
+        result = self._pressUpgrade({"backupDownloaded": True, "useExternal": False})
+
+        self.assertFalse(result["success"])
+        self.assertIn("that is the external database", result["errorMessage"])
+        self.assertIn("Save the storage settings first", result["errorMessage"])
+        self.assertNothingUpgraded()
+
+    def test_metadataNamesTheDatabaseInUseNotTheSelection(self):
+        # the connection test passes the unsaved selection - the local database here
+        localSelection = self.databaseManager.getLocalDatabaseSettings()
+
+        self.assertEqual(
+            self.databaseManager.loadDatabaseMetaInformations()["activeDatabase"],
+            "external",
+        )
+        self.assertEqual(
+            self.databaseManager.loadDatabaseMetaInformations(localSelection)[
+                "activeDatabase"
+            ],
+            "external",
+        )
+
+
+class TestSchemeUpgradeWithLocalActive(_SchemeUpgradeTestCase):
+    def test_externalSelectionDoesNotUpgradeTheLocalDatabase(self):
+        result = self._pressUpgrade({"backupDownloaded": True, "useExternal": True})
+
+        self.assertFalse(result["success"])
+        self.assertIn("that is the local database", result["errorMessage"])
+        self.assertNothingUpgraded()
+
+    def test_matchingSelectionUpgradesTheDatabaseInUse(self):
+        result = self._pressUpgrade({"backupDownloaded": True, "useExternal": False})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["fromVersion"], self.LOCAL_VERSION)
+        self.assertEqual(
+            self.upgrades, [(self.LOCAL_VERSION, CURRENT_DATABASE_SCHEME_VERSION)]
+        )
+
+    def test_withoutSelectionTheDatabaseInUseIsUpgraded(self):
+        result = self._pressUpgrade({"backupDownloaded": True})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(
+            self.upgrades, [(self.LOCAL_VERSION, CURRENT_DATABASE_SCHEME_VERSION)]
+        )
+
+    def test_metadataNamesTheDatabaseInUse(self):
+        self.assertEqual(
+            self.databaseManager.loadDatabaseMetaInformations()["activeDatabase"],
+            "internal",
+        )
 
 
 if __name__ == "__main__":

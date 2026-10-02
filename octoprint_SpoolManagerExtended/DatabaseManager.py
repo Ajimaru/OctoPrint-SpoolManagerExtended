@@ -1741,7 +1741,7 @@ class DatabaseManager(object):
             self.closeDatabase()
         return result
 
-    def upgradeExternalDatabaseScheme(self, createBackupFile=True):
+    def upgradeExternalDatabaseScheme(self, createBackupFile=True, useExternal=None):
         # user-triggered scheme upgrade (Settings dialog).
         # Local SQLite databases are normally upgraded automatically during plugin startup,
         # but the auto-upgrade can be skipped (e.g. the database file was restored/replaced
@@ -1751,6 +1751,11 @@ class DatabaseManager(object):
         #    createBackupFile=False, otherwise written to the plugin data folder here)
         #  - local: a .db file copy is downloaded by the frontend first (createBackupFile=False);
         #    createBackupFile=True only as a fallback writes the copy here
+        # Always upgrades the database in use. `useExternal` is the database the caller
+        # means - the Storage tab's selection, saved or not - and the upgrade is refused
+        # when that is the other one. Without it the frontend's local selection upgraded
+        # the active external database, with only the local .db file downloaded as its
+        # backup, and reported success while the local database stayed outdated.
         result = {
             "success": False,
             "fromVersion": None,
@@ -1763,7 +1768,16 @@ class DatabaseManager(object):
             result["errorMessage"] = "No database settings available."
             return result
 
-        useExternal = self._databaseSettings.useExternal
+        activeUseExternal = bool(self._databaseSettings.useExternal)
+        if useExternal is not None and bool(useExternal) != activeUseExternal:
+            result["errorMessage"] = (
+                "Only the database in use can be upgraded, and that is the "
+                + ("external" if activeUseExternal else "local")
+                + " database. Save the storage settings first, then upgrade."
+            )
+            return result
+
+        useExternal = activeUseExternal
 
         try:
             connected = self.connectoToDatabase(sendErrorPopUp=False)
@@ -2353,9 +2367,18 @@ class DatabaseManager(object):
             errorMessage = ErrorMessages.classifyConnectionError(e)
             self._logger.exception(e)
 
+        # The database in use - not the one the argument describes, which for the Storage
+        # tab's connection test is its unsaved selection. Only this one can be upgraded.
+        activeDatabase = None
+        if self._databaseSettings is not None:
+            activeDatabase = (
+                "external" if self._databaseSettings.useExternal else "internal"
+            )
+
         return {
             "success": loadResult,
             "errorMessage": errorMessage,
+            "activeDatabase": activeDatabase,
             "schemeVersionFromPlugin": schemeVersionFromPlugin,
             "localSchemeVersionFromDatabaseModel": localSchemeVersionFromDatabaseModel,
             "localSpoolItemCount": localSpoolItemCount,
