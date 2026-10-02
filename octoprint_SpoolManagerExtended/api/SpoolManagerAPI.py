@@ -4013,9 +4013,11 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # the frontend downloads the backup dump via /exportDatabaseDump before triggering the upgrade;
         # without that flag a backup file is written to the plugin data folder instead
         backupDownloaded = self._getValueFromJSONOrNone("backupDownloaded", jsonData)
+        # the database the Storage tab has selected; None upgrades the one in use
+        useExternal = self._getValueFromJSONOrNone("useExternal", jsonData)
 
         upgradeResult = self._databaseManager.upgradeExternalDatabaseScheme(
-            createBackupFile=(not backupDownloaded)
+            createBackupFile=(not backupDownloaded), useExternal=useExternal
         )
         # fresh metadata so the frontend can update the scheme version badges
         metaDataResult = self._databaseManager.loadDatabaseMetaInformations(None)

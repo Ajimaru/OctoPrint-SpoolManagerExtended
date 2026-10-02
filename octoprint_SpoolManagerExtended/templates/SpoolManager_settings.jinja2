@@ -788,8 +788,16 @@ FPE;	2.16
                                 data-bind="disable: schemeUpgradeInProgress, click: upgradeDatabaseSchemeAction">
                             <i class="fa fa-spinner fa-spin" data-bind="visible: schemeUpgradeInProgress"></i> Upgrade database scheme
                         </button>
-                        <span class="help-inline" data-bind="visible: isExternalSchemeUpgradeAvailable">A SQL dump backup is downloaded first.</span>
-                        <span class="help-inline" data-bind="visible: isLocalSchemeUpgradeAvailable">A backup of the database file is downloaded.</span>
+                        <span class="help-inline" data-bind="visible: isExternalSchemeOutdated">A SQL dump backup is downloaded first.</span>
+                        <span class="help-inline" data-bind="visible: isLocalSchemeOutdated">A backup of the database file is downloaded.</span>
+                    </div>
+                </div>
+                <!-- The upgrade works on the database in use only: a selection that is not saved yet has to be saved first -->
+                <div class="control-group" data-bind="visible: isSchemeUpgradeAfterSave">
+                    <div class="controls">
+                        <div class="help-block">
+                            <font color="orange"><b>The selected database's scheme is older than the plugin's. Only the database in use can be upgraded: save the settings first, then upgrade it here.</b></font>
+                        </div>
                     </div>
                 </div>
                 <div class="control-group">
