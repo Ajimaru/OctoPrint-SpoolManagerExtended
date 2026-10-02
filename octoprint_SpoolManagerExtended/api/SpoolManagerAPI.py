@@ -43,6 +43,7 @@ from octoprint_SpoolManagerExtended.common import (
 from octoprint_SpoolManagerExtended.common.EventBusKeys import EventBusKeys
 from octoprint_SpoolManagerExtended.common.SettingsKeys import SettingsKeys
 from octoprint_SpoolManagerExtended.DatabaseManager import (
+    CURRENT_DATABASE_SCHEME_VERSION,
     SAVE_OUTCOME_DELETED,
     SAVE_OUTCOME_VERSION_CONFLICT,
 )
@@ -4189,9 +4190,30 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 )
             except Exception:
                 self._logger.exception("exportSpoolsData")
-                return flask.make_response(
-                    ErrorMessages.userFacingError("export the spools"), 500
+                # The scheme upgrade only runs on the database in use, so an internal
+                # database next to an active external one stays on the scheme it had, and
+                # reading it fails on the columns added since.
+                schemeVersion = self._databaseManager.readSchemeVersion(
+                    exportDatabaseSettings
                 )
+                if (
+                    schemeVersion is not None
+                    and schemeVersion < CURRENT_DATABASE_SCHEME_VERSION
+                ):
+                    # from the flag, not the request value: that is echoed as text/html
+                    databaseKind = (
+                        "external" if exportDatabaseSettings.useExternal else "internal"
+                    )
+                    message = ErrorMessages.outdatedSchemeError(
+                        "export the spools",
+                        databaseKind,
+                        schemeVersion,
+                        CURRENT_DATABASE_SCHEME_VERSION,
+                        self._databaseManager.isActiveDatabase(exportDatabaseSettings),
+                    )
+                else:
+                    message = ErrorMessages.userFacingError("export the spools")
+                return flask.make_response(message, 500)
 
             now = datetime.datetime.now()
             currentDate = now.strftime("%Y%m%d-%H%M")

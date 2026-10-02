@@ -85,6 +85,47 @@ def userFacingError(action, hint=None):
     return message
 
 
+# The Storage tab's radio buttons, by database kind - the steps below name them as shown.
+_DATABASE_RADIO_LABELS = {
+    "internal": "Use local SqLite3 database",
+    "external": "Use external database",
+}
+
+
+def outdatedSchemeError(
+    action, databaseKind, databaseVersion, pluginVersion, isDatabaseInUse
+):
+    """For an operation that failed on a database whose scheme is older than the plugin's.
+
+    `databaseKind` is "internal" or "external". The steps depend on `isDatabaseInUse`: the
+    'Upgrade database scheme' button, like the automatic upgrade at startup, only works on the
+    database in use, so a database that is not in use has to be selected and saved first.
+    """
+    message = (
+        "Could not "
+        + action
+        + ": the "
+        + databaseKind
+        + " database is on scheme version "
+        + str(databaseVersion)
+        + ", older than version "
+        + str(pluginVersion)
+        + " this plugin needs."
+    )
+    if isDatabaseInUse:
+        return (
+            message
+            + " Press 'Upgrade database scheme' in the Storage tab, then try again."
+        )
+    return (
+        message
+        + " Only the database in use can be upgraded: select '"
+        + _DATABASE_RADIO_LABELS[databaseKind]
+        + "' in the Storage tab and save, then press 'Upgrade database scheme' there"
+        + " and try again."
+    )
+
+
 def classifyFetchError(exception):
     """Reduces a download failure to its class, for the cache status fields.
 
