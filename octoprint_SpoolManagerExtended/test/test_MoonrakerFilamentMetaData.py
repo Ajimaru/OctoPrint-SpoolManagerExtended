@@ -255,5 +255,40 @@ class TestMoonrakerFilamentMetaData(unittest.TestCase):
         self.assertEqual(second["tool0"]["length"], 500.0)
 
 
+class PerLocationFileManager(FakeFileManager):
+    def __init__(self, metadataByLocation):
+        self._metadataByLocation = metadataByLocation
+
+    def get_metadata(self, origin, path):
+        return self._metadataByLocation.get((origin, path))
+
+
+class TestPrinterFileWithoutAnalysis(unittest.TestCase):
+    # Seen for a file on a serial printer's SD card: no Moonraker, nothing to download,
+    # and its metadata carries "analysis": None. That raised a TypeError, which turned
+    # allowedToPrint into an HTTP 500 - the print could not be started from the UI.
+
+    def test_noAnalysisYieldsNoUsage(self):
+        plugin = FakePlugin(None, None, fileManagerMetadata={"analysis": None})
+
+        self.assertIsNone(plugin._getFilamentMetaData(PRINTER, "test~1.gco"))
+
+    def test_laterCandidateWithAnalysisIsStillFound(self):
+        # 812.5 only exists in the local copy's analysis
+        plugin = FakePlugin(None, None)
+        plugin._file_manager = PerLocationFileManager(
+            {
+                (PRINTER, "test~1.gco"): {"analysis": None},
+                ("local", "test~1.gco"): {
+                    "analysis": {"filament": {"tool0": {"length": 812.5}}}
+                },
+            }
+        )
+
+        filament = plugin._getFilamentMetaData(PRINTER, "test~1.gco")
+
+        self.assertEqual(filament, {"tool0": {"length": 812.5}})
+
+
 if __name__ == "__main__":
     unittest.main()

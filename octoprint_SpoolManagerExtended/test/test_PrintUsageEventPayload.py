@@ -77,6 +77,9 @@ class FakePlugin(object):
     _printJobFileLocation = SpoolmanagerPlugin._printJobFileLocation
     _printJobIdentity = SpoolmanagerPlugin._printJobIdentity
     _logToolWithoutSpool = SpoolmanagerPlugin._logToolWithoutSpool
+    _recordJobUsage = SpoolmanagerPlugin._recordJobUsage
+    _jobUsageReportTools = SpoolmanagerPlugin._jobUsageReportTools
+    JOB_USAGE_SPOOL_FIELDS = SpoolmanagerPlugin.JOB_USAGE_SPOOL_FIELDS
     MINIMUM_PRINT_DURATION_FOR_SLICED_USAGE = (
         SpoolmanagerPlugin.MINIMUM_PRINT_DURATION_FOR_SLICED_USAGE
     )
@@ -94,6 +97,7 @@ class FakePlugin(object):
         self._printJobStartFileLocation = (None, None)
         self._moonrakerUsageBooked = 0.0
         self._printJobUsageReported = False
+        self._printJobUsagePerTool = {}
         self.metaDataFilamentLengths = []
         self.myFilamentOdometer = FakeOdometer(extrusionAmounts)
         self._selectedSpools = selectedSpools

@@ -112,6 +112,10 @@ class SpoolmanagerPlugin(
         # set once this job's end has been reported with print_job_usage_booked, so a
         # repeated end event that books nothing does not replace that report with an empty one
         self._printJobUsageReported = False
+        # every booking of the current job, per tool, in order. A pause or a mid-print
+        # spool change books and resets the odometer, so the job's end alone only sees
+        # what came after the last of them; see _recordJobUsage()
+        self._printJobUsagePerTool = {}
 
         # DATABASE
         self.databaseConnectionProblemConfirmed = False
@@ -1249,13 +1253,16 @@ class SpoolmanagerPlugin(
                     "no metadata found for '%s:%s'" % (candidateOrigin, candidatePath)
                 )
                 continue
-            if "analysis" in metadata and "filament" in metadata["analysis"]:
+            # seen for a file on a serial printer's SD card: its metadata carries
+            # "analysis": None
+            analysis = metadata.get("analysis")
+            if isinstance(analysis, dict) and "filament" in analysis:
                 if (candidateOrigin, candidatePath) != (origin, path):
                     self._logger.info(
                         "filament metadata for job '%s:%s' resolved via fallback '%s:%s'"
                         % (origin, path, candidateOrigin, candidatePath)
                     )
-                return metadata["analysis"]["filament"]
+                return analysis["filament"]
 
         # no analysis metadata anywhere: read the sliced usage out of a local copy -
         # from the 3mf container's slice_info.config, or from plain gcode's footer comments
@@ -1787,6 +1794,7 @@ class SpoolmanagerPlugin(
         self._printJobStartFileLocation = self._getCurrentJobFileLocation()
         self._moonrakerUsageBooked = 0.0
         self._printJobUsageReported = False
+        self._printJobUsagePerTool = {}
 
         reloadTable = False
         selectedSpools = self.loadSelectedSpools()
@@ -2143,6 +2151,7 @@ class SpoolmanagerPlugin(
             toolSnapshots.append(toolSnapshot)
 
             self._databaseManager.saveSpool(spoolModel)
+            self._recordJobUsage(toolSnapshot)
 
             # the usage values are carried in the event as well, so a consumer does not have
             # to poll api_getLastPrintJobUsage() - that snapshot is only written after this
@@ -2180,11 +2189,9 @@ class SpoolmanagerPlugin(
         if printStatus in ("success", "failed", "canceled") and (
             bookedSomething or not self._printJobUsageReported
         ):
-            usedSources = {
-                toolSnapshot["source"]
-                for toolSnapshot in toolSnapshots
-                if toolSnapshot is not None
-            }
+            # the whole job, not just this commit - see _recordJobUsage()
+            reportTools = self._jobUsageReportTools(toolSnapshots)
+            usedSources = {tool["source"] for tool in reportTools if tool is not None}
             if len(usedSources) == 0:
                 overallSource = "odometer"
             elif len(usedSources) == 1:
@@ -2200,7 +2207,7 @@ class SpoolmanagerPlugin(
                 "currencySymbol": self._settings.get(
                     [SettingsKeys.SETTINGS_KEY_CURRENCY_SYMBOL]
                 ),
-                "tools": toolSnapshots,
+                "tools": reportTools,
                 "job": self._printJobIdentity(),
             }
             # One report per job end, sent once the snapshot exists - also when nothing was
@@ -2225,6 +2232,99 @@ class SpoolmanagerPlugin(
 
         if reload:
             self._sendDataToClient(dict(action="reloadTable and sidebarSpools"))
+
+    # the details of a spool that a job usage report carries per spool
+    JOB_USAGE_SPOOL_FIELDS = (
+        "databaseId",
+        "spoolName",
+        "vendor",
+        "material",
+        "usedLength",
+        "usedWeight",
+        "usedCost",
+    )
+
+    def _recordJobUsage(self, toolSnapshot):
+        # Keeps one booking of the current job for the job's report. A 0mm booking adds
+        # nothing and is left out, so a pause on a printer whose odometer counts nothing
+        # (connector printers) neither lists a spool nor turns the source into "mixed".
+        if not toolSnapshot["usedLength"]:
+            return
+        self._printJobUsagePerTool.setdefault(toolSnapshot["toolIndex"], []).append(
+            dict(toolSnapshot)
+        )
+
+    def _jobUsageReportTools(self, toolSnapshots):
+        # The per-tool entries of a job usage report: what the whole job booked on each
+        # tool, not just its end. One entry per tool index - a consumer keys them by tool -
+        # and None for a tool that booked nothing and has no spool.
+        toolCount = max(
+            [len(toolSnapshots)]
+            + [toolIndex + 1 for toolIndex in self._printJobUsagePerTool]
+        )
+        tools = []
+        for toolIndex in range(toolCount):
+            bookings = self._printJobUsagePerTool.get(toolIndex)
+            if not bookings:
+                # nothing went through this tool during the job: report the spool it has
+                # now with what the end booked on it, as before
+                toolSnapshot = (
+                    toolSnapshots[toolIndex] if toolIndex < len(toolSnapshots) else None
+                )
+                if toolSnapshot is None:
+                    tools.append(None)
+                    continue
+                bookings = [toolSnapshot]
+
+            # the spools behind the bookings, each once, in order of first use
+            spools = []
+            sources = []
+            for booking in bookings:
+                spool = next(
+                    (s for s in spools if s["databaseId"] == booking["databaseId"]),
+                    None,
+                )
+                if spool is None:
+                    spool = {"usedLength": 0.0, "usedWeight": 0.0, "usedCost": 0.0}
+                    spools.append(spool)
+                # the spool's details as of its latest booking
+                for key in ("databaseId", "spoolName", "vendor", "material"):
+                    spool[key] = booking[key]
+                spool["usedLength"] += booking["usedLength"]
+                # unknown stays unknown - a sum missing one of its parts would look complete
+                for key in ("usedWeight", "usedCost"):
+                    if spool[key] is None or booking[key] is None:
+                        spool[key] = None
+                    else:
+                        spool[key] += booking[key]
+                if booking["source"] not in sources:
+                    sources.append(booking["source"])
+
+            usedWeights = [spool["usedWeight"] for spool in spools]
+            usedCosts = [spool["usedCost"] for spool in spools]
+            # the identity is the spool of the last booking: normally the one in the tool
+            # at the job's end, but never one inserted afterwards that took nothing
+            lastBooking = bookings[-1]
+            tools.append(
+                {
+                    "toolIndex": toolIndex,
+                    "databaseId": lastBooking["databaseId"],
+                    "spoolName": lastBooking["spoolName"],
+                    "vendor": lastBooking["vendor"],
+                    "material": lastBooking["material"],
+                    "diameter": lastBooking["diameter"],
+                    "density": lastBooking["density"],
+                    "usedLength": sum(spool["usedLength"] for spool in spools),
+                    "usedWeight": None if None in usedWeights else sum(usedWeights),
+                    "usedCost": None if None in usedCosts else sum(usedCosts),
+                    "source": sources[0] if len(sources) == 1 else "mixed",
+                    "spools": [
+                        {key: spool[key] for key in self.JOB_USAGE_SPOOL_FIELDS}
+                        for spool in spools
+                    ],
+                }
+            )
+        return tools
 
     #### print job finished
     def _on_printJobFinished(self, printStatus, payload):
@@ -2385,6 +2485,11 @@ class SpoolmanagerPlugin(
         usage, so external consumers don't lose usage to either the odometer reset race or
         the fallback being invisible on api_getExtrusionAmount(). Returns None if no print
         has been booked yet in this session.
+
+        Each tool's usage is the whole job's: what pauses and mid-print spool changes
+        booked along the way is included. tools[i]["spools"] lists the spools behind
+        that sum in order of first use, each once; the identity fields of tools[i]
+        describe the spool used last.
         :return: dict, or None
         """
         return self._lastPrintJobUsage

@@ -85,6 +85,9 @@ class FakePlugin(object):
     _printJobFileLocation = _productionMethod("_printJobFileLocation")
     _printJobIdentity = _productionMethod("_printJobIdentity")
     _logToolWithoutSpool = _productionMethod("_logToolWithoutSpool")
+    _recordJobUsage = _productionMethod("_recordJobUsage")
+    _jobUsageReportTools = _productionMethod("_jobUsageReportTools")
+    JOB_USAGE_SPOOL_FIELDS = getattr(SpoolmanagerPlugin, "JOB_USAGE_SPOOL_FIELDS", None)
     api_getJobFilamentUsage = _productionMethod("api_getJobFilamentUsage")
     MOONRAKER_FINISHED_PRINT_STATES = getattr(
         SpoolmanagerPlugin, "MOONRAKER_FINISHED_PRINT_STATES", None
@@ -107,6 +110,7 @@ class FakePlugin(object):
         self._printJobStartFileLocation = ("printer", JOB_PATH)
         self._moonrakerUsageBooked = 0.0
         self._printJobUsageReported = False
+        self._printJobUsagePerTool = {}
         self.currentJobLocation = ("printer", JOB_PATH)
         self.slicedFilament = slicedFilament
         self.filamentMetaDataRequests = []
