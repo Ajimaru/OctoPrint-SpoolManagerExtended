@@ -1253,13 +1253,16 @@ class SpoolmanagerPlugin(
                     "no metadata found for '%s:%s'" % (candidateOrigin, candidatePath)
                 )
                 continue
-            if "analysis" in metadata and "filament" in metadata["analysis"]:
+            # seen for a file on a serial printer's SD card: its metadata carries
+            # "analysis": None
+            analysis = metadata.get("analysis")
+            if isinstance(analysis, dict) and "filament" in analysis:
                 if (candidateOrigin, candidatePath) != (origin, path):
                     self._logger.info(
                         "filament metadata for job '%s:%s' resolved via fallback '%s:%s'"
                         % (origin, path, candidateOrigin, candidatePath)
                     )
-                return metadata["analysis"]["filament"]
+                return analysis["filament"]
 
         # no analysis metadata anywhere: read the sliced usage out of a local copy -
         # from the 3mf container's slice_info.config, or from plain gcode's footer comments
