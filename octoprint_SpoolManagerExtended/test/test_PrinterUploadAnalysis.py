@@ -15,6 +15,7 @@ import logging
 import os
 import shutil
 import tempfile
+import threading
 import unittest
 from unittest import mock
 
@@ -327,12 +328,24 @@ class RecordingConnection(FakeConnection):
 
 class FakeDownloadPlugin(object):
     _getFilamentFromPrinterFile = SpoolmanagerPlugin._getFilamentFromPrinterFile
+    _printerFileLock = SpoolmanagerPlugin._printerFileLock
+    _readPrinterFileFilament = SpoolmanagerPlugin._readPrinterFileFilament
     _resolvePrinterFilePath = SpoolmanagerPlugin._resolvePrinterFilePath
+    _parseFilamentLengthsFromGcodeComments = (
+        SpoolmanagerPlugin._parseFilamentLengthsFromGcodeComments
+    )
+    _parseFilamentCommentValues = SpoolmanagerPlugin._parseFilamentCommentValues
+    _streamLength = SpoolmanagerPlugin._streamLength
+    FILAMENT_USED_MM_PATTERN = SpoolmanagerPlugin.FILAMENT_USED_MM_PATTERN
+    FILAMENT_USED_CM3_PATTERN = SpoolmanagerPlugin.FILAMENT_USED_CM3_PATTERN
 
     def __init__(self, connection):
         self._printer = FakePrinter(connection)
         self._logger = logging.getLogger("test.printerfiledownload")
         self._printerFileFilamentCache = {}
+        self._printerFileLocks = {}
+        self._printerFileLocksGuard = threading.Lock()
+        self._unslicedJobFile = None
         self.clientMessages = []
 
     def _sendDataToClient(self, payloadDict):
@@ -357,6 +370,65 @@ class TestPrinterFileDownload(unittest.TestCase):
 
         self.assertEqual(connection.downloads, ["job.gcode"])
         self.assertIn("printerFileAnalysisStarted", plugin.clientMessages)
+
+
+class FakePrinterFile(object):
+    size = 1234
+    date = 1700000000
+
+
+class BlockingDownloadConnection(FakeConnection):
+    """A printer whose download of a file takes until the test lets it finish."""
+
+    def __init__(self):
+        FakeConnection.__init__(self, write_file=True, read_file=True)
+        self.downloads = []
+        self.firstDownloadStarted = threading.Event()
+        self.secondDownloadStarted = threading.Event()
+        self.finishDownloads = threading.Event()
+
+    def get_printer_files(self, *args, **kwargs):
+        return []
+
+    def get_printer_file(self, *args, **kwargs):
+        return FakePrinterFile()
+
+    def download_printer_file(self, path, *args, **kwargs):
+        self.downloads.append(path)
+        if len(self.downloads) == 1:
+            self.firstDownloadStarted.set()
+        else:
+            self.secondDownloadStarted.set()
+        self.finishDownloads.wait(5)
+        return io.BytesIO(
+            b"G1 X1 E1\n; filament used [mm] = 0.00, 0.00, 0.00, 297.65\n"
+        )
+
+
+class TestConcurrentPrinterFileReads(unittest.TestCase):
+    def test_secondCallerWaitsForTheFirstDownload(self):
+        # PrintJobHistoryExtended asks for a job's usage from its own thread while this
+        # plugin's PRINT_STARTED handling reads the same file
+        connection = BlockingDownloadConnection()
+        plugin = FakeDownloadPlugin(connection)
+        results = []
+
+        def read():
+            results.append(plugin._getFilamentFromPrinterFile("job.gcode", 1))
+
+        first = threading.Thread(target=read)
+        first.start()
+        self.assertTrue(connection.firstDownloadStarted.wait(5))
+        second = threading.Thread(target=read)
+        second.start()
+        # give the second caller the time it needs to start a download of its own
+        connection.secondDownloadStarted.wait(0.5)
+        connection.finishDownloads.set()
+        first.join(5)
+        second.join(5)
+
+        self.assertEqual(connection.downloads, ["job.gcode"])
+        self.assertEqual(results, [{"tool3": {"length": 297.65}}] * 2)
 
 
 if __name__ == "__main__":
