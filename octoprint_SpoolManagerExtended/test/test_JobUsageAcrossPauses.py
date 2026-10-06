@@ -64,12 +64,21 @@ def _productionMethod(name):
     return getattr(SpoolmanagerPlugin, name, None)
 
 
+class NotOnMoonraker(object):
+    # stands in for U1RfidManager on a printer that is not connected through Moonraker (a
+    # serial one): no connector parameters, so Klipper is never asked
+    def _getConnectorParams(self):
+        return None
+
+
 class FakePlugin(object):
     commitOdometerData = SpoolmanagerPlugin.commitOdometerData
     _on_printJobStarted = SpoolmanagerPlugin._on_printJobStarted
     _sendPayload2EventBus = SpoolmanagerPlugin._sendPayload2EventBus
     _calculateWeight = SpoolmanagerPlugin._calculateWeight
     _moonrakerUsagePerTool = SpoolmanagerPlugin._moonrakerUsagePerTool
+    _moonrakerJobFilename = staticmethod(_productionMethod("_moonrakerJobFilename"))
+    _readMoonrakerFilamentUsed = SpoolmanagerPlugin._readMoonrakerFilamentUsed
     _printJobFileLocation = SpoolmanagerPlugin._printJobFileLocation
     _printJobIdentity = SpoolmanagerPlugin._printJobIdentity
     _logToolWithoutSpool = SpoolmanagerPlugin._logToolWithoutSpool
@@ -87,6 +96,7 @@ class FakePlugin(object):
         self._event_bus = FakeEventBus()
         self._logger = logging.getLogger("test.jobusageacrosspauses")
         self._mqttManager = None
+        self._u1RfidManager = NotOnMoonraker()
         self._lastPrintJobUsage = None
         self._slicedUsageAlreadyBooked = False
         self._printJobStartedTimestamp = None
@@ -102,7 +112,7 @@ class FakePlugin(object):
         return self.selectedSpools
 
     def _getCurrentJobFileLocation(self):
-        # a job OctoPrint streams itself, so Moonraker is never asked
+        # a job OctoPrint streams itself, on a printer that is not on Moonraker
         return "local", "job.gcode"
 
     def _readingFilamentMetaData(self):
