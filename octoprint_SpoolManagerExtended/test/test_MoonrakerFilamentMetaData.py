@@ -290,5 +290,39 @@ class TestPrinterFileWithoutAnalysis(unittest.TestCase):
         self.assertEqual(filament, {"tool0": {"length": 812.5}})
 
 
+class FakeUploadAnalysis(object):
+    def __init__(self, filamentByPath):
+        self._filamentByPath = filamentByPath
+
+    def filamentFor(self, path):
+        return self._filamentByPath.get(path)
+
+
+class TestPrinterFileAnalysedOnUpload(unittest.TestCase):
+    # The serial connector cannot hand an SD card's file back, so what was counted while
+    # the file was uploaded through OctoPrint stands in for the analysis it never gets.
+
+    def test_usageCountedOnUploadIsUsed(self):
+        # 1087.4 exists nowhere but in what the upload analysis kept for the file
+        plugin = FakePlugin(None, None, fileManagerMetadata={"analysis": None})
+        plugin._printerUploadAnalysis = FakeUploadAnalysis(
+            {"test~1.gco": {"tool0": {"length": 1087.4}}}
+        )
+
+        filament = plugin._getFilamentMetaData(PRINTER, "test~1.gco")
+
+        self.assertEqual(filament, {"tool0": {"length": 1087.4}})
+
+    def test_localFilesDoNotAskTheUploadAnalysis(self):
+        plugin = FakePlugin(None, None, fileManagerMetadata=CONNECTOR_ANALYSIS)
+        plugin._printerUploadAnalysis = FakeUploadAnalysis(
+            {"test.gcode": {"tool0": {"length": 1087.4}}}
+        )
+
+        filament = plugin._getFilamentMetaData("local", "test.gcode")
+
+        self.assertEqual(filament, {"tool0": {"length": 21872.8}})
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -18,6 +18,7 @@ from urllib.parse import quote
 from urllib.request import pathname2url
 
 import flask
+import octoprint.filemanager
 import octoprint.plugin
 from octoprint.access.permissions import Permissions
 from octoprint.events import Events
@@ -46,6 +47,7 @@ from octoprint_SpoolManagerExtended.DatabaseManager import (
 )
 from octoprint_SpoolManagerExtended.MqttManager import MqttManager
 from octoprint_SpoolManagerExtended.newodometer import NewFilamentOdometer
+from octoprint_SpoolManagerExtended.PrinterUploadAnalysis import PrinterUploadAnalysis
 from octoprint_SpoolManagerExtended.U1RfidManager import U1RfidManager
 
 # sentinel distinguishing "never announced" from "known to be empty (None)" in
@@ -73,6 +75,22 @@ LEGACY_UNDO_FILE_NAMES = {
 LEGACY_SETTINGS_NOT_MIGRATABLE = frozenset(
     ["selectedSpoolsDatabaseIds", "installed_version"]
 )
+
+
+def _storageCapabilitiesOf(connection):
+    # What a printer connection's own storage can do. Not to be read off the presence of
+    # upload_printer_file()/download_printer_file(): OctoPrint's PrinterFilesMixin gives
+    # every connector both, the download returning None where nothing can be downloaded.
+    if connection is None:
+        return None
+    currentCapabilities = getattr(connection, "current_storage_capabilities", None)
+    if callable(currentCapabilities):
+        try:
+            return currentCapabilities()
+        except Exception:
+            # a connection still coming up - the declared ones say the same about reading
+            pass
+    return getattr(connection, "storage_capabilities", None)
 
 
 class SpoolmanagerPlugin(
@@ -132,6 +150,13 @@ class SpoolmanagerPlugin(
         self.myFilamentOdometer = NewFilamentOdometer(self._extrusionValuesChanged)
         self.myFilamentOdometer.set_g90_extruder(
             self._settings.get_boolean(["feature", "g90InfluencesExtruder"])
+        )
+        # sliced usage of files uploaded to a printer's storage that cannot be read back
+        # later, see on_filePreprocessor()
+        self._printerUploadAnalysis = PrinterUploadAnalysis(
+            self._logger,
+            self.get_plugin_data_folder(),
+            self._settings.get_boolean(["feature", "g90InfluencesExtruder"]),
         )
 
         self._filamentManagerPluginImplementation = None
@@ -1229,6 +1254,14 @@ class SpoolmanagerPlugin(
             if filament is not None:
                 return filament
 
+            # a file the printer cannot hand back (a serial printer's SD card) was
+            # analysed when it was uploaded through OctoPrint
+            printerUploadAnalysis = getattr(self, "_printerUploadAnalysis", None)
+            if printerUploadAnalysis is not None:
+                filament = printerUploadAnalysis.filamentFor(path)
+                if filament is not None:
+                    return filament
+
         candidates = [(origin, path)]
         if origin != FileDestinations.LOCAL and path is not None:
             # gcode analysis results only exist in local storage; printer-storage jobs
@@ -1433,6 +1466,11 @@ class SpoolmanagerPlugin(
     def _getFilamentFromPrinterFile(self, path, plate):
         connection = getattr(self._printer, "_connection", None)
         if connection is None or not hasattr(connection, "download_printer_file"):
+            return None
+        capabilities = _storageCapabilitiesOf(connection)
+        if capabilities is not None and not getattr(capabilities, "read_file", True):
+            # a serial printer's SD card: nothing to download, and no "analysing the
+            # printer's file" notice in the browser for it either
             return None
 
         path = self._resolvePrinterFilePath(connection, path)
@@ -2594,6 +2632,40 @@ class SpoolmanagerPlugin(
         if u1RfidManager is not None:
             u1RfidManager.shutdown()
 
+    def on_filePreprocessor(
+        self,
+        path,
+        file_object,
+        links=None,
+        printer_profile=None,
+        allow_overwrite=True,
+        *args,
+        **kwargs,
+    ):
+        # Every upload passes through here, whatever storage it goes to. A copy is only
+        # taken while the connected printer's storage takes files but cannot hand them
+        # back (the serial connector declares read_file=False for an SD card) - where it
+        # can, _getFilamentFromPrinterFile() reads the file from the printer itself.
+        try:
+            if not self._printerStorageCannotBeReadBack():
+                return file_object
+            if not octoprint.filemanager.valid_file_type(path, type="gcode"):
+                return file_object
+            return self._printerUploadAnalysis.wrapUpload(path, file_object)
+        except Exception:
+            self._logger.exception("Could not take a copy of the upload '%s'" % path)
+            return file_object
+
+    def _printerStorageCannotBeReadBack(self):
+        capabilities = _storageCapabilitiesOf(
+            getattr(self._printer, "_connection", None)
+        )
+        return (
+            capabilities is not None
+            and bool(getattr(capabilities, "write_file", False))
+            and not getattr(capabilities, "read_file", False)
+        )
+
     # Listen to all  g-code which where already sent to the printer (thread: comm.sending_thread)
     def on_sentGCodeHook(
         self, comm_instance, phase, cmd, cmd_type, gcode, *args, **kwargs
@@ -2648,6 +2720,18 @@ class SpoolmanagerPlugin(
         elif Events.PRINT_CANCELLED == event:
             self.alreadyCanceled = True
             self._on_printJobFinished("canceled", payload)
+
+        if event in (Events.FILE_ADDED, Events.FILE_REMOVED):
+            printerUploadAnalysis = getattr(self, "_printerUploadAnalysis", None)
+            if printerUploadAnalysis is not None and payload:
+                if Events.FILE_ADDED == event:
+                    printerUploadAnalysis.onFileAdded(
+                        payload.get("storage"), payload.get("path")
+                    )
+                else:
+                    printerUploadAnalysis.onFileRemoved(
+                        payload.get("storage"), payload.get("path")
+                    )
 
         if (
             Events.FILE_SELECTED == event
@@ -3100,6 +3184,7 @@ def __plugin_load__():
     __plugin_hooks__ = {
         "octoprint.plugin.softwareupdate.check_config": __plugin_implementation__.get_update_information,
         "octoprint.comm.protocol.gcode.sent": __plugin_implementation__.on_sentGCodeHook,
+        "octoprint.filemanager.preprocessor": __plugin_implementation__.on_filePreprocessor,
         # "octoprint.comm.protocol.scripts": __plugin_implementation__.message_on_connect
         "octoprint.events.register_custom_events": __plugin_implementation__.register_custom_events,
     }
