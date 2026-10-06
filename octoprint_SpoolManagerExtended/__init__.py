@@ -1900,8 +1900,9 @@ class SpoolmanagerPlugin(
 
     def _readMoonrakerFilamentUsed(self, path):
         """
-        The filament a printer-storage job on a Moonraker printer has actually extruded, in
-        mm, as Klipper counts it (print_stats.filament_used) - or None.
+        The filament a job on a Moonraker printer has actually extruded, in mm, as Klipper
+        counts it (print_stats.filament_used) - or None. `path` is the name Klipper prints
+        the job under, see _moonrakerJobFilename().
 
         Such jobs stream nothing through OctoPrint, so the odometer stays at 0. The sliced
         length stood in for it, but only for a successful job: a canceled or failed one was
@@ -1944,6 +1945,20 @@ class SpoolmanagerPlugin(
             return None
         return filamentUsed
 
+    @staticmethod
+    def _moonrakerJobFilename(origin, path):
+        # The name Klipper prints a job under (print_stats.filename), or None. A file from
+        # printer storage keeps its path. A file from OctoPrint's own storage is uploaded
+        # first and printed as ".octoprint/<file name>" - OctoPrint-MoonrakerConnector,
+        # start_print(); seen that way in Moonraker's job history.
+        if path is None:
+            return None
+        if origin == FileDestinations.LOCAL:
+            return ".octoprint/" + path.rsplit("/", 1)[-1]
+        if origin == getattr(FileDestinations, "PRINTER", None):
+            return path
+        return None
+
     def _slicedLengthsPerTool(self, origin, path):
         # the job's sliced length per tool index, 0.0 for tools it does not use
         lengths = []
@@ -1964,11 +1979,15 @@ class SpoolmanagerPlugin(
         Klipper keeps one count for the whole job and none per extruder, so the split follows
         the sliced shares: exact for a job on a single tool ("moonraker"), an estimate
         otherwise ("moonrakerEstimated").
+
+        A job from OctoPrint's own storage is counted the same way: the connector hands the
+        file to Klipper whole, so the odometer counts nothing for it either.
         """
         origin, path = self._printJobFileLocation()
-        if origin != FileDestinations.PRINTER or path is None:
+        klipperFilename = self._moonrakerJobFilename(origin, path)
+        if klipperFilename is None:
             return None
-        filamentUsed = self._readMoonrakerFilamentUsed(path)
+        filamentUsed = self._readMoonrakerFilamentUsed(klipperFilename)
         if filamentUsed is None:
             return None
         usedTools = [
@@ -1991,9 +2010,10 @@ class SpoolmanagerPlugin(
         }
         source = "moonraker" if len(usedTools) == 1 else "moonrakerEstimated"
         self._logger.info(
-            "Klipper counted %.1fmm for job 'printer:%s', booking %.1fmm (%s): %s"
+            "Klipper counted %.1fmm for job '%s:%s', booking %.1fmm (%s): %s"
             % (
                 filamentUsed,
+                origin,
                 path,
                 notBookedYet,
                 source,
@@ -2053,7 +2073,7 @@ class SpoolmanagerPlugin(
             printDuration is None
             or printDuration >= self.MINIMUM_PRINT_DURATION_FOR_SLICED_USAGE
         )
-        # Klipper's own count of a printer-storage job on a Moonraker printer, read once at
+        # Klipper's own count of a job on a Moonraker printer, read once at
         # the job's end, whichever end it is - see _moonrakerUsagePerTool(). The same guard
         # against a spurious end event applies as to the sliced fallback below.
         moonrakerUsage = None

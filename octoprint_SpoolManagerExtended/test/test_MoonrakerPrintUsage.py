@@ -80,6 +80,7 @@ class FakePlugin(object):
     _sendPayload2EventBus = SpoolmanagerPlugin._sendPayload2EventBus
     _calculateWeight = SpoolmanagerPlugin._calculateWeight
     _moonrakerUsagePerTool = _productionMethod("_moonrakerUsagePerTool")
+    _moonrakerJobFilename = staticmethod(_productionMethod("_moonrakerJobFilename"))
     _readMoonrakerFilamentUsed = _productionMethod("_readMoonrakerFilamentUsed")
     _slicedLengthsPerTool = _productionMethod("_slicedLengthsPerTool")
     _printJobFileLocation = _productionMethod("_printJobFileLocation")
@@ -319,18 +320,24 @@ class TestWhenKlipperCountIsNotUsed(_BookingTestCase):
         self.assertEqual(spool.usedLength, SLICED_LENGTH)
         self.assertEqual(len(plugin.events(JOB_EVENT)), 1)
 
-    def test_localJobKeepsTheOdometerAndNeverAsksMoonraker(self):
+    def test_jobTheOdometerCountedKeepsTheOdometer(self):
+        # a job OctoPrint streamed itself: what the odometer counted is booked
         spool = self._spool("Streamed job spool")
         plugin = self._plugin(
             [spool], {"tool0": {"length": SLICED_LENGTH}}, extrusionAmounts={0: 250.0}
         )
         plugin.currentJobLocation = ("local", JOB_PATH)
         plugin._printJobStartFileLocation = ("local", JOB_PATH)
+        plugin._u1RfidManager.printStats = dict(
+            filename=".octoprint/" + JOB_PATH,
+            state="complete",
+            filament_used=COUNTED_LENGTH,
+        )
 
         plugin.commitOdometerData(printStatus="success", printDuration=600.0)
 
         self.assertEqual(spool.usedLength, 250.0)
-        self.assertEqual(plugin._u1RfidManager.requestedPaths, [])
+        self.assertEqual(plugin.events(SPOOL_EVENT)[0]["source"], "odometer")
 
     def test_pauseAndMidPrintSpoolChangeDoNotAskMoonraker(self):
         # only the job's end books Klipper's count, so it is booked whole, once
@@ -343,6 +350,47 @@ class TestWhenKlipperCountIsNotUsed(_BookingTestCase):
 
         self.assertEqual(plugin._u1RfidManager.requestedPaths, [])
         self.assertEqual(spool.usedLength, 0.0)
+
+
+class TestLocalJobOnMoonraker(_BookingTestCase):
+    # A job from OctoPrint's own storage on a Moonraker printer: the connector uploads it
+    # and Klipper prints it as ".octoprint/<file name>", so the odometer counts nothing.
+
+    LOCAL_PATH = "folder/" + JOB_PATH
+
+    def _localJob(self, **printStats):
+        spool, plugin = self._singleToolJob()
+        plugin.currentJobLocation = ("local", self.LOCAL_PATH)
+        plugin._printJobStartFileLocation = ("local", self.LOCAL_PATH)
+        plugin._u1RfidManager.printStats = dict(
+            filename=".octoprint/" + JOB_PATH, **printStats
+        )
+        return spool, plugin
+
+    def test_successfulLocalJobBooksWhatKlipperCounted(self):
+        spool, plugin = self._localJob(state="complete", filament_used=COUNTED_LENGTH)
+
+        plugin.commitOdometerData(printStatus="success", printDuration=13800.0)
+
+        self.assertEqual(spool.usedLength, COUNTED_LENGTH)
+        self.assertEqual(plugin.events(SPOOL_EVENT)[0]["source"], "moonraker")
+
+    def test_canceledLocalJobBooksWhatKlipperExtruded(self):
+        spool, plugin = self._localJob(state="cancelled", filament_used=CANCELED_COUNT)
+
+        plugin.commitOdometerData(printStatus="canceled", printDuration=2820.0)
+
+        self.assertEqual(spool.usedLength, CANCELED_COUNT)
+        self.assertEqual(plugin.events(SPOOL_EVENT)[0]["source"], "moonraker")
+
+    def test_printerFileOfTheSameNameIsNotThisJob(self):
+        spool, plugin = self._localJob(state="complete", filament_used=COUNTED_LENGTH)
+        plugin._u1RfidManager.printStats["filename"] = JOB_PATH
+
+        plugin.commitOdometerData(printStatus="success", printDuration=13800.0)
+
+        self.assertEqual(spool.usedLength, SLICED_LENGTH)
+        self.assertEqual(plugin.events(SPOOL_EVENT)[0]["source"], "slicedMetaData")
 
 
 class TestToolWithoutSpool(_BookingTestCase):
