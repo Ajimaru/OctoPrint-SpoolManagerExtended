@@ -109,6 +109,12 @@ class SpoolmanagerPlugin(
         # cache for filament usage parsed from printer-storage files (3mf container or
         # plain gcode): (path, plate) -> (fingerprint, filament)
         self._printerFileFilamentCache = {}
+        # one lock per entry of that cache. api_getJobFilamentUsage() is also called from
+        # other plugins' threads - PrintJobHistoryExtended asks while this plugin's own
+        # PRINT_STARTED handling reads the same file - and the bambu connector opens a
+        # separate FTPS session for every download
+        self._printerFileLocks = {}
+        self._printerFileLocksGuard = threading.Lock()
         # set while the selected job is an unsliced project file: (path, slicedSibling)
         self._unslicedJobFile = None
         # cache for per-tool filament usage read from Moonraker: (host, port, path) -> (filament,)
@@ -1488,6 +1494,20 @@ class SpoolmanagerPlugin(
             pass
 
         cacheKey = (path, plate)
+        # a caller that comes while the same file is being read waits for that read and
+        # then finds its result in the cache, instead of downloading the file a second time
+        with self._printerFileLock(cacheKey):
+            return self._readPrinterFileFilament(
+                connection, path, plate, cacheKey, fingerprint, fileSize
+            )
+
+    def _printerFileLock(self, cacheKey):
+        with self._printerFileLocksGuard:
+            return self._printerFileLocks.setdefault(cacheKey, threading.Lock())
+
+    def _readPrinterFileFilament(
+        self, connection, path, plate, cacheKey, fingerprint, fileSize
+    ):
         cached = self._printerFileFilamentCache.get(cacheKey)
         # without a fingerprint there is no way to tell a re-slice from the cached file,
         # so re-read rather than risk serving usage from a previous version of the job
