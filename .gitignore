@@ -9,5 +9,7 @@ dist
 *.zip
 .venv
 node_modules
-package-lock.json
+# package-lock.json is tracked on purpose: CI runs `npm ci`, which requires it,
+# and the devDependencies use ^-ranges - without the lock a new eslint/prettier
+# minor could change lint results with no change of our own.
 .eslintcache
