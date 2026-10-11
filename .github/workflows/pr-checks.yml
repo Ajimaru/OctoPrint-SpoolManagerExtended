@@ -1,0 +1,105 @@
+name: PR checks
+
+# Runs the test suite and the linters on every pull request, and on pushes to the
+# long-lived branches so a bypassed merge (admin push) is still checked afterwards.
+#
+# WHY THE LINT JOB JUST CALLS PRE-COMMIT: .pre-commit-config.yaml already pins every
+# linter version (black 26.5.1, flake8 7.3.0, isort 8.0.1, djlint, ...). Spelling those
+# versions out again here would create a second source of truth that silently drifts
+# from what runs locally - and a CI lint that disagrees with the pre-commit hook is
+# worse than no CI lint at all. The frontend hooks (eslint/stylelint/prettier) are
+# `language: system` and expect node_modules, so npm ci runs before pre-commit.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - testing
+      - main
+
+# A force-push or a quick follow-up commit makes the previous run pointless.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      # One failing version should not hide the result of the others.
+      fail-fast: false
+      matrix:
+        # The ends of the supported range in setup.py (>=3.11,<3.15). 3.13 is the
+        # development baseline per requirements-dev.txt and is covered in between.
+        python-version: ["3.11", "3.13", "3.14"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install dependencies
+        # Installed in two stages, and the order is not cosmetic. requirements-dev.txt
+        # contains `--editable .`, and this plugin's setup.py imports octoprint_setuptools
+        # at import time. With --no-build-isolation (required, because pip's isolated
+        # build env cannot see OctoPrint) that import only succeeds once OctoPrint is
+        # already installed in the same environment. Doing it in a single pip call fails
+        # with "Could not import OctoPrint's setuptools" - verified locally on 3.11.
+        # --pre is required throughout: OctoPrint 2.0.0 only exists as a release candidate.
+        #
+        # The OctoPrint pin is read back out of requirements-dev.txt rather than repeated
+        # here, so bumping the rc in that file stays the only edit needed.
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          OCTOPRINT_PIN="$(grep -E '^OctoPrint==' requirements-dev.txt)"
+          echo "Installing $OCTOPRINT_PIN first (see comment above)"
+          pip install --pre "$OCTOPRINT_PIN"
+          pip install --pre --no-build-isolation -r requirements-dev.txt
+
+      - name: Run tests
+        run: python -m pytest octoprint_SpoolManagerExtended/test -q
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install frontend linters
+        # eslint/stylelint/prettier run as pre-commit `language: system` hooks via
+        # `npx --no-install`, so they have to exist in node_modules first.
+        run: npm ci
+
+      - name: Cache pre-commit hook environments
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Install pre-commit
+        run: python -m pip install --upgrade pip pre-commit
+
+      - name: Run pre-commit
+        # --all-files, not just the diff: this is the same command the contributing docs
+        # tell people to run locally, so a green CI and a green local run mean the same
+        # thing. --show-diff-on-failure prints what a formatter would have changed, which
+        # is the one thing you actually need from a failed formatting check.
+        run: pre-commit run --all-files --show-diff-on-failure
