@@ -45,6 +45,39 @@ def _status(body):
     return OctoScaleFirmware.evaluateVersionBody(body)["status"]
 
 
+# The boundary cases below are built from MINIMUM_FIRMWARE rather than spelling a version
+# out, so raising the gate stays the one-line change OctoScaleFirmware.py promises. Tests
+# that hardcoded the old minimum had to be edited in ~15 places on every bump, and an
+# edited expectation is one that was never really checked. Bodies quoted from a real
+# device stay literal further down: those are recorded observations, not parameters.
+_MIN = OctoScaleFirmware.MINIMUM_FIRMWARE
+_MIN_DISPLAY = OctoScaleFirmware.MINIMUM_FIRMWARE_DISPLAY
+
+
+def _version(numbers, suffix=None):
+    # "v0.0.6" / "v0.0.6-dev1" - the body shape the device sends, minus the build tail
+    return OctoScaleFirmware.formatVersion(numbers, suffix)
+
+
+def _bump(index, by=1):
+    # a version one step newer than the minimum in the given position (0=major, 2=patch)
+    parts = list(_MIN)
+    parts[index] += by
+    return tuple(parts)
+
+
+def _belowMinimum():
+    # the newest version that must still be rejected: one patch below the minimum.
+    # Walks up the positions so this keeps working if the minimum ever ends in .0
+    # (0.1.0 -> 0.0.x has no "one patch below" within the same minor).
+    for index in (2, 1, 0):
+        if _MIN[index] > 0:
+            parts = list(_MIN)
+            parts[index] -= 1
+            return tuple(parts)
+    raise AssertionError("MINIMUM_FIRMWARE is 0.0.0 - nothing can be below it")
+
+
 class TestParseVersionBody(unittest.TestCase):
     def test_real_device_body(self):
         # verbatim from a device running the firmware this gate was written against
@@ -104,40 +137,64 @@ class TestParseVersionBody(unittest.TestCase):
 class TestCompareToMinimum(unittest.TestCase):
     def test_exact_minimum_is_ok(self):
         self.assertEqual(
-            OctoScaleFirmware.STATUS_OK, _status("OctoScale v0.0.4 (Build ...)")
+            OctoScaleFirmware.STATUS_OK,
+            _status("OctoScale %s (Build ...)" % _version(_MIN)),
         )
 
     def test_minimum_with_dev_suffix_is_ok(self):
         # the whole point of "all suffixes": a dev build of the required version qualifies
         self.assertEqual(
-            OctoScaleFirmware.STATUS_OK, _status("OctoScale v0.0.4-dev1 (Build ...)")
+            OctoScaleFirmware.STATUS_OK,
+            _status("OctoScale %s (Build ...)" % _version(_MIN, "dev1")),
         )
 
     def test_minimum_with_rc_suffix_is_ok(self):
-        self.assertEqual(OctoScaleFirmware.STATUS_OK, _status("OctoScale v0.0.4-rc1"))
+        self.assertEqual(
+            OctoScaleFirmware.STATUS_OK, _status("OctoScale " + _version(_MIN, "rc1"))
+        )
 
     def test_newer_patch_is_ok(self):
         self.assertEqual(
-            OctoScaleFirmware.STATUS_OK, _status("OctoScale v0.0.5-dev1 (Build ...)")
+            OctoScaleFirmware.STATUS_OK,
+            _status("OctoScale %s (Build ...)" % _version(_bump(2), "dev1")),
         )
 
     def test_newer_minor_is_ok(self):
-        self.assertEqual(OctoScaleFirmware.STATUS_OK, _status("OctoScale v0.1.0"))
-
-    def test_newer_major_is_ok(self):
-        self.assertEqual(OctoScaleFirmware.STATUS_OK, _status("OctoScale v1.0.0"))
-
-    def test_double_digit_patch_compares_numerically(self):
-        # a string compare would put "10" before "4" and wrongly reject this
-        self.assertEqual(OctoScaleFirmware.STATUS_OK, _status("OctoScale v0.0.10"))
-
-    def test_older_patch_is_too_old(self):
         self.assertEqual(
-            OctoScaleFirmware.STATUS_TOO_OLD,
-            _status("OctoScale v0.0.3-dev32 (Build Sep 19 2026 12:52:24)"),
+            OctoScaleFirmware.STATUS_OK, _status("OctoScale " + _version(_bump(1)))
         )
 
-    def test_older_release_is_too_old(self):
+    def test_newer_major_is_ok(self):
+        self.assertEqual(
+            OctoScaleFirmware.STATUS_OK, _status("OctoScale " + _version(_bump(0)))
+        )
+
+    def test_double_digit_patch_compares_numerically(self):
+        # a string compare would sort "10" before single-digit patches and wrongly reject
+        # this; _bump pushes the patch into double digits whatever the minimum is
+        newer = _bump(2, by=10 - _MIN[2] if _MIN[2] < 10 else 1)
+        self.assertGreaterEqual(newer[2], 10)
+        self.assertEqual(
+            OctoScaleFirmware.STATUS_OK, _status("OctoScale " + _version(newer))
+        )
+
+    def test_one_step_below_minimum_is_too_old(self):
+        # the boundary that decides whether a user is locked out
+        self.assertEqual(
+            OctoScaleFirmware.STATUS_TOO_OLD,
+            _status("OctoScale " + _version(_belowMinimum())),
+        )
+
+    def test_one_step_below_minimum_with_suffix_is_too_old(self):
+        # a dev build of a too-old version must not slip through on its suffix
+        self.assertEqual(
+            OctoScaleFirmware.STATUS_TOO_OLD,
+            _status("OctoScale " + _version(_belowMinimum(), "dev32")),
+        )
+
+    def test_historic_release_is_too_old(self):
+        # v0.0.3 shipped before the gate existed and must stay rejected. Literal on
+        # purpose: it is a fact about released firmware, not a function of the constant.
         self.assertEqual(OctoScaleFirmware.STATUS_TOO_OLD, _status("OctoScale v0.0.3"))
 
     def test_much_older_is_too_old(self):
@@ -157,33 +214,46 @@ class TestCompareToMinimum(unittest.TestCase):
             OctoScaleFirmware.STATUS_UNKNOWN, OctoScaleFirmware.compareToMinimum(None)
         )
 
+    def test_compare_tolerates_a_version_without_numbers(self):
+        # evaluateVersionBody never hands this down (it returns unknown before comparing),
+        # so only a direct caller can reach it - and the fail-open guarantee has to hold
+        # for them too. Without this, turning that branch into TOO_OLD passes the suite.
+        for broken in [{}, {"numbers": None}, {"display": "v9.9.9"}, "not a dict", 42]:
+            self.assertEqual(
+                OctoScaleFirmware.STATUS_UNKNOWN,
+                OctoScaleFirmware.compareToMinimum(broken),
+                "%r must be unknown, never tooOld" % (broken,),
+            )
+
 
 class TestEvaluateVersionBody(unittest.TestCase):
     def test_ok_carries_no_message(self):
-        result = OctoScaleFirmware.evaluateVersionBody("OctoScale v0.0.4-dev1")
+        minimumDevBuild = _version(_MIN, "dev1")
+        result = OctoScaleFirmware.evaluateVersionBody("OctoScale " + minimumDevBuild)
         self.assertEqual(OctoScaleFirmware.STATUS_OK, result["status"])
-        self.assertEqual("v0.0.4-dev1", result["firmwareVersion"])
-        self.assertEqual("v0.0.4", result["requiredVersion"])
+        self.assertEqual(minimumDevBuild, result["firmwareVersion"])
+        self.assertEqual(_MIN_DISPLAY, result["requiredVersion"])
         self.assertIsNone(result["message"])
 
     def test_too_old_names_both_versions(self):
-        result = OctoScaleFirmware.evaluateVersionBody("OctoScale v0.0.3-dev32")
+        tooOld = _version(_belowMinimum(), "dev32")
+        result = OctoScaleFirmware.evaluateVersionBody("OctoScale " + tooOld)
         self.assertEqual(OctoScaleFirmware.STATUS_TOO_OLD, result["status"])
-        self.assertEqual("v0.0.3-dev32", result["firmwareVersion"])
+        self.assertEqual(tooOld, result["firmwareVersion"])
         # the user has to learn what they have and what they need, in one sentence
-        self.assertIn("v0.0.3-dev32", result["message"])
-        self.assertIn("v0.0.4", result["message"])
+        self.assertIn(tooOld, result["message"])
+        self.assertIn(_MIN_DISPLAY, result["message"])
 
     def test_unknown_has_no_version_but_keeps_required(self):
         result = OctoScaleFirmware.evaluateVersionBody("OK")
         self.assertEqual(OctoScaleFirmware.STATUS_UNKNOWN, result["status"])
         self.assertIsNone(result["firmwareVersion"])
-        self.assertEqual("v0.0.4", result["requiredVersion"])
+        self.assertEqual(_MIN_DISPLAY, result["requiredVersion"])
         self.assertIsNotNone(result["message"])
 
     def test_unreachable_matches_the_parsed_shape(self):
         # both cache paths must store the same keys, see _probeOctoScaleFirmware
-        reachable = OctoScaleFirmware.evaluateVersionBody("OctoScale v0.0.4")
+        reachable = OctoScaleFirmware.evaluateVersionBody("OctoScale " + _version(_MIN))
         unreachable = OctoScaleFirmware.evaluateUnreachable("Could not reach OctoScale")
         self.assertEqual(sorted(reachable.keys()), sorted(unreachable.keys()))
         self.assertEqual(OctoScaleFirmware.STATUS_UNKNOWN, unreachable["status"])
@@ -248,6 +318,21 @@ class TestFormatVersion(unittest.TestCase):
             OctoScaleFirmware.formatVersion(OctoScaleFirmware.MINIMUM_FIRMWARE),
             OctoScaleFirmware.MINIMUM_FIRMWARE_DISPLAY,
         )
+
+
+class TestMinimumIsTheReleasedRequirement(unittest.TestCase):
+    """The one deliberately literal assertion about the minimum in this file.
+
+    Everything else derives the boundary from MINIMUM_FIRMWARE, which keeps a bump to the
+    one-line change OctoScaleFirmware.py promises - but it also means a bump in either
+    direction, including an accidental revert, passes the rest of the suite unnoticed.
+    The required firmware is a documented product requirement (README, release notes), so
+    changing it is a decision that has to be made twice: here and in the constant.
+    """
+
+    def test_minimum_is_0_0_6(self):
+        self.assertEqual((0, 0, 6), OctoScaleFirmware.MINIMUM_FIRMWARE)
+        self.assertEqual("v0.0.6", OctoScaleFirmware.MINIMUM_FIRMWARE_DISPLAY)
 
 
 if __name__ == "__main__":

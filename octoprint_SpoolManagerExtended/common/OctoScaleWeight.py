@@ -16,7 +16,7 @@
 # "Never by version string" is about THIS decision - which shape a body has - and still
 # holds: shape detection is free here and survives firmware that misreports itself. It is
 # not a rule about whether a device may be used at all. That separate question is decided
-# by version, in OctoScaleFirmware.py, which requires v0.0.4 or newer; both 0.0.3 bodies
+# by version, in OctoScaleFirmware.py, which requires v0.0.6 or newer; both 0.0.3 bodies
 # above are therefore excluded from the supported path anyway. The bare-float branch below
 # stays regardless - it costs nothing and is the more robust of the two checks.
 #

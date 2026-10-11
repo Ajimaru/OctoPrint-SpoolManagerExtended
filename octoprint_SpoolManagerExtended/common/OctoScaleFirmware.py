@@ -23,11 +23,11 @@
 import re
 
 # The version this plugin requires, as (major, minor, patch). Suffixes are accepted: a
-# firmware reporting v0.0.4-dev1 or v0.0.4-rc1 satisfies a (0, 0, 4) minimum. Prerelease
+# firmware reporting v0.0.6-dev1 or v0.0.6-rc1 satisfies a (0, 0, 6) minimum. Prerelease
 # ordering is deliberately NOT modelled - the device's suffixes are build counters, not
-# semver prereleases, and treating "-dev1" as "older than 0.0.4" would reject the very
+# semver prereleases, and treating "-dev1" as "older than 0.0.6" would reject the very
 # builds this gate is meant to admit.
-MINIMUM_FIRMWARE = (0, 0, 4)
+MINIMUM_FIRMWARE = (0, 0, 6)
 
 STATUS_OK = "ok"
 STATUS_TOO_OLD = "tooOld"
@@ -54,7 +54,7 @@ MAX_VERSION_BODY_LENGTH = 256
 
 
 def formatVersion(numbers, suffix=None):
-    # "v0.0.4" / "v0.0.4-dev1" - the form used in every user-facing message.
+    # "v0.0.6" / "v0.0.6-dev1" - the form used in every user-facing message.
     display = "v" + ".".join(str(part) for part in numbers)
     if suffix:
         display += "-" + suffix
@@ -113,7 +113,7 @@ def compareToMinimum(version):
     if numbers is None:
         return STATUS_UNKNOWN
 
-    # Plain tuple comparison, so 0.0.10 correctly beats 0.0.4 (a string compare would not).
+    # Plain tuple comparison, so 0.0.10 correctly beats 0.0.6 (a string compare would not).
     # The suffix is ignored here on purpose, see MINIMUM_FIRMWARE above.
     if tuple(numbers) >= MINIMUM_FIRMWARE:
         return STATUS_OK
@@ -125,7 +125,7 @@ def evaluateVersionBody(body):
     # hand to the frontend as-is:
     #   status           STATUS_OK | STATUS_TOO_OLD | STATUS_UNKNOWN
     #   firmwareVersion  "v0.0.3-dev32", or None when unparseable
-    #   requiredVersion  "v0.0.4"
+    #   requiredVersion  "v0.0.6"
     #   raw              what the device sent, trimmed - None when there was no body
     #   message          a user-facing sentence, or None when status is STATUS_OK
     #

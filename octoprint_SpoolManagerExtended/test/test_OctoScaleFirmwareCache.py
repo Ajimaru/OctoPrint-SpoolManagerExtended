@@ -112,8 +112,24 @@ class FakeOctoScaleHost(object):
 URL = "http://192.0.2.20"
 OTHER_URL = "http://192.0.2.99"
 
-OK_BODY = ("OctoScale v0.0.4-dev1 (Build Sep 20 2026 08:00:00)", None)
-OLD_BODY = ("OctoScale v0.0.3-dev32 (Build Sep 19 2026 12:52:24)", None)
+# Built from MINIMUM_FIRMWARE instead of a fixed version: these tests are about the
+# cache, so which version counts as acceptable is incidental to them and must not need
+# editing when the gate is raised. "Old" is one patch below the minimum.
+_MIN = OctoScaleFirmware.MINIMUM_FIRMWARE
+_BELOW_MIN = (
+    (_MIN[0], _MIN[1], _MIN[2] - 1) if _MIN[2] > 0 else (_MIN[0], _MIN[1] - 1, 0)
+)
+
+OK_BODY = (
+    "OctoScale %s (Build Sep 20 2026 08:00:00)"
+    % OctoScaleFirmware.formatVersion(_MIN, "dev1"),
+    None,
+)
+OLD_BODY = (
+    "OctoScale %s (Build Sep 19 2026 12:52:24)"
+    % OctoScaleFirmware.formatVersion(_BELOW_MIN, "dev32"),
+    None,
+)
 UNREACHABLE = (None, "Could not reach OctoScale: connection refused")
 
 
