@@ -37,6 +37,10 @@ updates:
         update-types:
           - version-update:semver-patch
 
+  # Everything below is a lint-only toolchain: package.json declares no runtime
+  # `dependencies` at all, and node_modules reaches neither the sdist nor the
+  # wheel (MANIFEST.in does not list it). A vulnerability in these packages can
+  # therefore affect a local or CI lint run, never an installed plugin.
   - package-ecosystem: npm
     directory: "/"
     target-branch: testing
@@ -54,6 +58,17 @@ updates:
           - "*"
         update-types:
           - minor
+    # Same rationale as the pip block above. Note the cost, though: both
+    # advisories this repository has seen on the npm side were patch bumps
+    # (source-map-js 1.2.1 -> 1.2.2, brace-expansion 5.0.9 -> 5.0.12), so they
+    # were only ever going to surface as security alerts, never as routine
+    # update PRs. Both were resolved by a plain `npm audit fix`.
+    #
+    # `npm audit` reports further findings that have no Dependabot alert and no
+    # fix: braces 3.0.3 (GHSA-vfj7-8cjw-p6xm) is simultaneously the latest
+    # release and vulnerable, and stylelint pulls it in transitively. Do NOT run
+    # `npm audit fix --force` to clear those - its only available "fix" is
+    # downgrading stylelint by ten majors. CI does not run `npm audit`.
     ignore:
       - dependency-name: "*"
         update-types:
