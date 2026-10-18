@@ -19,12 +19,26 @@ jobs:
     steps:
       - uses: actions/stale@v11
         with:
-          exempt-issue-labels: 'status: analysing,status: inNextRelease,status: inProgress,status: wontfix'
+          # These labels must EXIST on the repository to have any effect - the
+          # action matches them by name and silently exempts nothing when the
+          # name is unknown. The previous list ('status: analysing',
+          # 'status: inNextRelease', 'status: inProgress', 'status: wontfix')
+          # was inherited from the upstream repository and none of those labels
+          # were ever created here, so the exemption was dead: every issue aged
+          # out after 90 days regardless of state.
+          exempt-issue-labels: 'pinned,help wanted,enhancement,feature'
 
           days-before-issue-stale: 90
-          stale-issue-message: 'This issue has been automatically marked for closing, because it has not had activity in 30 days. It will be closed if no further activity occurs in 10 days.'
-          stale-issue-label:  'status: markedForAutoClose'
+          # Keep the number in this message in sync with days-before-issue-stale
+          # above and days-before-issue-close below. It said "30 days" while the
+          # threshold was 90, which simply misinformed anyone reading it.
+          stale-issue-message: 'This issue has been automatically marked as stale, because it has not had activity in 90 days. It will be closed if no further activity occurs in 10 days.'
+          stale-issue-label: 'stale'
 
           days-before-issue-close: 10
-          close-issue-message: 'This issue was closed, because it has been already marked for 10 days with no activity.'
-          close-issue-label: 'status: closedByBot'
+          close-issue-message: 'This issue was closed, because it has been marked as stale for 10 days with no further activity.'
+          # Reuses the 'stale' label rather than adding a second bot-only label:
+          # the closed state already records that the issue was closed, so a
+          # separate 'closedByBot' marker carried no information the timeline
+          # did not already have.
+          close-issue-label: 'stale'

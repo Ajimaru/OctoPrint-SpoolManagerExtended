@@ -7,13 +7,29 @@
 # noise to the bottom.
 #
 # The catch-all `*` at the end means an unlabelled PR is still listed instead of
-# being dropped silently. That matters here: the labels referenced below do not
-# exist on this repository yet and no merged PR carries them, so until they are
-# created and applied, everything lands under "Other Changes" - the same flat
-# list as before, but without losing anything. Notes for already-merged PRs stay
-# flat unless those PRs are labelled retroactively.
+# being dropped silently. PRs merged before these labels existed carry none of
+# them and therefore stay under "Other Changes" unless they are labelled
+# retroactively.
+#
+# WHERE THESE LABELS LIVE: on the repository itself, managed directly
+# (`gh label list` / `gh label create`) - there is no file that defines them.
+# A .github/settings.yml used to list a label set for the probot/settings app,
+# but it described a scheme inherited from upstream whose labels had never been
+# created here, so installing that app would have replaced the real labels with
+# a dead one; it was removed along with the equally obsolete .github/stale.yml.
+# Adding a category below therefore means creating the label too, otherwise the
+# category silently matches nothing.
+#
+# Labels applied automatically: Dependabot sets `dependencies` plus a per-
+# ecosystem label (`github_actions`, `python`, `javascript`) - .github/
+# dependabot.yml declares no explicit labels and relies on those defaults, which
+# only work while the labels exist. The stale bot sets `stale` (see
+# .github/workflows/github-stale-actions.yml).
 changelog:
   categories:
+    # `breaking-change` is deliberately kept as a second spelling without a
+    # matching label existing: it costs nothing and catches the case where
+    # someone reaches for the longer name. `breaking` is the real label.
     - title: "⚠️ Breaking Changes"
       labels: ["breaking", "breaking-change"]
     - title: "🔒 Security"
