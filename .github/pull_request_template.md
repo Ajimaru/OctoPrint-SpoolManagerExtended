@@ -10,6 +10,7 @@ Closes #
 - [ ] New feature
 - [ ] Documentation
 - [ ] Refactoring / maintenance
+- [ ] CI
 
 ## How was it tested?
 

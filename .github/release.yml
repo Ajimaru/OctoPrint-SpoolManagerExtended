@@ -1,0 +1,40 @@
+# Categories for GitHub's generated release notes.
+#
+# A pull request is filed by its labels, and lands in the FIRST category below
+# whose labels it carries - so the order is a priority rule, not cosmetic. A PR
+# labelled both `bug` and `enhancement` shows up under New Features only, never
+# twice. The order puts what users care about first and pushes dependency/CI
+# noise to the bottom.
+#
+# The catch-all `*` at the end means an unlabelled PR is still listed instead of
+# being dropped silently. That matters here: the labels referenced below do not
+# exist on this repository yet and no merged PR carries them, so until they are
+# created and applied, everything lands under "Other Changes" - the same flat
+# list as before, but without losing anything. Notes for already-merged PRs stay
+# flat unless those PRs are labelled retroactively.
+changelog:
+  categories:
+    - title: "⚠️ Breaking Changes"
+      labels: ["breaking", "breaking-change"]
+    - title: "🔒 Security"
+      labels: ["security"]
+    - title: "✨ New Features"
+      labels: ["enhancement", "feature"]
+    - title: "🐛 Bug Fixes"
+      labels: ["bug", "fix"]
+    - title: "⚡ Performance"
+      labels: ["performance"]
+    - title: "♻️ Refactoring"
+      labels: ["refactor"]
+    - title: "📚 Documentation"
+      labels: ["documentation"]
+    - title: "🧪 Tests"
+      labels: ["test"]
+    - title: "📦 Dependencies"
+      labels: ["dependencies", "depfu"]
+    - title: "🔧 CI / Tooling"
+      labels: ["ci", "tooling", "chore", "github_actions"]
+    - title: "🧩 Other Changes"
+      labels: ["*"]
+  exclude:
+    labels: ["skip-changelog"]
