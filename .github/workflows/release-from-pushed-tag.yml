@@ -1,0 +1,228 @@
+name: Tag pushed - prepare release
+
+# Replaces the former prepare-release-from-pushed-tag.yml and
+# prepare-prerelease-from-pushed-tag.yml, which were ~90% identical and differed
+# only in the tag glob, the job name and the --prerelease flag. Every build fix,
+# permission change or action bump had to be made twice there, and silently
+# drifted as soon as one copy was forgotten.
+#
+# WHY A WIDE TRIGGER PLUS RUNTIME DETECTION: the old workflows encoded the
+# release/prerelease distinction in the tag pattern itself, and GitHub matches
+# tags with globs, not regex ('[0-9]+' matched a literal '+' as far as the glob
+# engine is concerned). Only 'a' and 'b' suffixes were covered, so pushing
+# 0.9.0rc1 or 0.9.0.dev5 triggered nothing at all - no error, no release, no
+# notification. The repo's own history contains such tags (1.7.4.dev,
+# 1.8.0alpha). The trigger is now deliberately broad and the prerelease decision
+# is made below from the tag itself.
+
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+*"
+      - "v[0-9]+.[0-9]+.[0-9]+*"
+
+# A re-pushed tag should not race an in-flight run for the same tag.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  PrepareRelease:
+    name: Build & draft release
+    runs-on: ubuntu-latest
+
+    # Creating the release and uploading its assets needs write access to
+    # contents. The repository default for the workflow token is read-only,
+    # which made "gh release create" fail with HTTP 403.
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v7
+        with:
+          # Full history so the release-notes generator can diff against the
+          # previous tag.
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Check current version against tag
+        # The tag is expected to equal plugin_version verbatim, including any
+        # prerelease suffix (e.g. tag 2.0.0a2 <-> plugin_version "2.0.0a2").
+        # A leading "v" is tolerated in the tag and stripped before comparing.
+        # This guard has no equivalent in the sibling plugins and matters more
+        # here: OctoPrint's updater reads the version out of setup.py, so a tag
+        # that disagrees with the code would ship an unupdatable release.
+        env:
+          TAG_ID: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          PLUGIN_VERSION=$(grep 'plugin_version = ' setup.py | cut -d '"' -f2)
+          TAG_VERSION="${TAG_ID#v}"
+          echo "Plugin version in code: $PLUGIN_VERSION"
+          echo "Version from tag:       $TAG_VERSION"
+          if [ "$PLUGIN_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::setup.py plugin_version ($PLUGIN_VERSION) does not match the pushed tag ($TAG_VERSION)"
+            exit 1
+          fi
+
+      - name: Determine prerelease
+        id: prerelease
+        run: |
+          set -euo pipefail
+          TAG="${{ github.ref_name }}"
+          TAG_LOWER="$(printf '%s' "$TAG" | tr '[:upper:]' '[:lower:]')"
+          # The PEP 440 local part ("+hash") is cut off BEFORE matching rather
+          # than merely bounded by the pattern. A commit hash is arbitrary text
+          # and routinely ends in something like "b1" or contains "dev"
+          # (e.g. 1.2.3+build7b1), which would otherwise flip a full release
+          # into a prerelease. Stripping it first makes that structurally
+          # impossible instead of relying on the anchor being right.
+          TAG_VERSION="${TAG_LOWER%%+*}"
+          # Prerelease = an a/b/rc/dev/alpha/beta segment in the version part
+          # (PEP 440 style, digit or separator before it, e.g. 2.0.0a2,
+          # 0.9.0rc1, 1.7.4.dev, 1.8.0alpha - all four shapes occur in this
+          # repo's tag history). Note that ".post1" is deliberately NOT matched:
+          # a post-release is a full release.
+          if echo "$TAG_VERSION" | grep -qE '(^|[-._0-9])(a|b|rc|dev|alpha|beta)([._-]?[0-9]+)?($|[-._])'; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "Tag $TAG treated as a PRE-RELEASE"
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "Tag $TAG treated as a FULL RELEASE"
+          fi
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build
+
+      - name: Build wheel and sdist
+        # Replaces the former "zip -r main.zip * -i '\octoprint_*' ...". That
+        # command zipped whatever happened to sit in the checkout and ignored
+        # MANIFEST.in entirely - which meant the released archive was missing
+        # 3rdPartySoftware/*/LICENSE, the BSD-3-Clause texts MANIFEST.in ships
+        # precisely because the minified bundles under static/ only carry the
+        # copyright header. Building through MANIFEST.in fixes that by
+        # construction, and the archive now matches what pip actually installs.
+        run: python -m build
+
+      - name: Stage release artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release_zips
+
+          # Keep the wheel's original, PEP 427-compliant filename
+          # ({name}-{version}-{pytag}-{abitag}-{platformtag}.whl). pip rejects
+          # any renamed wheel ("wrong number of parts"), so it must not be
+          # aliased - both the OctoPrint plugin manager and pip parse the name.
+          cp dist/*.whl dist/*.tar.gz release_zips/
+
+          # Also publish a source .zip (versioned + a stable -latest.zip). A zip
+          # has no strict filename parser, so the OctoPrint plugin manager can
+          # install it directly from a fixed "...-latest.zip" URL. The former
+          # workflow uploaded an unversioned "main.zip" instead: every release
+          # carried the same filename, and there was no stable URL to install
+          # from either. Built from the sdist tarball rather than the working
+          # tree so it matches the released source exactly.
+          version="${GITHUB_REF_NAME#v}"
+          zip_versioned="release_zips/OctoPrint-SpoolManagerExtended-${version}.zip"
+          zip_latest="release_zips/OctoPrint-SpoolManagerExtended-latest.zip"
+
+          shopt -s nullglob
+          sdist_candidates=(dist/*"${version}".tar.gz)
+          if (( ${#sdist_candidates[@]} != 1 )); then
+            echo "::error::Expected exactly one sdist tarball matching version ${version}, found ${#sdist_candidates[@]}"
+            ls -la dist >&2 || true
+            exit 1
+          fi
+          sdist="${sdist_candidates[0]}"
+
+          python - "$sdist" "$zip_versioned" <<'PY'
+          import sys
+          import tarfile
+          import zipfile
+          from pathlib import Path, PurePosixPath
+
+          tar_path = Path(sys.argv[1])
+          zip_path = Path(sys.argv[2])
+          zip_path.parent.mkdir(parents=True, exist_ok=True)
+
+          with tarfile.open(tar_path, "r:gz") as tf, zipfile.ZipFile(
+              zip_path, "w", compression=zipfile.ZIP_DEFLATED
+          ) as zf:
+              for member in tf.getmembers():
+                  if not member.isfile():
+                      continue
+
+                  # Defensive: never let a tar member become a path-traversal
+                  # entry in the zip. Tar archives always use POSIX paths.
+                  member_path = PurePosixPath(member.name)
+                  if (
+                      member_path.is_absolute()
+                      or ".." in member_path.parts
+                      or ":" in member.name
+                      or member.name.startswith("\\")
+                  ):
+                      continue
+
+                  extracted = tf.extractfile(member)
+                  if extracted is None:
+                      continue
+
+                  zi = zipfile.ZipInfo(str(member_path))
+                  zi.external_attr = (member.mode & 0o777) << 16
+                  zf.writestr(zi, extracted.read())
+          PY
+
+          cp -f "$zip_versioned" "$zip_latest"
+
+      - name: Validate staged artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The old workflow uploaded whatever "zip -r" produced; an empty or
+          # truncated archive would only have surfaced to a user trying to
+          # install it. Fail here instead.
+          for f in release_zips/*; do
+            rel="$(realpath --relative-to="$(pwd)" "$f")"
+            case "$rel" in
+              .*) echo "::error::Suspicious path: $f ($rel)"; exit 1 ;;
+            esac
+            if [ ! -s "$f" ]; then
+              echo "::error::Empty artifact: $f"
+              exit 1
+            fi
+          done
+
+          # The plugin package itself must be in the source zip, otherwise the
+          # archive is structurally useless.
+          version="${GITHUB_REF_NAME#v}"
+          if ! unzip -l "release_zips/OctoPrint-SpoolManagerExtended-${version}.zip" \
+               | grep -q 'octoprint_SpoolManagerExtended/__init__.py'; then
+            echo "::error::Source zip does not contain octoprint_SpoolManagerExtended/__init__.py"
+            exit 1
+          fi
+
+          echo "Staged artifacts:"
+          ls -la release_zips
+
+      - name: Create release draft
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          files: |
+            release_zips/*
+          # Notes are grouped by PR label; the categories live in
+          # .github/release.yml.
+          generate_release_notes: true
+          # Always a draft: a release is published by hand once the notes and
+          # the attached artifacts have been eyeballed. Pushing a tag must never
+          # publish on its own.
+          draft: true
+          prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
+          name: Version ${{ github.ref_name }} (draft)
