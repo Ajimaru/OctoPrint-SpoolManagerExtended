@@ -224,6 +224,10 @@ class OpenSpoolTagParser(object):
         bedTempC = _firstNumber(data.get("bed_max_temp"), data.get("bed_min_temp"))
         if bedTempC is None:
             bedTempC = defaultBedTempC
+        # The range itself goes through as well: with only bed_temp_c, FilamentTagToSpool
+        # mirrors it into min and max, so a tag's 90-110 C was imported as 110/110.
+        bedMinC = _firstNumber(data.get("bed_min_temp"))
+        bedMaxC = _firstNumber(data.get("bed_max_temp"))
 
         return GenericFilament(
             source_processor=self.id,
@@ -239,6 +243,8 @@ class OpenSpoolTagParser(object):
             hotend_min_temp_c=minTemp,
             hotend_max_temp_c=maxTemp,
             bed_temp_c=bedTempC,
+            bed_min_temp_c=bedMinC,
+            bed_max_temp_c=bedMaxC,
             drying_temp_c=dryingTempC,
             drying_time_hours=dryingTimeHours,
             manufacturing_date=Constants.NO_MANUFACTURING_DATE,

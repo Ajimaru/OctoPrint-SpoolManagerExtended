@@ -211,7 +211,7 @@ class GenericFilament(object):
         manufacturing_date,  # ISO 8601 date string
         td=0.0,  # transmission distance, a unitless 0.1-100 opacity figure (HueForge)
         bed_min_temp_c=None,  # optional: only a few tag formats carry a bed range
-        bed_max_temp_c=None,  # (currently TigerTag - see FilamentTagParsers.TigerTagTagParser)
+        bed_max_temp_c=None,  # (TigerTag and OpenSpool, see FilamentTagParsers)
         finish=None,  # optional: a spool finish key (TigerTag's aspect), not a modifier
     ):
         self.source_processor = source_processor
