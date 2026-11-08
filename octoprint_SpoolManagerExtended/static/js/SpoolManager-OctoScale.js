@@ -356,15 +356,26 @@ var OCTOSCALE_TAG_DIFF_FIELDS = [
     {key: "maxBedTemperature", label: "Max bed temperature", unit: "°C"},
     {key: "enclosureTemperature", label: "Enclosure temperature", unit: "°C"},
     // The firmware has no "not set" sentinel for these three - 0 means "no offset", same
-    // as an unconfigured spool. Listed here like any other diff field; there is nothing
-    // format-specific to account for on the frontend side (see TagFormats.py's
-    // _buildFullSpoolPayload for the write-side reasoning).
-    {key: "offsetTemperature", label: "Nozzle temperature offset", unit: "°C"},
-    {key: "offsetBedTemperature", label: "Bed temperature offset", unit: "°C"},
+    // as an unconfigured spool (see TagFormats.py's _buildFullSpoolPayload). So the tag
+    // reports 0 where the spool has nothing set, and without zeroIsUnset every spool
+    // without offsets diffed as "0 °C -> (not set)" three times.
+    {
+        key: "offsetTemperature",
+        label: "Nozzle temperature offset",
+        unit: "°C",
+        zeroIsUnset: true
+    },
+    {
+        key: "offsetBedTemperature",
+        label: "Bed temperature offset",
+        unit: "°C",
+        zeroIsUnset: true
+    },
     {
         key: "offsetEnclosureTemperature",
         label: "Enclosure temperature offset",
-        unit: "°C"
+        unit: "°C",
+        zeroIsUnset: true
     },
     {key: "dryingTemperature", label: "Drying temperature", unit: "°C"},
     // The tag carries minutes, SpoolManager stores hours - so the tag value has to be
@@ -379,7 +390,24 @@ var OCTOSCALE_TAG_DIFF_FIELDS = [
     // byte boundary - /nfcprobe echoes the plain float (confirmed against the firmware),
     // so there is nothing to undo here.
     {key: "td", label: "Transmission distance (TD)"},
-    {key: "remainingWeight", label: "Remaining weight", unit: "g"},
+    // Compared with what a write puts on the tag, not with the displayed value. Every write
+    // saves first, and DatabaseManager.saveSpool() stores totalWeight - usedWeight with a
+    // missing usedWeight counted as 0; the spool data the dialog loads (Transformer) leaves
+    // remainingWeight empty in that case. So an unused spool diffed as "1000 g -> NaN g"
+    // against the 1000 g it had just written itself.
+    {
+        key: "remainingWeight",
+        label: "Remaining weight",
+        unit: "g",
+        readSpoolValue: function (spoolItem) {
+            var total = parseFloat(spoolItem.totalWeight());
+            if (isNaN(total)) {
+                return spoolItem.remainingWeight();
+            }
+            var used = parseFloat(spoolItem.usedWeight());
+            return total - (isNaN(used) ? 0 : used);
+        }
+    },
     {key: "totalLength", label: "Total length", unit: "mm"},
     {key: "usedLength", label: "Used length", unit: "mm"},
     {key: "code", label: "Code"},
@@ -469,9 +497,15 @@ function octoScaleNormalizeTagValue(rawValue, divisor) {
 // Loosely-typed equality: the tag sends JSON numbers/strings, SpoolItem may hold either
 // depending on the field - normalize both sides before comparing so e.g. 195 vs "195" or
 // 0.2 vs "0.2" don't show up as spurious diffs.
+// NaN counts as "not set": SpoolItem parses numeric fields with parseFloat(), so an empty
+// database value arrives as NaN - and diffed as a value it showed "(not set) -> NaN g".
+function octoScaleIsEmptyDiffValue(value) {
+    return value == null || value === "" || (typeof value === "number" && isNaN(value));
+}
+
 function octoScaleValuesDiffer(tagValue, currentValue, caseInsensitive) {
-    var tagEmpty = tagValue == null || tagValue === "";
-    var currentEmpty = currentValue == null || currentValue === "";
+    var tagEmpty = octoScaleIsEmptyDiffValue(tagValue);
+    var currentEmpty = octoScaleIsEmptyDiffValue(currentValue);
     if (tagEmpty && currentEmpty) {
         return false;
     }
@@ -499,7 +533,7 @@ function octoScaleValuesDiffer(tagValue, currentValue, caseInsensitive) {
 // Plain-text rendering for a diff row's value: appends the unit if given and the value
 // is numeric, falls back to "(not set)" for null/empty so the diff never shows a blank cell.
 function octoScaleFormatDiffValue(value, unit) {
-    if (value == null || value === "") {
+    if (octoScaleIsEmptyDiffValue(value)) {
         return "(not set)";
     }
     if (unit && (typeof value === "number" || !isNaN(parseFloat(value)))) {
@@ -855,10 +889,16 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
                 return;
             }
             var tagValue = octoScaleNormalizeTagValue(rawTagValue, field.tagValueDivisor);
-            var currentValue =
-                typeof spoolItem[field.key] === "function"
-                    ? spoolItem[field.key]()
-                    : null;
+            // The spool side can be overridden the same way (see "remainingWeight").
+            var currentValue = field.readSpoolValue
+                ? field.readSpoolValue(spoolItem)
+                : typeof spoolItem[field.key] === "function"
+                  ? spoolItem[field.key]()
+                  : null;
+            if (field.zeroIsUnset) {
+                tagValue = parseFloat(tagValue) === 0 ? null : tagValue;
+                currentValue = parseFloat(currentValue) === 0 ? null : currentValue;
+            }
             if (!octoScaleValuesDiffer(tagValue, currentValue, field.caseInsensitive)) {
                 return;
             }
