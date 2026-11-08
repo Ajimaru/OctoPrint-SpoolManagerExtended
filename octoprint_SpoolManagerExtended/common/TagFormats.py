@@ -271,6 +271,7 @@ def _buildTigerTagPayload(spoolModel):
     # means (grams, via tigerTagMeasureUnitId="g" below) - just don't be surprised if a
     # spool tracked by length only shows an empty measure back after a TigerTag write.
     from octoprint_SpoolManagerExtended.common.FilamentTagConstants import (
+        tigerTagAspectLabelForFinish,
         tigerTagIdForLabel,
     )
 
@@ -281,7 +282,11 @@ def _buildTigerTagPayload(spoolModel):
                 "id_material", spoolModel.material
             ),
             "tigerTagBrandId": tigerTagIdForLabel("id_brand", spoolModel.vendor),
-            "tigerTagAspectId": tigerTagIdForLabel("id_aspect", spoolModel.finish),
+            # "glossy", "sparkle" and "glow" are spelled differently in TigerTag's
+            # aspect table and were never written - see tigerTagAspectLabelForFinish.
+            "tigerTagAspectId": tigerTagIdForLabel(
+                "id_aspect", tigerTagAspectLabelForFinish(spoolModel.finish)
+            ),
             # Always "Filament" (id 142 in TigerTag's id_type table): SpoolManager only
             # ever manages filament spools, never resin/accessories/spare parts, so there
             # is no SpoolModel field this could meaningfully resolve against - fixed like

@@ -140,7 +140,13 @@ class TestBuildTigerTagPayload(unittest.TestCase):
             {
                 "id_material": {"18775": "PE-CF"},
                 "id_brand": {"1": "Atome3D"},
-                "id_aspect": {"21": "Clear"},
+                "id_aspect": {
+                    "21": "Clear",
+                    "247": "Matt",
+                    "129": "Gloss",
+                    "64": "Glitter",
+                    "91": "Glow in the Dark",
+                },
                 "id_type": {"142": "Filament"},
                 "id_diameter": {"56": "1.75", "221": "2.85"},
                 "id_measure_unit": {"21": "g", "35": "kg"},
@@ -190,6 +196,25 @@ class TestBuildTigerTagPayload(unittest.TestCase):
         self.assertEqual(142, payload["tigerTagTypeId"])  # always "Filament"
         self.assertEqual(56, payload["tigerTagDiameterId"])
         self.assertEqual(21, payload["tigerTagMeasureUnitId"])  # always grams
+
+    def test_finish_resolves_to_tigertags_aspect_spelling(self):
+        # The UI's finish keys; three of them are spelled differently in TigerTag's table
+        # and used to resolve to nothing. Custom text still goes through as typed.
+        cases = {
+            "matt": 247,
+            "glossy": 129,
+            "sparkle": 64,
+            "glow": 91,
+            "Clear": 21,
+            "Matte": None,
+            None: None,
+        }
+        for finish, expected in cases.items():
+            with self.subTest(finish=finish):
+                payload = TagFormats.getTagFormat(TagFormats.TAG_FORMAT_NTAG_TIGERTAG)[
+                    "buildPayload"
+                ](_spool(material="PE-CF", finish=finish))
+                self.assertEqual(expected, payload["tigerTagAspectId"])
 
     def test_unresolvable_fields_are_omitted_not_guessed(self):
         # "PLA" and "Prusament" are not in the fake table above - a real install's

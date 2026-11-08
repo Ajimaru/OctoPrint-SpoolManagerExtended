@@ -335,6 +335,49 @@ def tigerTagIdForLabel(sectionName, label):
     return None
 
 
+# TigerTag's aspect is the spool's finish: writing resolves the finish to an aspect id,
+# reading turns the aspect back into a finish, so both directions use these two tables.
+# Finish values are the keys of FINISH_OPTIONS in static/js/common/constants.js. Five of
+# them match an aspect label as is (casefold); these three are spelled differently there.
+_FINISH_TO_TIGERTAG_ASPECT = {
+    "glossy": "Gloss",
+    "sparkle": "Glitter",
+    "glow": "Glow in the Dark",
+}
+_TIGERTAG_ASPECT_TO_FINISH = {
+    "silk": "silk",
+    "matt": "matt",
+    "gloss": "glossy",
+    "satin": "satin",
+    "glitter": "sparkle",
+    "marble": "marble",
+    "metal": "metal",
+    "glow in the dark": "glow",
+}
+# Aspect labels that mean "no aspect" rather than naming one.
+_TIGERTAG_NO_ASPECT = ("-", "none")
+
+
+def tigerTagAspectLabelForFinish(finish):
+    """Aspect label to look up for a spool's finish: TigerTag's spelling where it
+    differs, otherwise the finish itself (a custom finish text included)."""
+    if not isinstance(finish, str) or not finish.strip():
+        return None
+    finish = finish.strip()
+    return _FINISH_TO_TIGERTAG_ASPECT.get(finish.casefold(), finish)
+
+
+def tigerTagFinishForAspect(aspectLabel):
+    """Spool finish for a TigerTag aspect label: the predefined finish key where one
+    matches, the label itself as a custom finish otherwise, None for "no aspect"."""
+    if not isinstance(aspectLabel, str) or not aspectLabel.strip():
+        return None
+    aspectLabel = aspectLabel.strip()
+    if aspectLabel.casefold() in _TIGERTAG_NO_ASPECT:
+        return None
+    return _TIGERTAG_ASPECT_TO_FINISH.get(aspectLabel.casefold(), aspectLabel)
+
+
 def tigerTagDiameterMm(diameterId):
     """Nominal diameter in mm; falls back to 1.75 when the id is unknown."""
     label = tigerTagLabel("id_diameter", diameterId)
