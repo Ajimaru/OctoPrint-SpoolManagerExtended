@@ -17,8 +17,9 @@
 # GPL-3.0, by paxx12-snapmaker-u1 / paxx12:
 #   SnapmakerTagParser   <- android-app/app/src/main/java/dev/pages/paxx12/spoollink/
 #                           formats/SnapmakerFormat.kt  (repository state 2026-07-30)
-#   The byte offsets and the material/sub-type tables are that project's reverse
-#   engineering result, not independent findings.
+#   The byte offsets and the original material/sub-type tables are that project's
+#   reverse engineering result, not independent findings. The tables were later
+#   completed from Snapmaker/u1-klipper (GPL-3.0), see FilamentTagConstants.
 #
 # Derived from TigerTag-SDK-Python (https://github.com/TigerTag-Project/TigerTag-SDK-Python),
 # Apache-2.0, Copyright TigerTag Corp. 2025-2026:
@@ -31,8 +32,8 @@
 #   BambuTagParser       <- byte offsets and field meanings only, implemented independently
 #
 # Combined into this AGPLv3 work; see THIRD_PARTY_NOTICES.md,
-# 3rdPartySoftware/OpenRFID/LICENSE, 3rdPartySoftware/spool-link-apps/LICENSE and
-# 3rdPartySoftware/TigerTag-SDK-Python/LICENSE.
+# 3rdPartySoftware/OpenRFID/LICENSE, 3rdPartySoftware/spool-link-apps/LICENSE,
+# 3rdPartySoftware/u1-klipper/LICENSE and 3rdPartySoftware/TigerTag-SDK-Python/LICENSE.
 #
 # Divergences from upstream:
 #  - parsers are plain classes with a parseTag() method instead of the ConfigurableEntity
@@ -988,8 +989,9 @@ class SnapmakerTagParser(object):
 
     Ported from paxx12-snapmaker-u1/spool-link-apps (GPL-3.0), file
     android-app/app/src/main/java/dev/pages/paxx12/spoollink/formats/SnapmakerFormat.kt
-    (repository state 2026-07-30). Combined into this AGPLv3 work; see
-    THIRD_PARTY_NOTICES.md and 3rdPartySoftware/spool-link-apps/LICENSE.
+    (repository state 2026-07-30); type tables completed from Snapmaker/u1-klipper.
+    Combined into this AGPLv3 work; see THIRD_PARTY_NOTICES.md,
+    3rdPartySoftware/spool-link-apps/LICENSE and 3rdPartySoftware/u1-klipper/LICENSE.
 
     The sector keys are derived from the tag's own UID (see
     FilamentTagKeys.deriveSnapmakerKeys) - there is no shared secret, so this parser needs
@@ -1040,6 +1042,7 @@ class SnapmakerTagParser(object):
             # Also the blank-tag guard: 0 is not a material id.
             return None
 
+        # Unknown sub type: keep the tag, drop only the modifier.
         subTypeId = Binary.extract_uint16_le(data, self.SUB_TYPE_OFFSET)
         subTypeName = Constants.SNAPMAKER_SUB_TYPES.get(subTypeId)
 

@@ -54,9 +54,15 @@ snapshot on any fetch failure. An id still unrecognized after that degrades to
 
 The Snapmaker vendor tag parser and its key derivation are derived from [spool-link-apps](https://github.com/paxx12-snapmaker-u1/spool-link-apps) by paxx12-snapmaker-u1 / paxx12, published under the [GNU General Public License v3.0](https://github.com/paxx12-snapmaker-u1/spool-link-apps/blob/main/LICENSE) (full text in `3rdPartySoftware/spool-link-apps/LICENSE`), specifically `android-app/app/src/main/java/dev/pages/paxx12/spoollink/formats/SnapmakerFormat.kt` (repository state 2026-07-30).
 
-This is derived work, not merely inspiration: the salt strings, the key derivation scheme, the byte offsets and the material/sub-type tables are the result of that project's reverse engineering. GPLv3-licensed code may be combined into this AGPLv3-licensed work; the combined work remains available under the AGPLv3. Note that this direction is one-way — code from this AGPLv3 work may not be contributed back into a GPLv3-only project.
+This is derived work, not merely inspiration: the salt strings, the key derivation scheme, the byte offsets and the original material/sub-type tables are the result of that project's reverse engineering (the tables were later completed from Snapmaker's own decoder, see the next section). GPLv3-licensed code may be combined into this AGPLv3-licensed work; the combined work remains available under the AGPLv3. Note that this direction is one-way — code from this AGPLv3 work may not be contributed back into a GPLv3-only project.
 
 The upstream `LICENSE` file carries the unmodified GPL template with an unfilled copyright line, so no individual rights holder is named there; attribution is given to the repository owner as published.
+
+## u1-klipper (Snapmaker filament type codes)
+
+The Snapmaker material and sub-type code tables (`SNAPMAKER_MAIN_TYPES` and `SNAPMAKER_SUB_TYPES` in `octoprint_SpoolManagerExtended/common/FilamentTagConstants.py`) were checked against and completed from Snapmaker's own tag decoder in [u1-klipper](https://github.com/Snapmaker/u1-klipper), Snapmaker's Klipper fork for the U1, published under the [GNU General Public License v3.0](https://github.com/Snapmaker/u1-klipper/blob/main/COPYING) (full text in `3rdPartySoftware/u1-klipper/LICENSE`), specifically `FILAMENT_PROTO_MAIN_TYPE_MAPPING` and `FILAMENT_PROTO_SUB_TYPE_MAPPING` in `klippy/extras/filament_protocol.py` (firmware 2.1.0).
+
+Only the numeric codes and their names were taken over; no code from that repository is included. GPLv3-licensed material may be combined into this AGPLv3-licensed work; the combined work remains available under the AGPLv3, and as with the other GPLv3 components this direction is one-way.
 
 ## SpoolmanDB-Community
 

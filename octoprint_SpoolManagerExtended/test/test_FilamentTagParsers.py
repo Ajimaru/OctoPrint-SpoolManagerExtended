@@ -777,7 +777,7 @@ def _snapmakerImage(
 class TestSnapmakerTagParser(unittest.TestCase):
     def setUp(self):
         self.parser = FilamentTagParsers.SnapmakerTagParser()
-        self.scan = ScanResult(TagType.MIFARE_CLASSIC_1K, bytes.fromhex("30FB3002"))
+        self.scan = ScanResult(TagType.MIFARE_CLASSIC_1K, bytes.fromhex("A1B2C3D4"))
 
     def test_parses_a_valid_tag(self):
         filament = self.parser.parseTag(self.scan, _snapmakerImage())
@@ -819,6 +819,62 @@ class TestSnapmakerTagParser(unittest.TestCase):
             self.parser.parseTag(self.scan, _snapmakerImage(hotendMin=20, hotendMax=30))
         )
         self.assertIsNone(self.parser.parseTag(self.scan, bytes(100)))
+
+    def test_reads_the_main_types_completed_from_snapmakers_decoder(self):
+        # Each of these returned None before the table update.
+        expected = {
+            17: "PETG-CF",
+            24: "PAHT-CF",
+            25: "PA6-CF",
+            26: "PA6-GF",
+            27: "ASA-CF",
+        }
+        for mainType, name in expected.items():
+            with self.subTest(mainType=mainType):
+                filament = self.parser.parseTag(
+                    self.scan, _snapmakerImage(mainType=mainType)
+                )
+                self.assertIsNotNone(filament)
+                self.assertEqual(name, filament.type)
+                self.assertTrue(filament.typeRecognized)
+
+    def test_reads_the_sub_types_completed_from_snapmakers_decoder(self):
+        expected = {
+            14: "Glow",
+            15: "Rainbow",
+            16: "Marble",
+            17: "Starlight",
+            18: "Aero",
+        }
+        for subType, name in expected.items():
+            with self.subTest(subType=subType):
+                filament = self.parser.parseTag(
+                    self.scan, _snapmakerImage(subType=subType)
+                )
+                self.assertEqual([name], filament.modifiers)
+
+    def test_an_unknown_sub_type_only_drops_the_modifier(self):
+        # Deliberately more lenient than Snapmaker's decoder, which rejects the tag.
+        filament = self.parser.parseTag(self.scan, _snapmakerImage(subType=99))
+        self.assertIsNotNone(filament)
+        self.assertEqual("PLA", filament.type)
+        self.assertEqual([], filament.modifiers)
+
+    def test_peba_and_tpe_are_recognized_materials(self):
+        # Both were readable before, but flagged typeRecognized=False.
+        for mainType, name in ((22, "PEBA"), (23, "TPE")):
+            with self.subTest(mainType=mainType):
+                filament = self.parser.parseTag(
+                    self.scan, _snapmakerImage(mainType=mainType)
+                )
+                self.assertEqual(name, filament.type)
+                self.assertTrue(filament.typeRecognized)
+
+    def test_every_snapmaker_main_type_is_a_known_base_material(self):
+        # Guards future table additions.
+        for code, name in FilamentTagConstants.SNAPMAKER_MAIN_TYPES.items():
+            with self.subTest(code=code):
+                self.assertIn(name, FilamentTagModel.VALID_BASE_MATERIALS)
 
     def test_rejects_wrong_tag_class(self):
         ntagScan = ScanResult(TagType.MIFARE_ULTRALIGHT, b"\x04\x11\x22\x33")
@@ -882,11 +938,11 @@ class TestQidiTagParser(unittest.TestCase):
 
 
 class TestSnapmakerRealTagFields(unittest.TestCase):
-    """Fields verified against a physical Snapmaker spool (UID 30FB3002)."""
+    """Fields verified against a physical Snapmaker spool."""
 
     def setUp(self):
         self.parser = FilamentTagParsers.SnapmakerTagParser()
-        self.scan = ScanResult(TagType.MIFARE_CLASSIC_1K, bytes.fromhex("30FB3002"))
+        self.scan = ScanResult(TagType.MIFARE_CLASSIC_1K, bytes.fromhex("A1B2C3D4"))
 
     def test_keeps_the_rebadged_producer(self):
         # Snapmaker sells filament made by others and the tag names both. Dropping the
