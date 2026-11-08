@@ -9,4 +9,10 @@ carry additional per-material metadata (density, recommended temperatures) that 
 deliberately does not use - a tag's own values must never be shadowed by a table lookup.
 
 These tables age: an unknown id degrades to "Unknown(<id>)" rather than failing, which is
-the intended behaviour. There is no runtime download.
+the intended behaviour.
+
+At runtime, `common/TigerTagIdService.py` downloads the current tables from
+TigerTag-SDK-Python and caches them in the plugin data folder (`tigertag_ids_index.json`),
+refreshing them about every 7 days. The file here is only the offline fallback: it is used
+when there is no cache yet and the download fails, or when the setting
+`tigerTagIdsAutoUpdateEnabled` (on by default) has been switched off before any cache existed.

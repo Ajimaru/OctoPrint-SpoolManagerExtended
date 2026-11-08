@@ -43,6 +43,7 @@ FilamentTagNdef = _loadModule("FilamentTagNdef")
 FilamentTagConstants = _loadModule("FilamentTagConstants")
 OpenPrintTagModule = _loadModule("OpenPrintTag")
 FilamentTagParsers = _loadModule("FilamentTagParsers")
+FilamentTagToSpool = _loadModule("FilamentTagToSpool")
 
 TagType = FilamentTagModel.TagType
 ScanResult = FilamentTagModel.ScanResult
@@ -343,6 +344,91 @@ class TestOpenSpoolParser(unittest.TestCase):
         full = self.buildTag()
         for length in (0, 4, 12, 20, len(full) // 2):
             self.assertIsNone(parser.parseTag(ntagScan(), full[:length]))
+
+    def test_additional_color_hexes_are_read(self):
+        parser = FilamentTagParsers.OpenSpoolTagParser()
+        filament = parser.parseTag(
+            ntagScan(),
+            self.buildTag(color_hex="FF0000", additional_color_hexes=["0000FF"]),
+        )
+        self.assertEqual([0xFFFF0000, 0xFF0000FF], filament.colors)
+        fields = FilamentTagToSpool.genericFilamentToSpoolFields(filament)
+        self.assertEqual("#FF0000;#0000FF", fields["color"])
+
+    def test_single_color_tag_keeps_its_unique_id(self):
+        parser = FilamentTagParsers.OpenSpoolTagParser()
+        filament = parser.parseTag(ntagScan(), self.buildTag())
+        self.assertEqual([0xFF1A2B3C], filament.colors)
+        self.assertEqual(
+            FilamentTagModel.GenericFilament.generate_unique_id(
+                "OpenSpool", "Polymaker", "PETG", "", 0xFF1A2B3C
+            ),
+            filament.unique_id,
+        )
+
+    def test_at_most_four_additional_colors_are_read(self):
+        # The spool fields keep the first three colours, as for every other format.
+        parser = FilamentTagParsers.OpenSpoolTagParser()
+        filament = parser.parseTag(
+            ntagScan(),
+            self.buildTag(
+                additional_color_hexes=[
+                    "111111",
+                    "222222",
+                    "333333",
+                    "444444",
+                    "555555",
+                ]
+            ),
+        )
+        self.assertEqual(
+            [0xFF1A2B3C, 0xFF111111, 0xFF222222, 0xFF333333, 0xFF444444],
+            filament.colors,
+        )
+        fields = FilamentTagToSpool.genericFilamentToSpoolFields(filament)
+        self.assertEqual("#1A2B3C;#111111;#222222", fields["color"])
+
+    def test_invalid_additional_entries_are_skipped_not_read_as_white(self):
+        parser = FilamentTagParsers.OpenSpoolTagParser()
+        filament = parser.parseTag(
+            ntagScan(),
+            self.buildTag(additional_color_hexes=[None, 5, "XYZ", "00FF00"]),
+        )
+        self.assertEqual([0xFF1A2B3C, 0xFF00FF00], filament.colors)
+
+    def test_only_the_first_four_entries_count_even_if_invalid(self):
+        # Same slice as the U1's own reader: a valid fifth entry stays unread.
+        parser = FilamentTagParsers.OpenSpoolTagParser()
+        filament = parser.parseTag(
+            ntagScan(),
+            self.buildTag(additional_color_hexes=["XYZ", "", None, 7, "00FF00"]),
+        )
+        self.assertEqual([0xFF1A2B3C], filament.colors)
+
+    def test_additional_color_hexes_that_is_not_a_list_is_ignored(self):
+        # A bare string must not be walked character by character.
+        parser = FilamentTagParsers.OpenSpoolTagParser()
+        for value in ("0000FF", None, 255, {"color": "0000FF"}):
+            with self.subTest(value=value):
+                filament = parser.parseTag(
+                    ntagScan(), self.buildTag(additional_color_hexes=value)
+                )
+                self.assertIsNotNone(filament)
+                self.assertEqual([0xFF1A2B3C], filament.colors)
+
+    def test_additional_color_with_hash_prefix(self):
+        parser = FilamentTagParsers.OpenSpoolTagParser()
+        filament = parser.parseTag(
+            ntagScan(), self.buildTag(additional_color_hexes=["#0000FF"])
+        )
+        self.assertEqual([0xFF1A2B3C, 0xFF0000FF], filament.colors)
+
+    def test_additional_colors_share_the_tags_alpha(self):
+        parser = FilamentTagParsers.OpenSpoolTagParser()
+        filament = parser.parseTag(
+            ntagScan(), self.buildTag(alpha="80", additional_color_hexes=["0000FF"])
+        )
+        self.assertEqual([0x801A2B3C, 0x800000FF], filament.colors)
 
 
 class TestSpoolEaseParser(unittest.TestCase):
@@ -2383,6 +2469,15 @@ class TestOpenSpoolNfcvParser(unittest.TestCase):
     def test_registered_under_the_nfcv_tag_class(self):
         descriptor = FilamentTagParsers.FILAMENT_TAG_PARSERS["nfcvOpenSpool"]
         self.assertEqual(TagType.NFCV, descriptor["tagClass"])
+
+    def test_additional_color_hexes_are_read(self):
+        # Inherited from OpenSpoolTagParser; checked once on this carrier.
+        parser = FilamentTagParsers.OpenSpoolNfcvTagParser()
+        filament = parser.parseTag(
+            nfcvScan(),
+            self.buildTag(color_hex="FF0000", additional_color_hexes=["0000FF"]),
+        )
+        self.assertEqual([0xFFFF0000, 0xFF0000FF], filament.colors)
 
 
 class TestOpenPrintTagParser(unittest.TestCase):
