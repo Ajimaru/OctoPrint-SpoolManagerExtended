@@ -72,6 +72,11 @@ def genericFilamentToSpoolFields(filament, uid=None):
             or None
         )
 
+    # Only TigerTag carries a finish so far (its aspect, see TigerTagTagParser).
+    finish = getattr(filament, "finish", None)
+    if finish:
+        fields["finish"] = finish
+
     colorCode = _colorCode(filament.colors)
     if colorCode:
         fields["color"] = colorCode

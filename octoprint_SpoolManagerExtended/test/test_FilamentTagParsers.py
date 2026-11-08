@@ -11,6 +11,7 @@
 import importlib.util
 import json
 import os
+import re
 import struct
 import sys
 import types
@@ -1071,6 +1072,8 @@ def _tigerTagImage(
     dryTime=6,
     rgba=(0xE7, 0x2F, 0x1D, 0xFF),
     pagePrefix=True,
+    aspect=0,
+    typeId=0,
 ):
     """A synthetic TigerTag, built from the layout in TigerTag-SDK-Python's tag.py.
 
@@ -1081,6 +1084,8 @@ def _tigerTagImage(
     struct.pack_into(">I", body, 0, magic)
     struct.pack_into(">I", body, 4, product)
     struct.pack_into(">H", body, 8, material)
+    body[10] = aspect
+    body[12] = typeId
     body[13] = diameter
     body[16], body[17], body[18], body[19] = rgba
     body[20] = (measure >> 16) & 0xFF
@@ -1175,6 +1180,68 @@ class TestTigerTagParser(unittest.TestCase):
         filament = self.parser.parseTag(self.scan, _tigerTagImage(material=9999))
         self.assertIsNotNone(filament)
         self.assertEqual("Unknown(9999)", filament.type)
+
+    def test_aspect_comes_back_as_the_spools_finish(self):
+        # Aspect ids from the shipped table. Predefined finishes map to their key, the
+        # three TigerTag spells differently included; others stay as custom text.
+        cases = {
+            247: "matt",  # Matt
+            129: "glossy",  # Gloss
+            64: "sparkle",  # Glitter
+            91: "glow",  # Glow in the Dark
+            92: "silk",
+            123: "Wood",  # no predefined finish: kept as custom text
+            0: None,  # "-"
+            255: None,  # "None"
+            250: None,  # not in the table
+        }
+        for aspectId, expected in cases.items():
+            with self.subTest(aspect=aspectId):
+                filament = self.parser.parseTag(
+                    self.scan, _tigerTagImage(aspect=aspectId)
+                )
+                self.assertEqual(expected, filament.finish)
+
+    def test_aspect_and_filament_type_are_not_a_material_characteristic(self):
+        filament = self.parser.parseTag(
+            self.scan, _tigerTagImage(aspect=247, typeId=142)
+        )
+        self.assertEqual([], filament.modifiers)
+        fields = FilamentTagToSpool.genericFilamentToSpoolFields(filament)
+        self.assertEqual("matt", fields["finish"])
+        self.assertNotIn("materialCharacteristic", fields)
+
+    def test_a_type_other_than_filament_stays_visible(self):
+        filament = self.parser.parseTag(self.scan, _tigerTagImage(typeId=173))  # Resin
+        self.assertEqual(["Resin"], filament.modifiers)
+
+    def test_every_predefined_finish_survives_a_round_trip(self):
+        # Write side resolves the finish to an aspect id, read side turns it back. The
+        # finish keys come from the UI's own option list, so a new option without an
+        # aspect fails here instead of silently never reaching the tag.
+        constantsJs = os.path.join(
+            os.path.dirname(_COMMON_DIR), "static", "js", "common", "constants.js"
+        )
+        with open(constantsJs, encoding="utf-8") as handle:
+            source = handle.read()
+        block = source[source.index("FINISH_OPTIONS") :].split("]", 1)[0]
+        finishes = [
+            value
+            for value in re.findall(r'value:\s*"([^"]+)"', block)
+            if value != "custom"
+        ]
+        self.assertEqual(8, len(finishes))
+        for finish in finishes:
+            with self.subTest(finish=finish):
+                aspectId = FilamentTagConstants.tigerTagIdForLabel(
+                    "id_aspect",
+                    FilamentTagConstants.tigerTagAspectLabelForFinish(finish),
+                )
+                self.assertIsNotNone(aspectId)
+                filament = self.parser.parseTag(
+                    self.scan, _tigerTagImage(aspect=aspectId)
+                )
+                self.assertEqual(finish, filament.finish)
 
 
 FilamentTagKeys = _loadModule("FilamentTagKeys")

@@ -859,12 +859,16 @@ class TigerTagTagParser(object):
         diameterMm = Constants.tigerTagDiameterMm(diameterId)
         brandName = Constants.tigerTagLabel("id_brand", brandId)
 
+        # The aspect is the spool's finish - TagFormats writes the finish into it. As a
+        # modifier it came back as materialCharacteristic ("Matt Filament"), and an empty
+        # aspect ("-") as a characteristic of its own.
+        finish = Constants.tigerTagFinishForAspect(
+            Constants.tigerTagLabel("id_aspect", Binary.extract_byte(body, 10))
+        )
+        # Every tag this plugin writes says "Filament"; only another type tells anything.
         modifiers = []
-        aspectName = Constants.tigerTagLabel("id_aspect", Binary.extract_byte(body, 10))
-        if aspectName:
-            modifiers.append(aspectName)
         typeLabel = Constants.tigerTagLabel("id_type", typeId)
-        if typeLabel:
+        if typeLabel and typeLabel.casefold() != "filament":
             modifiers.append(typeLabel)
 
         return GenericFilament(
@@ -886,6 +890,7 @@ class TigerTagTagParser(object):
             drying_temp_c=dryTemp if dryTemp is not None else 0,
             drying_time_hours=dryTime if dryTime is not None else 0,
             manufacturing_date=Constants.NO_MANUFACTURING_DATE,
+            finish=finish,
         )
 
 
