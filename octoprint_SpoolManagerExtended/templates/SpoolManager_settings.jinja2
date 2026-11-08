@@ -1016,7 +1016,7 @@ FPE;	2.16
                                 <tr>
                                     <td>{{ _('NTAG213') }}</td>
                                     <td>{{ _('write fails (tag too small)') }}</td>
-                                    <td>{{ _('no temperatures, no diameter') }}</td>
+                                    <td>{{ _('first color only, no temperatures, no diameter') }}</td>
                                     <td>{{ _('material, brand, aspect, diameter, color, weight, temperatures - no database id') }}</td>
                                     <td>{{ _('not supported') }}</td>
                                 </tr>
@@ -1038,7 +1038,7 @@ FPE;	2.16
                         </table>
                         <span class="help-block">
                             <small>
-                                {{ _('"Everything" means every field that format defines - OpenSpool has no field for color name, density or spool/used weight, so those are never written whatever the tag size. On small NFC-V tags, prefer Extended. Only Extended supports 1-3 colors plus transparent/rainbow; the other formats always store a single opaque color.') }}
+                                {{ _('"Everything" means every field that format defines - OpenSpool has no field for color name, density or spool/used weight, so those are never written whatever the tag size. On small NFC-V tags, prefer Extended. Extended supports 1-3 colors plus transparent/rainbow, OpenSpool 1-3 opaque colors (older OctoScale firmware writes only the first); TigerTag and OpenPrintTag always store a single opaque color.') }}
                             </small>
                         </span>
                         <a href="#" data-bind="click: function () { nfcFormatFieldsExpanded(!nfcFormatFieldsExpanded()); return false; }" style="font-size: 12px;">
@@ -1086,9 +1086,10 @@ FPE;	2.16
                                         <li>{{ _('Database ID') }}</li>
                                         <li>{{ _('Material') }}</li>
                                         <li>{{ _('Vendor') }}</li>
-                                        <li>{{ _('Color (hex)') }}</li>
+                                        <li>{{ _('1-3 colors (hex, opaque)') }}</li>
                                         <li>{{ _('Diameter') }}</li>
                                         <li>{{ _('Nozzle / bed temp (min/max)') }}</li>
+                                        <li class="muted">{{ _('Transparent / rainbow - not written') }}</li>
                                         <li class="muted">{{ _('Color name - not written') }}</li>
                                         <li class="muted">{{ _('Density - not written') }}</li>
                                         <li class="muted">{{ _('Spool / used weight - not written') }}</li>
@@ -1159,7 +1160,7 @@ FPE;	2.16
                         <span class="help-block">
                             <small>
                                 <strong>{{ _('Extended') }}</strong> {{ _('writes every field OctoScale knows, including 1-3 colors plus transparent/rainbow.') }}<br>
-                                <strong>{{ _('OpenSpool') }}</strong> {{ _('writes a standard NDEF/JSON record any phone NFC app can read, with fewer fields (no color name, density, spool/used weight) and a single opaque color.') }}<br>
+                                <strong>{{ _('OpenSpool') }}</strong> {{ _('writes a standard NDEF/JSON record any phone NFC app can read, with fewer fields (no color name, density, spool/used weight) and 1-3 opaque colors (older OctoScale firmware writes only the first).') }}<br>
                                 <strong>{{ _('OpenPrintTag') }}</strong> {{ _('writes a vendor-neutral CBOR/NDEF record other OpenPrintTag tools can read. A spool that does not fit fails the write outright instead of dropping fields. A single opaque color.') }}
                             </small>
                         </span>
@@ -1176,7 +1177,7 @@ FPE;	2.16
                         <span class="help-block">
                             <small>
                                 <strong>{{ _('Extended') }}</strong> {{ _('writes every field OctoScale knows, including 1-3 colors plus transparent/rainbow, but needs NTAG215/216 - on NTAG213 the write fails outright rather than falling back.') }}<br>
-                                <strong>{{ _('OpenSpool') }}</strong> {{ _('writes a standard NDEF/JSON record readable by generic phone NFC apps. A single opaque color.') }}<br>
+                                <strong>{{ _('OpenSpool') }}</strong> {{ _('writes a standard NDEF/JSON record readable by generic phone NFC apps. 1-3 opaque colors (older OctoScale firmware writes only the first; an NTAG213 keeps only the first).') }}<br>
                                 <strong>{{ _('TigerTag') }}</strong> {{ _('writes TigerTag Standard (unsigned, open spec) - material, brand, aspect, diameter and weight unit as TigerTag\'s own ids, plus a single color, weight, and nozzle/bed temperature range. No database id (matched back to a spool by the tag\'s own UID, like OpenPrintTag). TigerTag+ (signed) is not supported.') }}
                             </small>
                         </span>

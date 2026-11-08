@@ -44,6 +44,8 @@
 #    into a Flask handler would be a 500 for what is a routine outcome.
 #  - the registry mirrors TagFormats.TAG_FORMATS (dict of dicts) so both tag-facing
 #    registries in this plugin read the same way.
+#  - OpenSpoolTagParser also reads additional_color_hexes, which upstream ignores
+#    (as of 2026-11-08).
 
 from __future__ import annotations
 
@@ -108,6 +110,31 @@ def _parseColorHex(value, default=0xFFFFFF):
         return default
 
 
+# "Up to 4" per the SnapmakerU1-Extended-Firmware spec (docs/design/openspool.md).
+_OPENSPOOL_MAX_ADDITIONAL_COLORS = 4
+
+
+def _parseAdditionalColorHexes(value):
+    """OpenSpool's additional_color_hexes -> a list of 24-bit ints, at most four.
+
+    Takes the same first four entries as the U1's own reader (filament_protocol_ndef.py,
+    repository state 2026-10-25), but is stricter about them: the U1 reads an invalid
+    entry as white and splits a bare string into single characters. Here anything but a
+    list is ignored, and an entry that is not a valid hex string is skipped.
+    """
+    if not isinstance(value, list):
+        return []
+    colors = []
+    for entry in value[:_OPENSPOOL_MAX_ADDITIONAL_COLORS]:
+        # Strings only: _parseColorHex would read the number 255 as hex 0x255.
+        if not isinstance(entry, str):
+            continue
+        rgb = _parseColorHex(entry, default=None)
+        if rgb is not None:
+            colors.append(rgb)
+    return colors
+
+
 class OpenSpoolTagParser(object):
     """OpenSpool's NDEF/JSON record - the open format this plugin also writes.
 
@@ -161,6 +188,11 @@ class OpenSpoolTagParser(object):
         except (ValueError, TypeError):
             alpha = 0xFF
         colorArgb = (alpha << 24) | colorHex
+        # The tag has a single alpha; it applies to every colour.
+        colors = [colorArgb] + [
+            (alpha << 24) | rgb
+            for rgb in _parseAdditionalColorHexes(data.get("additional_color_hexes"))
+        ]
 
         try:
             diameterMm = float(data.get("diameter", 1.75))
@@ -196,12 +228,12 @@ class OpenSpoolTagParser(object):
         return GenericFilament(
             source_processor=self.id,
             unique_id=GenericFilament.generate_unique_id(
-                "OpenSpool", brand, mainType, subType, colorArgb
+                "OpenSpool", brand, mainType, subType, *colors
             ),
             manufacturer=brand,
             type=mainType,
             modifiers=[subType] if subType else [],
-            colors=[colorArgb],
+            colors=colors,
             diameter_mm=diameterMm,
             weight_grams=weightGrams,
             hotend_min_temp_c=minTemp,
