@@ -107,7 +107,7 @@ def genericFilamentToSpoolFields(filament, uid=None):
     if bedTemp is not None:
         fields["bedTemperature"] = bedTemp
         if bedMinTemp is not None or bedMaxTemp is not None:
-            # This tag format carries an actual bed range (currently only TigerTag) -
+            # This tag format carries an actual bed range (TigerTag, OpenSpool) -
             # preserve it instead of collapsing to the single bed_temp_c value, which
             # would silently flatten min/target/max to the same number on every
             # write-then-read round trip.

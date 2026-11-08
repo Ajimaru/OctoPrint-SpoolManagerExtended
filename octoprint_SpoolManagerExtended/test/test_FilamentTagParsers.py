@@ -323,6 +323,32 @@ class TestOpenSpoolParser(unittest.TestCase):
         )
         self.assertEqual(70.0, filament.bed_temp_c)
 
+    def test_bed_range_reaches_the_spool_fields(self):
+        # Used to be mirrored from the single bed value: 90-110 C was imported as 110/110.
+        parser = FilamentTagParsers.OpenSpoolTagParser()
+        filament = parser.parseTag(
+            ntagScan(), self.buildTag(bed_min_temp="90", bed_max_temp="110")
+        )
+        self.assertEqual((90, 110), (filament.bed_min_temp_c, filament.bed_max_temp_c))
+        fields = FilamentTagToSpool.genericFilamentToSpoolFields(filament)
+        self.assertEqual(90, fields["minBedTemperature"])
+        self.assertEqual(110, fields["maxBedTemperature"])
+        self.assertEqual(110, fields["bedTemperature"])
+
+    def test_one_bed_value_still_fills_both_ends(self):
+        parser = FilamentTagParsers.OpenSpoolTagParser()
+        for overrides, expected in (
+            ({"bed_min_temp": "75"}, 75),
+            ({"bed_max_temp": "85"}, 85),
+            ({}, 70.0),  # PETG table default: a suggestion, mirrored as before
+            ({"bed_min_temp": "-1", "bed_max_temp": "-1"}, 70.0),
+        ):
+            with self.subTest(**overrides):
+                filament = parser.parseTag(ntagScan(), self.buildTag(**overrides))
+                fields = FilamentTagToSpool.genericFilamentToSpoolFields(filament)
+                self.assertEqual(expected, fields["minBedTemperature"])
+                self.assertEqual(expected, fields["maxBedTemperature"])
+
     def test_foreign_protocol_is_rejected(self):
         parser = FilamentTagParsers.OpenSpoolTagParser()
         self.assertIsNone(
@@ -2536,6 +2562,14 @@ class TestOpenSpoolNfcvParser(unittest.TestCase):
     def test_registered_under_the_nfcv_tag_class(self):
         descriptor = FilamentTagParsers.FILAMENT_TAG_PARSERS["nfcvOpenSpool"]
         self.assertEqual(TagType.NFCV, descriptor["tagClass"])
+
+    def test_bed_range_is_read(self):
+        # Inherited from OpenSpoolTagParser; checked once on this carrier.
+        parser = FilamentTagParsers.OpenSpoolNfcvTagParser()
+        filament = parser.parseTag(
+            nfcvScan(), self.buildTag(bed_min_temp="55", bed_max_temp="65")
+        )
+        self.assertEqual((55, 65), (filament.bed_min_temp_c, filament.bed_max_temp_c))
 
     def test_additional_color_hexes_are_read(self):
         # Inherited from OpenSpoolTagParser; checked once on this carrier.

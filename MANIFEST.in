@@ -1,4 +1,7 @@
 include README.md
+# Attribution and licence terms for the ported and vendored code (OpenRFID, spool-link-apps,
+# u1-klipper, TigerTag-SDK-Python, ...); the licence texts below point to it.
+include THIRD_PARTY_NOTICES.md
 recursive-include octoprint_SpoolManagerExtended/templates *
 recursive-include octoprint_SpoolManagerExtended/translations *
 recursive-include octoprint_SpoolManagerExtended/static *
