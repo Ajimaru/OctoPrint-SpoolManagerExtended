@@ -206,6 +206,11 @@ QIDI_DEFAULT_WEIGHT_G = 1000
 # Ported from paxx12-snapmaker-u1/spool-link-apps (GPL-3.0), file
 # android-app/app/src/main/java/dev/pages/paxx12/spoollink/formats/SnapmakerFormat.kt
 # (repository state 2026-07-30). See THIRD_PARTY_NOTICES.md.
+#
+# Codes and names (Snapmaker's own spelling) synced with Snapmaker/u1-klipper (GPL-3.0),
+# klippy/extras/filament_protocol.py, firmware 2.1.0; main 17 and 24-27 and sub 14-18
+# come from there. Unlike Snapmaker's decoder, which rejects the whole tag on an unknown
+# sub type, SnapmakerTagParser then only drops the modifier.
 SNAPMAKER_MAIN_TYPES = {
     1: "PLA",
     2: "PETG",
@@ -217,9 +222,14 @@ SNAPMAKER_MAIN_TYPES = {
     10: "PA-CF",
     11: "PA-GF",
     12: "PC",
+    17: "PETG-CF",
     20: "PLA-CF",
     22: "PEBA",
     23: "TPE",
+    24: "PAHT-CF",
+    25: "PA6-CF",
+    26: "PA6-GF",
+    27: "ASA-CF",
 }
 
 SNAPMAKER_SUB_TYPES = {
@@ -236,6 +246,11 @@ SNAPMAKER_SUB_TYPES = {
     11: "Wood",
     12: "Translucent",
     13: "Full Spectrum",
+    14: "Glow",
+    15: "Rainbow",
+    16: "Marble",
+    17: "Starlight",
+    18: "Aero",
 }
 
 

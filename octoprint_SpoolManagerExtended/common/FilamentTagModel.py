@@ -16,6 +16,7 @@
 #  - TagType is an int-valued enum resolved from the tagType strings OctoScale reports,
 #    with the SAK lookup kept as a fallback. Upstream's `match` statement is Python 3.10+,
 #    this plugin targets 3.9.
+#  - VALID_BASE_MATERIALS also lists PEBA and TPE (Snapmaker main types 22 and 23).
 
 from __future__ import annotations
 
@@ -60,6 +61,7 @@ VALID_BASE_MATERIALS = [
     "PE",
     "PE-CF",
     "PE-GF",
+    "PEBA",
     "PEI-1010",
     "PEI-1010-CF",
     "PEI-1010-GF",
@@ -97,6 +99,7 @@ VALID_BASE_MATERIALS = [
     "PVB",
     "PVDF",
     "SBS",
+    "TPE",
     "TPI",
     "TPU",
 ]
