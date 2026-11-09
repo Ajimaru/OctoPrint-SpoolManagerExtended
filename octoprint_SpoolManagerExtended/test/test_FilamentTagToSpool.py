@@ -105,6 +105,25 @@ class TestFieldMapping(unittest.TestCase):
         )
         self.assertEqual("#FF0000;#00FF00;#0000FF", fields["color"])
 
+    def test_colour_flags_map_to_spoolmanagers_grammar(self):
+        cases = [
+            ({"colors": [0xFF1A2B3C], "is_transparent": True}, "transparent:#1A2B3C"),
+            (
+                {"colors": [0xFF1A2B3C, 0xFF00FF00], "is_transparent": True},
+                "transparent:#1A2B3C;#00FF00",
+            ),
+            ({"colors": [], "is_transparent": True}, "transparent"),
+            ({"colors": [], "is_rainbow": True}, "rainbow"),
+            ({"colors": [0xFF1A2B3C], "is_rainbow": True}, "rainbow"),
+            ({"colors": [0x801A2B3C]}, "#1A2B3C"),  # alpha alone means nothing here
+        ]
+        for overrides, expected in cases:
+            with self.subTest(**{k: str(v) for k, v in overrides.items()}):
+                fields = FilamentTagToSpool.genericFilamentToSpoolFields(
+                    filament(**overrides)
+                )
+                self.assertEqual(expected, fields["color"])
+
     def test_color_name_is_never_set(self):
         # The frontend derives it; two writers for this field caused a real bug before.
         fields = FilamentTagToSpool.genericFilamentToSpoolFields(filament())

@@ -29,10 +29,17 @@ def _noneIfZero(value):
     return value
 
 
-def _colorCode(colors):
-    """0xAARRGGBB ints -> "#RRGGBB", multi-color joined with ";" like the U1 path does."""
+def _colorCode(colors, isTransparent=False, isRainbow=False):
+    """0xAARRGGBB ints -> "#RRGGBB", multi-color joined with ";" like the U1 path does.
+
+    With the two flags a format sets explicitly (TigerTag, see FilamentTagParsers), the
+    result is SpoolManager's own grammar: "rainbow", or a "transparent:" prefix ("transparent"
+    alone when no colour is known). Alpha itself is never read here.
+    """
+    if isRainbow:
+        return "rainbow"
     if not colors:
-        return None
+        return "transparent" if isTransparent else None
     codes = []
     for argb in colors[:MAX_COLOR_SLOTS]:
         try:
@@ -41,8 +48,9 @@ def _colorCode(colors):
         except (TypeError, ValueError):
             continue
     if not codes:
-        return None
-    return ";".join(codes)
+        return "transparent" if isTransparent else None
+    joined = ";".join(codes)
+    return ("transparent:" + joined) if isTransparent else joined
 
 
 def genericFilamentToSpoolFields(filament, uid=None):
@@ -77,7 +85,11 @@ def genericFilamentToSpoolFields(filament, uid=None):
     if finish:
         fields["finish"] = finish
 
-    colorCode = _colorCode(filament.colors)
+    colorCode = _colorCode(
+        filament.colors,
+        isTransparent=getattr(filament, "is_transparent", False),
+        isRainbow=getattr(filament, "is_rainbow", False),
+    )
     if colorCode:
         fields["color"] = colorCode
     # colorName is deliberately not set: the frontend derives it from the color code, and
