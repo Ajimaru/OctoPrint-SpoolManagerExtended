@@ -86,9 +86,21 @@ def genericFilamentToSpoolFields(filament, uid=None):
     if filament.diameter_mm:
         fields["diameter"] = filament.diameter_mm
     if filament.weight_grams:
-        # The tag states the nominal amount of filament, not what is left on the spool.
-        # remainingWeight is never set from a tag - it would be a guess.
+        # The nominal amount of filament, not what is left on the spool - remainingWeight is
+        # never derived from it, that would be a guess.
         fields["totalWeight"] = filament.weight_grams
+        # A tag that keeps its own remaining amount (TigerTag's measure_available) is a
+        # different case: that value is on the tag. It goes in through usedWeight as well,
+        # because saveSpool() derives remainingWeight from totalWeight - usedWeight and
+        # would discard it on its own.
+        remaining = getattr(filament, "remaining_weight_grams", None)
+        if remaining is not None and 0 <= remaining <= filament.weight_grams:
+            fields["usedWeight"] = filament.weight_grams - remaining
+            fields["remainingWeight"] = remaining
+
+    displayName = getattr(filament, "display_name", None)
+    if displayName:
+        fields["displayName"] = displayName
 
     minTemp = _noneIfZero(filament.hotend_min_temp_c)
     maxTemp = _noneIfZero(filament.hotend_max_temp_c)

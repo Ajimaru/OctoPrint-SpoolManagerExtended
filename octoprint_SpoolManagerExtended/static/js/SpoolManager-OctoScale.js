@@ -414,7 +414,9 @@ var OCTOSCALE_TAG_DIFF_FIELDS = [
     {key: "batchNumber", label: "Batch number"},
     {key: "purchasedFrom", label: "Purchased from"},
     {key: "finish", label: "Finish"},
-    {key: "displayName", label: "Display name"},
+    // shortenedOnTag: some formats keep only the start of the name (TigerTag: 28 bytes),
+    // see readTagCompareRows.
+    {key: "displayName", label: "Display name", shortenedOnTag: true},
     {key: "cost", label: "Cost"}
 ];
 
@@ -501,6 +503,19 @@ function octoScaleNormalizeTagValue(rawValue, divisor) {
 // database value arrives as NaN - and diffed as a value it showed "(not set) -> NaN g".
 function octoScaleIsEmptyDiffValue(value) {
     return value == null || value === "" || (typeof value === "number" && isNaN(value));
+}
+
+// True when the tag holds the start of the spool's own text and nothing else - what a
+// format with a short text slot returns for a longer name.
+function octoScaleIsShortenedCopy(tagValue, currentValue) {
+    if (typeof tagValue !== "string" || typeof currentValue !== "string") {
+        return false;
+    }
+    return (
+        tagValue.length > 0 &&
+        tagValue.length < currentValue.length &&
+        currentValue.indexOf(tagValue) === 0
+    );
 }
 
 function octoScaleValuesDiffer(tagValue, currentValue, caseInsensitive) {
@@ -1384,20 +1399,37 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
             // already converts into SpoolManager's own units (e.g. drying time in hours),
             // unlike the live NFC poll behind tagValueDiff which sends the tag's raw units.
             var tagValue = octoScaleNormalizeTagValue(fields[field.key]);
+            // Same spool-side override as tagValueDiff: an unused spool has no stored
+            // remainingWeight, and a TigerTag's remaining amount would otherwise be
+            // compared against "(not set)" instead of the full spool.
             var currentValue =
-                spoolItem != null && typeof spoolItem[field.key] === "function"
-                    ? spoolItem[field.key]()
-                    : null;
+                spoolItem == null
+                    ? null
+                    : field.readSpoolValue
+                      ? field.readSpoolValue(spoolItem)
+                      : typeof spoolItem[field.key] === "function"
+                        ? spoolItem[field.key]()
+                        : null;
+            var differs = octoScaleValuesDiffer(
+                tagValue,
+                currentValue,
+                field.caseInsensitive
+            );
+            // A cut copy of the spool's own name is not a different name. Rows that differ
+            // are pre-selected for import, and taking this one would shorten the name.
+            if (
+                differs &&
+                field.shortenedOnTag &&
+                octoScaleIsShortenedCopy(tagValue, currentValue)
+            ) {
+                differs = false;
+            }
             rows.push({
                 key: field.key,
                 label: field.label,
                 tagValueText: octoScaleFormatDiffValue(tagValue, field.unit),
                 dbValueText: octoScaleFormatDiffValue(currentValue, field.unit),
-                differs: octoScaleValuesDiffer(
-                    tagValue,
-                    currentValue,
-                    field.caseInsensitive
-                )
+                differs: differs
             });
         });
 

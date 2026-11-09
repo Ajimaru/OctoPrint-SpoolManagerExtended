@@ -1100,6 +1100,8 @@ def _tigerTagImage(
     pagePrefix=True,
     aspect=0,
     typeId=0,
+    available=0,
+    message=b"",
 ):
     """A synthetic TigerTag, built from the layout in TigerTag-SDK-Python's tag.py.
 
@@ -1122,13 +1124,112 @@ def _tigerTagImage(
     struct.pack_into(">H", body, 26, nozzleMax)
     body[28], body[29] = dryTemp, dryTime
     body[30], body[31] = bedMin, bedMax
+    body[48 : 48 + len(message)] = message[:28]
+    body[76] = (available >> 16) & 0xFF
+    body[77] = (available >> 8) & 0xFF
+    body[78] = available & 0xFF
     return (bytes(16) if pagePrefix else b"") + bytes(body)
+
+
+# Written by the OctoScale firmware's own TigerTag writer (pn5180WriteNtagTigerTag), not
+# built from the SDK layout like _tigerTagImage: a host build of the real function, run
+# against a simulated NTAG215 on 2026-11-08. Pages 0-3 (UID, lock bytes, CC) are synthetic.
+# Display name "tigertag_test", remaining 734.6 g rounded to 735, nominal 1000 g.
+FIRMWARE_TIGERTAG_FRAME = bytes.fromhex(
+    "04aabb9bccddeeff00480000e1103e00"
+    "5bf59264ffffffff954b68008e380034"
+    "1e90ffff0003e81500be00dc3704323c"
+    "00000000000000000000000000000000"
+    "74696765727461675f74657374000000"
+    "0000000000000000000000000002df00"
+)
 
 
 class TestTigerTagParser(unittest.TestCase):
     def setUp(self):
         self.parser = FilamentTagParsers.TigerTagTagParser()
         self.scan = ntagScan()
+
+    def test_reads_the_remaining_amount(self):
+        filament = self.parser.parseTag(self.scan, _tigerTagImage(available=777))
+        self.assertEqual(777, filament.remaining_weight_grams)
+
+    def test_zero_remaining_is_not_set(self):
+        # The SDK's blank template and every older OctoScale-written tag carry 0.
+        filament = self.parser.parseTag(self.scan, _tigerTagImage())
+        self.assertIsNone(filament.remaining_weight_grams)
+
+    def test_remaining_above_the_nominal_amount_is_not_taken(self):
+        filament = self.parser.parseTag(
+            self.scan, _tigerTagImage(measure=1000, available=1200)
+        )
+        self.assertIsNone(filament.remaining_weight_grams)
+        self.assertEqual(1000, filament.weight_grams)
+
+    def test_remaining_uses_the_same_unit_as_the_nominal_amount(self):
+        inKilos = self.parser.parseTag(
+            self.scan, _tigerTagImage(measure=2, unit=35, available=1)
+        )
+        self.assertEqual(1000, inKilos.remaining_weight_grams)
+        inMetres = self.parser.parseTag(
+            self.scan, _tigerTagImage(measure=330, unit=149, available=100)
+        )
+        self.assertIsNone(inMetres.remaining_weight_grams)
+
+    def test_remaining_without_a_nominal_amount_is_kept(self):
+        # The SDK does not check against a measure of 0 ("not set"); the spool mapping
+        # decides what that is worth without a total.
+        filament = self.parser.parseTag(
+            self.scan, _tigerTagImage(measure=0, available=500)
+        )
+        self.assertEqual(500, filament.remaining_weight_grams)
+
+    def test_reads_the_message_as_display_name(self):
+        filament = self.parser.parseTag(
+            self.scan, _tigerTagImage(message=b"tigertag_test")
+        )
+        self.assertEqual("tigertag_test", filament.display_name)
+
+    def test_empty_message_is_no_display_name(self):
+        filament = self.parser.parseTag(self.scan, _tigerTagImage())
+        self.assertIsNone(filament.display_name)
+        blank = self.parser.parseTag(self.scan, _tigerTagImage(message=b"   "))
+        self.assertIsNone(blank.display_name)
+
+    def test_a_full_28_byte_message_needs_no_terminator(self):
+        filament = self.parser.parseTag(
+            self.scan, _tigerTagImage(message=b"ABCDEFGHIJKLMNOPQRSTUVWXYZ01")
+        )
+        self.assertEqual("ABCDEFGHIJKLMNOPQRSTUVWXYZ01", filament.display_name)
+
+    def test_half_a_character_at_the_end_is_dropped(self):
+        # The SDK cuts the encoded text at byte 28: here the first byte of "ä" (C3 A4).
+        filament = self.parser.parseTag(
+            self.scan,
+            _tigerTagImage(message=b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0\xc3"),
+        )
+        self.assertEqual("ABCDEFGHIJKLMNOPQRSTUVWXYZ0", filament.display_name)
+
+    def test_invalid_bytes_inside_the_message_are_replaced(self):
+        filament = self.parser.parseTag(self.scan, _tigerTagImage(message=b"ab\xffcd"))
+        self.assertEqual("ab\ufffdcd", filament.display_name)
+
+    def test_remaining_and_message_do_not_change_the_product_id(self):
+        # unique_id names the product; two spools of it differ in what is left.
+        full = self.parser.parseTag(self.scan, _tigerTagImage(available=1000))
+        used = self.parser.parseTag(
+            self.scan, _tigerTagImage(available=10, message=b"left over")
+        )
+        self.assertEqual(full.unique_id, used.unique_id)
+
+    def test_reads_a_frame_written_by_the_octoscale_firmware(self):
+        filament = self.parser.parseTag(self.scan, FIRMWARE_TIGERTAG_FRAME)
+        self.assertIsNotNone(filament)
+        self.assertEqual("PLA", filament.type)
+        self.assertEqual(1000, filament.weight_grams)
+        self.assertEqual(735, filament.remaining_weight_grams)
+        self.assertEqual("tigertag_test", filament.display_name)
+        self.assertEqual(0xFF1E90FF, filament.colors[0])
 
     def test_parses_a_valid_tag(self):
         filament = self.parser.parseTag(self.scan, _tigerTagImage())

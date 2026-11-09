@@ -2729,8 +2729,9 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # does (usedWeight, remainingWeight, cost, ...) - see
         # FilamentTagParsers._buildOctoscaleExtendedFields. genericFilamentToSpoolFields()
         # is deliberately left untouched above: it protects vendor-tag imports (e.g. never
-        # guessing remainingWeight), a guarantee that must not weaken just because this one
-        # format actually carries the value. databaseId is excluded here - it went into
+        # deriving remainingWeight from the nominal weight - only a tag that keeps its own,
+        # like TigerTag, yields one there), a guarantee that must not weaken just because
+        # this one format actually carries the value. databaseId is excluded here - it went into
         # diagnostics above as identification, not a field to write onto a spool.
         if octoscaleExtendedFields:
             for key, value in octoscaleExtendedFields.items():
