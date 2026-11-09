@@ -55,6 +55,40 @@ from octoprint_SpoolManagerExtended.U1RfidManager import (
 )
 
 
+def _decodeJsonText(value, maxDepth=4):
+    """Unwrap JSON text a client sent back exactly as GET /spool/<id> handed it out.
+
+    labels and noteDeltaFormat are stored as JSON text, and the GET answer carries that
+    text. A client that saves the answer back sends the text instead of the value, and the
+    json.dumps() in _updateSpoolModelFromJSONData used to wrap it once more on every such
+    round trip ('[]' -> '"[]"'). Only text that parses as JSON is unwrapped (a few levels,
+    for rows that already went round several times); anything else comes back unchanged.
+    """
+    for _ in range(maxDepth):
+        if not isinstance(value, str):
+            break
+        try:
+            value = json.loads(value)
+        except ValueError:
+            break
+    return value
+
+
+def _labelsFromJson(value):
+    """The labels list to store. The dialog sends a list; see _decodeJsonText for text.
+
+    Plain non-JSON text is taken as one label. Anything that is neither a list nor text
+    ends up as no labels: loadCatalogLabels() iterates every stored value, so a stored
+    number or object would break the label catalog for the whole table.
+    """
+    value = _decodeJsonText(value)
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    return []
+
+
 class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
     def is_blueprint_csrf_protected(self):
         return True
@@ -357,17 +391,14 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             "batchNumber", jsonData, validationErrors
         )
 
-        # spoolModel.firstUse = StringUtils.transformToDateTimeOrNone(self._getValueFromJSONOrNone("firstUse", jsonData))
-        # spoolModel.lastUse = StringUtils.transformToDateTimeOrNone(self._getValueFromJSONOrNone("lastUse", jsonData))
-        # spoolModel.purchasedOn = StringUtils.transformToDateTimeOrNone(self._getValueFromJSONOrNone("purchasedOn", jsonData))
-        spoolModel.firstUse = self._toDateTimeFromJSONOrNone(
-            "firstUseKO", jsonData, validationErrors
+        spoolModel.firstUse = self._dateFromJSONOrNone(
+            "firstUseKO", "firstUse", jsonData, validationErrors
         )
-        spoolModel.lastUse = self._toDateTimeFromJSONOrNone(
-            "lastUseKO", jsonData, validationErrors
+        spoolModel.lastUse = self._dateFromJSONOrNone(
+            "lastUseKO", "lastUse", jsonData, validationErrors
         )
-        spoolModel.purchasedOn = self._toDateTimeFromJSONOrNone(
-            "purchasedOnKO", jsonData, validationErrors
+        spoolModel.purchasedOn = self._dateFromJSONOrNone(
+            "purchasedOnKO", "purchasedOn", jsonData, validationErrors
         )
 
         spoolModel.purchasedFrom = self._toStringFromJSONOrNone(
@@ -387,10 +418,9 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # "null", and loadCatalogLabels() does json.loads() + iterates the result, so a single
         # such row breaks the label catalog (and with it the spool search) for the whole table.
         # The edit dialog always sends an array, so this only bites API clients that omit it.
-        labels = self._getValueFromJSONOrNone("labels", jsonData)
-        if labels is None:
-            labels = []
-        labelsJson = json.dumps(labels)
+        labelsJson = json.dumps(
+            _labelsFromJson(self._getValueFromJSONOrNone("labels", jsonData))
+        )
         if len(labelsJson) > maxTextLength:
             validationErrors.append(
                 self._fieldLabel("labels")
@@ -404,7 +434,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             "noteText", jsonData, validationErrors, maxLength=maxTextLength
         )
         noteDeltaFormatJson = json.dumps(
-            self._getValueFromJSONOrNone("noteDeltaFormat", jsonData)
+            _decodeJsonText(self._getValueFromJSONOrNone("noteDeltaFormat", jsonData))
         )
         if len(noteDeltaFormatJson) > maxTextLength:
             validationErrors.append(
@@ -582,6 +612,27 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 + " must not be greater than "
                 + self._fieldLabel(maxKey)
             )
+
+    def _dateFromJSONOrNone(self, isoKey, displayKey, jsonData, validationErrors):
+        # The dialog sends a date as ISO under its *KO key. GET /spool/<id> only carries the
+        # display form ("25.02.2026", "25.02.2026 13:43") under the plain name, so a client
+        # saving that answer back used to wipe all three dates. Fall back to the display form,
+        # but only when the ISO key is absent altogether: the dialog sends it as null when
+        # the user cleared the date, and that has to stay a clear.
+        if (
+            isinstance(jsonData, dict)
+            and isoKey not in jsonData
+            and jsonData.get(displayKey)
+        ):
+            try:
+                return StringUtils.transformToDateTimeOrNone(jsonData.get(displayKey))
+            except (TypeError, ValueError):
+                if validationErrors is not None:
+                    validationErrors.append(
+                        self._fieldLabel(isoKey) + " has an invalid date format"
+                    )
+                return None
+        return self._toDateTimeFromJSONOrNone(isoKey, jsonData, validationErrors)
 
     def _toDateTimeFromJSONOrNone(self, key, json, validationErrors=None):
         value = self._getValueFromJSONOrNone(key, json)
