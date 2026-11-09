@@ -146,6 +146,9 @@ class TestBuildTigerTagPayload(unittest.TestCase):
                     "129": "Gloss",
                     "64": "Glitter",
                     "91": "Glow in the Dark",
+                    "252": "Bicolor",
+                    "24": "Tricolor",
+                    "145": "Rainbow",
                 },
                 "id_type": {"142": "Filament"},
                 "id_diameter": {"56": "1.75", "221": "2.85"},
@@ -215,6 +218,38 @@ class TestBuildTigerTagPayload(unittest.TestCase):
                     "buildPayload"
                 ](_spool(material="PE-CF", finish=finish))
                 self.assertEqual(expected, payload["tigerTagAspectId"])
+
+    def test_second_aspect_states_the_colour_count(self):
+        # Colours 2/3 have no presence flag on the tag; without the count a black second
+        # colour reads back as none.
+        cases = {
+            "#FF0000": None,
+            "#FF0000;#000000": 252,
+            "#FF0000;#00FF00;#0000FF": 24,
+            "transparent:#FF0000;#00FF00": 252,
+            "transparent:#FF0000": None,
+            # "rainbow" has no colours of its own; the aspect is what says what it is.
+            "rainbow": 145,
+            "Rainbow": 145,
+            None: None,
+        }
+        for color, expected in cases.items():
+            with self.subTest(color=color):
+                payload = TagFormats.getTagFormat(TagFormats.TAG_FORMAT_NTAG_TIGERTAG)[
+                    "buildPayload"
+                ](_spool(material="PE-CF", color=color))
+                self.assertEqual(expected, payload["tigerTagAspect2Id"])
+
+    def test_a_finish_never_becomes_a_colour_count(self):
+        # A custom finish text "Rainbow" would claim three colours on the tag; the count
+        # comes from the actual colours instead (second aspect).
+        for finish in ("Rainbow", "bicolor", "Tricolor"):
+            with self.subTest(finish=finish):
+                payload = TagFormats.getTagFormat(TagFormats.TAG_FORMAT_NTAG_TIGERTAG)[
+                    "buildPayload"
+                ](_spool(material="PE-CF", finish=finish, color="#FF0000"))
+                self.assertIsNone(payload["tigerTagAspectId"])
+                self.assertIsNone(payload["tigerTagAspect2Id"])
 
     def test_unresolvable_fields_are_omitted_not_guessed(self):
         # "PLA" and "Prusament" are not in the fake table above - a real install's
@@ -390,3 +425,27 @@ class _FakeIdService:
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSpoolColorCount(unittest.TestCase):
+    # Must count exactly like the firmware's pn5180ParseColorGrammar, or the colour-count
+    # aspect would disagree with the colours actually written.
+    def test_counts_like_the_firmware(self):
+        cases = {
+            None: 0,
+            "": 0,
+            "rainbow": 0,
+            "RAINBOW": 0,
+            "transparent": 0,
+            "transparent:#FF0000": 1,
+            "Transparent: #FF0000;#00FF00": 2,
+            "#FF0000": 1,
+            "#ff0000;#00ff00": 2,
+            "#FF0000;#00FF00;#0000FF;#FFFFFF": 3,
+            "#FF0000; garbage ;#00FF00": 2,
+            "#FF000080": 1,
+            "#F00": 0,
+        }
+        for color, expected in cases.items():
+            with self.subTest(color=color):
+                self.assertEqual(expected, TagFormats._spoolColorCount(color))

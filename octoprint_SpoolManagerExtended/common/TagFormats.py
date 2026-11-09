@@ -1,6 +1,7 @@
 # coding=utf-8
 
 import datetime
+import re
 
 # Which payload gets written onto an NFC tag.
 #
@@ -254,6 +255,43 @@ def _buildFullSpoolPayload(spoolModel):
     }
 
 
+_HEX_COLOR_PREFIX = re.compile(r"#[0-9A-Fa-f]{6}")
+
+
+def _spoolColorCount(color):
+    """How many colours the firmware takes from a spool's colour field (0-3).
+
+    Mirrors pn5180ParseColorGrammar: "rainbow" and a bare "transparent" carry none, a
+    "transparent:" prefix is skipped, and of the ";"-separated parts the first three
+    that start with #RRGGBB count.
+    """
+    if color is None:
+        return 0
+    text = str(color).strip()
+    lower = text.lower()
+    if not text or lower == "rainbow":
+        return 0
+    if lower.startswith("transparent"):
+        colon = text.find(":")
+        if colon < 0:
+            return 0
+        text = text[colon + 1 :]
+    count = 0
+    for part in text.split(";"):
+        if count == 3:
+            break
+        if _HEX_COLOR_PREFIX.match(part.strip()):
+            count += 1
+    return count
+
+
+def _tigerTagColorModeLabel(color):
+    """TigerTag aspect for a spool's colours: "Rainbow", "Bicolor", "Tricolor" or None."""
+    if color is not None and str(color).strip().lower() == "rainbow":
+        return "Rainbow"
+    return {2: "Bicolor", 3: "Tricolor"}.get(_spoolColorCount(color))
+
+
 def _buildTigerTagPayload(spoolModel):
     # Same flat payload as every other format (firmware ignores keys it doesn't know,
     # see _buildFullSpoolPayload's own comment on that point) plus TigerTag's own
@@ -272,8 +310,17 @@ def _buildTigerTagPayload(spoolModel):
     # spool tracked by length only shows an empty measure back after a TigerTag write.
     from octoprint_SpoolManagerExtended.common.FilamentTagConstants import (
         tigerTagAspectLabelForFinish,
+        tigerTagColorCountForAspect,
         tigerTagIdForLabel,
     )
+
+    # A custom finish text such as "Rainbow" would name an aspect that states a colour
+    # count; on the tag that claims three colours the spool may not have. The count is
+    # the second aspect's job, taken from the actual colours, so such a finish is left
+    # off (the firmware then lists "finish" as not stored).
+    finishAspectLabel = tigerTagAspectLabelForFinish(spoolModel.finish)
+    if tigerTagColorCountForAspect(finishAspectLabel):
+        finishAspectLabel = None
 
     payload = _buildFullSpoolPayload(spoolModel)
     payload.update(
@@ -284,8 +331,13 @@ def _buildTigerTagPayload(spoolModel):
             "tigerTagBrandId": tigerTagIdForLabel("id_brand", spoolModel.vendor),
             # "glossy", "sparkle" and "glow" are spelled differently in TigerTag's
             # aspect table and were never written - see tigerTagAspectLabelForFinish.
-            "tigerTagAspectId": tigerTagIdForLabel(
-                "id_aspect", tigerTagAspectLabelForFinish(spoolModel.finish)
+            "tigerTagAspectId": tigerTagIdForLabel("id_aspect", finishAspectLabel),
+            # The second aspect states the colour count. Colours 2/3 have no presence
+            # flag on the tag, so without it a black second colour would read as none.
+            # "rainbow" has no colours of its own and goes as "Rainbow" over three black
+            # colour fields. None (one colour) leaves the byte at 0.
+            "tigerTagAspect2Id": tigerTagIdForLabel(
+                "id_aspect", _tigerTagColorModeLabel(spoolModel.color)
             ),
             # Always "Filament" (id 142 in TigerTag's id_type table): SpoolManager only
             # ever manages filament spools, never resin/accessories/spare parts, so there

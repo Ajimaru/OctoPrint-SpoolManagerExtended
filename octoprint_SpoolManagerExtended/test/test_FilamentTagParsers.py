@@ -1102,6 +1102,10 @@ def _tigerTagImage(
     typeId=0,
     available=0,
     message=b"",
+    aspect2=0,
+    color2=(0, 0, 0),
+    color3=(0, 0, 0),
+    tdRaw=0,
 ):
     """A synthetic TigerTag, built from the layout in TigerTag-SDK-Python's tag.py.
 
@@ -1113,6 +1117,7 @@ def _tigerTagImage(
     struct.pack_into(">I", body, 4, product)
     struct.pack_into(">H", body, 8, material)
     body[10] = aspect
+    body[11] = aspect2
     body[12] = typeId
     body[13] = diameter
     body[16], body[17], body[18], body[19] = rgba
@@ -1124,6 +1129,9 @@ def _tigerTagImage(
     struct.pack_into(">H", body, 26, nozzleMax)
     body[28], body[29] = dryTemp, dryTime
     body[30], body[31] = bedMin, bedMax
+    body[36:39] = bytes(color2)
+    body[40:43] = bytes(color3)
+    struct.pack_into(">H", body, 44, tdRaw)
     body[48 : 48 + len(message)] = message[:28]
     body[76] = (available >> 16) & 0xFF
     body[77] = (available >> 8) & 0xFF
@@ -1145,10 +1153,193 @@ FIRMWARE_TIGERTAG_FRAME = bytes.fromhex(
 )
 
 
+# Same origin as FIRMWARE_TIGERTAG_FRAME: three colours (#1E90FF, #FFD700, #800080),
+# "Tricolor" as the second aspect (24) and TD 3.25, stored x10 as 33.
+FIRMWARE_TIGERTAG_THREE_COLOR_FRAME = bytes.fromhex(
+    "04aabb9bccddeeff00480000e1103e00"
+    "5bf59264ffffffff954b68188e380034"
+    "1e90ffff0003e81500be00dc3704323c"
+    "00000000ffd700008000800000210000"
+    "00000000000000000000000000000000"
+    "00000000000000000000000000000000"
+)
+
+
+# Same origin: "transparent:#1E90FF;#FFD700" (alpha 128, Bicolor) and "rainbow"
+# (Rainbow as aspect 2 over three black colour fields).
+FIRMWARE_TIGERTAG_TRANSPARENT_FRAME = bytes.fromhex(
+    "04aabb9bccddeeff00480000e1103e00"
+    "5bf59264ffffffff954b68fc8e380034"
+    "1e90ff800003e81500be00dc3704323c"
+    "00000000ffd700000000000000000000"
+    "00000000000000000000000000000000"
+    "00000000000000000000000000000000"
+)
+FIRMWARE_TIGERTAG_RAINBOW_FRAME = bytes.fromhex(
+    "04aabb9bccddeeff00480000e1103e00"
+    "5bf59264ffffffff954b68918e380034"
+    "000000ff0003e81500be00dc3704323c"
+    "00000000000000000000000000000000"
+    "00000000000000000000000000000000"
+    "00000000000000000000000000000000"
+)
+
+
 class TestTigerTagParser(unittest.TestCase):
     def setUp(self):
         self.parser = FilamentTagParsers.TigerTagTagParser()
         self.scan = ntagScan()
+
+    def test_alpha_below_255_is_transparent(self):
+        filament = self.parser.parseTag(
+            self.scan, _tigerTagImage(rgba=(0xE7, 0x2F, 0x1D, 0x80))
+        )
+        self.assertTrue(filament.is_transparent)
+        fields = FilamentTagToSpool.genericFilamentToSpoolFields(filament)
+        self.assertEqual("transparent:#E72F1D", fields["color"])
+        clear = self.parser.parseTag(
+            self.scan, _tigerTagImage(rgba=(0xFF, 0xFF, 0xFF, 0x00))
+        )
+        self.assertTrue(clear.is_transparent)
+
+    def test_alpha_255_is_opaque(self):
+        filament = self.parser.parseTag(self.scan, _tigerTagImage())
+        self.assertFalse(filament.is_transparent)
+        self.assertFalse(filament.is_rainbow)
+
+    def test_rainbow_over_three_black_colours_is_spoolmanagers_rainbow(self):
+        filament = self.parser.parseTag(
+            self.scan, _tigerTagImage(rgba=(0, 0, 0, 0xFF), aspect2=145)
+        )
+        self.assertTrue(filament.is_rainbow)
+        self.assertEqual([], filament.colors)
+        fields = FilamentTagToSpool.genericFilamentToSpoolFields(filament)
+        self.assertEqual("rainbow", fields["color"])
+
+    def test_rainbow_stands_alone_without_transparency(self):
+        filament = self.parser.parseTag(
+            self.scan, _tigerTagImage(rgba=(0, 0, 0, 0x80), aspect=145)
+        )
+        self.assertTrue(filament.is_rainbow)
+        self.assertFalse(filament.is_transparent)
+
+    def test_a_rainbow_that_names_its_colours_keeps_them(self):
+        filament = self.parser.parseTag(
+            self.scan,
+            _tigerTagImage(rgba=(0, 0, 0, 0xFF), aspect2=145, color2=(0, 0xFF, 0)),
+        )
+        self.assertFalse(filament.is_rainbow)
+        self.assertEqual([0xFF000000, 0xFF00FF00, 0xFF000000], filament.colors)
+
+    def test_reads_transparent_and_rainbow_frames_written_by_the_firmware(self):
+        transparent = self.parser.parseTag(
+            self.scan, FIRMWARE_TIGERTAG_TRANSPARENT_FRAME
+        )
+        self.assertEqual(
+            "transparent:#1E90FF;#FFD700",
+            FilamentTagToSpool.genericFilamentToSpoolFields(transparent)["color"],
+        )
+        rainbow = self.parser.parseTag(self.scan, FIRMWARE_TIGERTAG_RAINBOW_FRAME)
+        self.assertEqual(
+            "rainbow",
+            FilamentTagToSpool.genericFilamentToSpoolFields(rainbow)["color"],
+        )
+
+    def test_reads_colours_two_and_three(self):
+        filament = self.parser.parseTag(
+            self.scan,
+            _tigerTagImage(color2=(0xFF, 0xD7, 0x00), color3=(0x80, 0x00, 0x80)),
+        )
+        self.assertEqual([0xFFE72F1D, 0xFFFFD700, 0xFF800080], filament.colors)
+
+    def test_a_black_second_colour_needs_the_colour_count_aspect(self):
+        # Colours 2/3 have no presence flag: black reads as "none" unless an aspect
+        # states the count.
+        withAspect = self.parser.parseTag(self.scan, _tigerTagImage(aspect2=252))
+        self.assertEqual([0xFFE72F1D, 0xFF000000], withAspect.colors)
+        # A colour count is not a finish, even though unknown aspects pass as free text.
+        self.assertIsNone(withAspect.finish)
+        withoutAspect = self.parser.parseTag(self.scan, _tigerTagImage())
+        self.assertEqual([0xFFE72F1D], withoutAspect.colors)
+
+    def test_rainbow_states_three_colours(self):
+        # color_count 3 in TigerTag-SDK-Python's database/id_aspect.json; colour 1 is
+        # set, so this is a named rainbow, not SpoolManager's colourless "rainbow".
+        filament = self.parser.parseTag(self.scan, _tigerTagImage(aspect2=145))
+        self.assertEqual([0xFFE72F1D, 0xFF000000, 0xFF000000], filament.colors)
+        self.assertFalse(filament.is_rainbow)
+        self.assertIsNone(filament.finish)
+
+    def test_aspect_two_is_asked_first_like_the_sdk(self):
+        filament = self.parser.parseTag(
+            self.scan, _tigerTagImage(aspect=24, aspect2=252)
+        )
+        self.assertEqual(2, len(filament.colors))
+
+    def test_a_single_colour_aspect_two_falls_back_to_aspect_one(self):
+        # 255 "None" in aspect 2, as on a real Elegoo tag.
+        filament = self.parser.parseTag(
+            self.scan, _tigerTagImage(aspect=252, aspect2=255)
+        )
+        self.assertEqual(2, len(filament.colors))
+
+    def test_a_black_third_colour_with_tricolor(self):
+        filament = self.parser.parseTag(
+            self.scan, _tigerTagImage(color2=(0xC0, 0xC0, 0xC0), aspect2=24)
+        )
+        self.assertEqual([0xFFE72F1D, 0xFFC0C0C0, 0xFF000000], filament.colors)
+
+    def test_a_third_colour_alone_makes_the_second_black(self):
+        filament = self.parser.parseTag(
+            self.scan, _tigerTagImage(color3=(0x40, 0x00, 0x00))
+        )
+        self.assertEqual([0xFFE72F1D, 0xFF000000, 0xFF400000], filament.colors)
+
+    def test_the_colour_count_may_be_the_first_aspect(self):
+        # Another writer may put "Bicolor" first; the finish then comes from aspect 2.
+        filament = self.parser.parseTag(
+            self.scan, _tigerTagImage(aspect=252, aspect2=92)
+        )
+        self.assertEqual(2, len(filament.colors))
+        self.assertEqual("silk", filament.finish)
+
+    def test_the_finish_stays_in_the_first_aspect(self):
+        filament = self.parser.parseTag(
+            self.scan,
+            _tigerTagImage(aspect=92, aspect2=252, color2=(0x10, 0x20, 0x30)),
+        )
+        self.assertEqual("silk", filament.finish)
+        self.assertEqual(2, len(filament.colors))
+
+    def test_reads_td(self):
+        cases = {33: 3.3, 1: 0.1, 1000: 100.0, 0: 0.0, 1001: 0.0}
+        for raw, expected in cases.items():
+            with self.subTest(tdRaw=raw):
+                filament = self.parser.parseTag(self.scan, _tigerTagImage(tdRaw=raw))
+                self.assertAlmostEqual(expected, filament.td)
+
+    def test_a_single_colour_keeps_its_product_id(self):
+        # unique_id now covers every colour; a single-colour tag must hash exactly as
+        # before, or the same product would get a second id.
+        filament = self.parser.parseTag(self.scan, _tigerTagImage())
+        self.assertEqual(
+            FilamentTagModel.GenericFilament.generate_unique_id(
+                "TigerTag", 0xFFFFFFFF, 18775, 0xFFE72F1D, 1000
+            ),
+            filament.unique_id,
+        )
+        twoColour = self.parser.parseTag(
+            self.scan, _tigerTagImage(color2=(0xFF, 0xD7, 0x00))
+        )
+        self.assertNotEqual(filament.unique_id, twoColour.unique_id)
+
+    def test_reads_a_three_colour_frame_written_by_the_octoscale_firmware(self):
+        filament = self.parser.parseTag(self.scan, FIRMWARE_TIGERTAG_THREE_COLOR_FRAME)
+        self.assertEqual([0xFF1E90FF, 0xFFFFD700, 0xFF800080], filament.colors)
+        self.assertAlmostEqual(3.3, filament.td)
+        fields = FilamentTagToSpool.genericFilamentToSpoolFields(filament)
+        self.assertEqual("#1E90FF;#FFD700;#800080", fields["color"])
+        self.assertAlmostEqual(3.3, fields["td"])
 
     def test_reads_the_remaining_amount(self):
         filament = self.parser.parseTag(self.scan, _tigerTagImage(available=777))

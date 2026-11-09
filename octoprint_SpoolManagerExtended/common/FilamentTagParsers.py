@@ -777,6 +777,45 @@ def _decodeTigerTagMessage(raw):
     return text.strip() or None
 
 
+def _tigerTagColors(body, aspectLabels, argb):
+    """(colours, isRainbow) of a TigerTag: 0xAARRGGBB ints, colour 1 with its alpha.
+
+    See TigerTagTagParser: a colour counts when it is non-zero or when an aspect states
+    the count, so a black colour 2/3 survives when the writer said "Bicolor"/"Tricolor"/
+    "Rainbow". aspectLabels is [aspect 1, aspect 2]; like the SDK, aspect 2 is asked
+    first and aspect 1 only when aspect 2 states no count. A Rainbow aspect with all
+    three colours black is SpoolManager's "rainbow", which has no colours of its own;
+    a Rainbow tag that names its colours keeps them.
+    """
+    first = bytes(body[16:19])
+    second = bytes(body[36:39])
+    third = bytes(body[40:43])
+    modeLabel = next(
+        (
+            label
+            for label in reversed(aspectLabels)
+            if Constants.tigerTagColorCountForAspect(label)
+        ),
+        None,
+    )
+    if (
+        isinstance(modeLabel, str)
+        and modeLabel.strip().casefold() == "rainbow"
+        and not any(first + second + third)
+    ):
+        return [], True
+    stated = Constants.tigerTagColorCountForAspect(modeLabel) or 1
+    count = 1
+    if any(third) or stated == 3:
+        count = 3
+    elif any(second) or stated == 2:
+        count = 2
+    colors = [argb]
+    for rgb in (second, third)[: count - 1]:
+        colors.append(0xFF000000 | (rgb[0] << 16) | (rgb[1] << 8) | rgb[2])
+    return colors, False
+
+
 class TigerTagTagParser(object):
     """TigerTag's raw page layout (no NDEF).
 
@@ -795,7 +834,13 @@ class TigerTagTagParser(object):
     Unlike every other vendor format here, TigerTag keeps a remaining amount
     (measure_available, +76, "updated by Tiger Scale" in the SDK) next to the nominal one,
     and a free-text message (+48). OctoScale writes the spool's remaining weight and
-    display name there. Colours 2/3 (+36, +40) and TD (+44) are not read.
+    display name there.
+
+    Colours 2/3 (+36, +40, RGB) have no presence flag. A non-zero value counts, and so
+    does an aspect that states the colour count ("Bicolor", "Tricolor", "Rainbow") - TagFormats
+    writes it as the second aspect, because without it a black second colour reads as
+    none. TD (+44) is stored x10, 1-1000 valid, 0 undefined. Colour 1's alpha below 255
+    reads as transparent; a Rainbow aspect over three black colours as "rainbow".
     """
 
     id = "tigerTag"
@@ -861,6 +906,17 @@ class TigerTagTagParser(object):
             (red << 16) | (green << 8) | blue
         )
 
+        aspectLabels = [
+            Constants.tigerTagLabel("id_aspect", Binary.extract_byte(body, offset))
+            for offset in (10, 11)
+        ]
+        colors, isRainbow = _tigerTagColors(body, aspectLabels, argb)
+        # Colour 1's alpha: below 255 is SpoolManager's "transparent:" (OctoScale writes
+        # 128, the SDK's default is 255). Not with "rainbow", which stands alone.
+        isTransparent = not isRainbow and alpha is not None and alpha < 0xFF
+        tdRaw = Binary.extract_uint16_be(body, 44)
+        td = tdRaw / 10.0 if tdRaw and 1 <= tdRaw <= 1000 else 0.0
+
         measure = Binary.extract_uint24_be(body, 20)
         unitId = Binary.extract_byte(body, 23)
         weightGrams = Constants.tigerTagWeightGrams(measure, unitId)
@@ -901,9 +957,21 @@ class TigerTagTagParser(object):
 
         # The aspect is the spool's finish - TagFormats writes the finish into it. As a
         # modifier it came back as materialCharacteristic ("Matt Filament"), and an empty
-        # aspect ("-") as a characteristic of its own.
-        finish = Constants.tigerTagFinishForAspect(
-            Constants.tigerTagLabel("id_aspect", Binary.extract_byte(body, 10))
+        # aspect ("-") as a characteristic of its own. TagFormats uses the first aspect
+        # for the finish and the second for the colour count; another writer may have
+        # swapped them, so whichever of the two names a finish is taken - never a colour
+        # count, which tigerTagFinishForAspect would otherwise pass on as free text.
+        finish = next(
+            (
+                found
+                for found in (
+                    Constants.tigerTagFinishForAspect(label)
+                    for label in aspectLabels
+                    if Constants.tigerTagColorCountForAspect(label) is None
+                )
+                if found
+            ),
+            None,
         )
         # Every tag this plugin writes says "Filament"; only another type tells anything.
         modifiers = []
@@ -914,12 +982,12 @@ class TigerTagTagParser(object):
         return GenericFilament(
             source_processor=self.id,
             unique_id=GenericFilament.generate_unique_id(
-                "TigerTag", productId, materialId, argb, measure
+                "TigerTag", productId, materialId, *colors, measure
             ),
             manufacturer=brandName or "TigerTag",
             type=typeName or ("Unknown(%s)" % materialId),
             modifiers=modifiers,
-            colors=[argb],
+            colors=colors,
             diameter_mm=diameterMm,
             weight_grams=weightGrams,
             hotend_min_temp_c=nozzleMin,
@@ -930,9 +998,12 @@ class TigerTagTagParser(object):
             drying_temp_c=dryTemp if dryTemp is not None else 0,
             drying_time_hours=dryTime if dryTime is not None else 0,
             manufacturing_date=Constants.NO_MANUFACTURING_DATE,
+            td=td,
             finish=finish,
             remaining_weight_grams=remainingGrams,
             display_name=displayName,
+            is_transparent=isTransparent,
+            is_rainbow=isRainbow,
         )
 
 

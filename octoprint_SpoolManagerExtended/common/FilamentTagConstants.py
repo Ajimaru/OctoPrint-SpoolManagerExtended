@@ -358,6 +358,19 @@ _TIGERTAG_ASPECT_TO_FINISH = {
 _TIGERTAG_NO_ASPECT = ("-", "none")
 
 
+# Aspects whose color_count in TigerTag-SDK-Python's database/id_aspect.json is above 1:
+# they say how many of the three colour fields are in use, not how the filament looks.
+# The SDK checks aspect 2 first, then aspect 1.
+_TIGERTAG_COLOR_COUNT_ASPECTS = {"bicolor": 2, "tricolor": 3, "rainbow": 3}
+
+
+def tigerTagColorCountForAspect(aspectLabel):
+    """Colour count a TigerTag aspect states (2 or 3), or None for any other aspect."""
+    if not isinstance(aspectLabel, str):
+        return None
+    return _TIGERTAG_COLOR_COUNT_ASPECTS.get(aspectLabel.strip().casefold())
+
+
 def tigerTagAspectLabelForFinish(finish):
     """Aspect label to look up for a spool's finish: TigerTag's spelling where it
     differs, otherwise the finish itself (a custom finish text included)."""
