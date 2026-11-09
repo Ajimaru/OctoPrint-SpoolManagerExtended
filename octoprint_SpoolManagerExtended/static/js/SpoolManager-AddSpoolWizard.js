@@ -955,8 +955,9 @@ function SpoolManagerAddSpoolWizard() {
 
         self._syncFilamentWeight();
 
-        // A vendor tag carries no display name, but the mandatory-name step is right after
-        // this one - so offer something sensible instead of an empty field.
+        // Most vendor tags carry no display name (a TigerTag's message was applied above),
+        // but the mandatory-name step is right after this one - so offer something
+        // sensible instead of an empty field.
         if (
             typeof self.spoolItemForCreation.displayName === "function" &&
             (self.spoolItemForCreation.displayName() || "").trim() === ""

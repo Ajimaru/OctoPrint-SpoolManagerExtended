@@ -17,8 +17,8 @@
 #    with the SAK lookup kept as a fallback. Upstream's `match` statement is Python 3.10+,
 #    this plugin targets 3.9.
 #  - VALID_BASE_MATERIALS also lists PEBA and TPE (Snapmaker main types 22 and 23).
-#  - GenericFilament has an optional finish (TigerTag's aspect, see
-#    FilamentTagParsers.TigerTagTagParser).
+#  - GenericFilament has an optional finish, remaining weight and display name (TigerTag's
+#    aspect, measure_available and custom message, see FilamentTagParsers.TigerTagTagParser).
 
 from __future__ import annotations
 
@@ -213,6 +213,8 @@ class GenericFilament(object):
         bed_min_temp_c=None,  # optional: only a few tag formats carry a bed range
         bed_max_temp_c=None,  # (TigerTag and OpenSpool, see FilamentTagParsers)
         finish=None,  # optional: a spool finish key (TigerTag's aspect), not a modifier
+        remaining_weight_grams=None,  # optional: an amount the tag itself keeps (TigerTag)
+        display_name=None,  # optional: a name the tag carries (TigerTag's message)
     ):
         self.source_processor = source_processor
         self.unique_id = unique_id
@@ -234,6 +236,10 @@ class GenericFilament(object):
         self.bed_min_temp_c = bed_min_temp_c
         self.bed_max_temp_c = bed_max_temp_c
         self.finish = finish
+        # None = the tag keeps no remaining amount. Only a format that stores one sets it;
+        # it is never derived from weight_grams, the nominal amount.
+        self.remaining_weight_grams = remaining_weight_grams
+        self.display_name = display_name
 
         # Upstream folds these two into the type name; a "PLA" with a "CF" modifier is
         # really "PLA-CF" and that is how the material lists spell it.

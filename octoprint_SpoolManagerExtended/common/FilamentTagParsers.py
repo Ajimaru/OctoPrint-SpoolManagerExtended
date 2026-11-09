@@ -757,6 +757,26 @@ class KeyedClassicTagParser(object):
         raise NotImplementedError
 
 
+def _decodeTigerTagMessage(raw):
+    """TigerTag's custom message (+48, 28 bytes, UTF-8, zero padded) as text, or None.
+
+    The SDK's to_bytes() cuts the encoded text at byte 28 without regard to character
+    boundaries, so a tag it wrote can end in part of a character. That partial tail is
+    dropped; any other invalid byte is replaced, not guessed at.
+    """
+    raw = bytes(raw).rstrip(b"\x00")
+    if not raw:
+        return None
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as error:
+        if error.reason == "unexpected end of data":
+            text = raw[: error.start].decode("utf-8", errors="replace")
+        else:
+            text = raw.decode("utf-8", errors="replace")
+    return text.strip() or None
+
+
 class TigerTagTagParser(object):
     """TigerTag's raw page layout (no NDEF).
 
@@ -771,6 +791,11 @@ class TigerTagTagParser(object):
         reader returns has to be advanced by 16 bytes first,
       - the weight is a bare number whose unit lives in a separate id field: reading it as
         grams is wrong by a factor of 1000 whenever the tag says kilograms.
+
+    Unlike every other vendor format here, TigerTag keeps a remaining amount
+    (measure_available, +76, "updated by Tiger Scale" in the SDK) next to the nominal one,
+    and a free-text message (+48). OctoScale writes the spool's remaining weight and
+    display name there. Colours 2/3 (+36, +40) and TD (+44) are not read.
     """
 
     id = "tigerTag"
@@ -840,6 +865,15 @@ class TigerTagTagParser(object):
         unitId = Binary.extract_byte(body, 23)
         weightGrams = Constants.tigerTagWeightGrams(measure, unitId)
 
+        # 0 is "not set": the SDK's blank template carries 0, and so does every tag written
+        # by OctoScale firmware before it filled this field. A value above the nominal
+        # amount is one the SDK refuses to write (_check_available), so it is not taken.
+        available = Binary.extract_uint24_be(body, 76)
+        remainingGrams = None
+        if available and (not measure or available <= measure):
+            remainingGrams = Constants.tigerTagWeightGrams(available, unitId)
+        displayName = _decodeTigerTagMessage(body[48:76])
+
         nozzleMin = Binary.extract_uint16_be(body, 24)
         nozzleMax = Binary.extract_uint16_be(body, 26)
         dryTemp = Binary.extract_byte(body, 28)
@@ -897,6 +931,8 @@ class TigerTagTagParser(object):
             drying_time_hours=dryTime if dryTime is not None else 0,
             manufacturing_date=Constants.NO_MANUFACTURING_DATE,
             finish=finish,
+            remaining_weight_grams=remainingGrams,
+            display_name=displayName,
         )
 
 

@@ -110,10 +110,53 @@ class TestFieldMapping(unittest.TestCase):
         fields = FilamentTagToSpool.genericFilamentToSpoolFields(filament())
         self.assertNotIn("colorName", fields)
 
-    def test_remaining_weight_is_never_set(self):
-        # A tag states the nominal amount, it knows nothing about consumption.
+    def test_remaining_weight_is_never_derived_from_the_nominal_amount(self):
+        # Most tags state the nominal amount and know nothing about consumption.
         fields = FilamentTagToSpool.genericFilamentToSpoolFields(filament())
         self.assertNotIn("remainingWeight", fields)
+        self.assertNotIn("usedWeight", fields)
+
+    def test_a_remaining_amount_on_the_tag_goes_in_through_used_weight(self):
+        # saveSpool() derives remainingWeight from totalWeight - usedWeight, so the
+        # remaining amount alone would be thrown away on save.
+        fields = FilamentTagToSpool.genericFilamentToSpoolFields(
+            filament(weight_grams=1000, remaining_weight_grams=777)
+        )
+        self.assertEqual(1000, fields["totalWeight"])
+        self.assertEqual(223, fields["usedWeight"])
+        self.assertEqual(777, fields["remainingWeight"])
+
+    def test_a_full_spool_maps_to_zero_used(self):
+        fields = FilamentTagToSpool.genericFilamentToSpoolFields(
+            filament(weight_grams=1000, remaining_weight_grams=1000)
+        )
+        self.assertEqual(0, fields["usedWeight"])
+        self.assertEqual(1000, fields["remainingWeight"])
+
+    def test_a_remaining_amount_without_a_usable_total_is_dropped(self):
+        for overrides in (
+            {"weight_grams": 0, "remaining_weight_grams": 500},
+            {"weight_grams": 1000, "remaining_weight_grams": 1200},
+            {"weight_grams": 1000, "remaining_weight_grams": -1},
+        ):
+            with self.subTest(**overrides):
+                fields = FilamentTagToSpool.genericFilamentToSpoolFields(
+                    filament(**overrides)
+                )
+                self.assertNotIn("usedWeight", fields)
+                self.assertNotIn("remainingWeight", fields)
+
+    def test_display_name_is_mapped_when_the_tag_has_one(self):
+        fields = FilamentTagToSpool.genericFilamentToSpoolFields(
+            filament(display_name="tigertag_test")
+        )
+        self.assertEqual("tigertag_test", fields["displayName"])
+        for empty in (None, ""):
+            with self.subTest(display_name=empty):
+                fields = FilamentTagToSpool.genericFilamentToSpoolFields(
+                    filament(display_name=empty)
+                )
+                self.assertNotIn("displayName", fields)
 
     def test_temperature_prefers_max_then_min(self):
         fields = FilamentTagToSpool.genericFilamentToSpoolFields(filament())

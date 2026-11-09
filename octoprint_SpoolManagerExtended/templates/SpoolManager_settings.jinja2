@@ -1010,14 +1010,14 @@ FPE;	2.16
                                     <td>{{ _('NTAG215 / NTAG216') }}</td>
                                     <td>{{ _('everything') }}</td>
                                     <td>{{ _('everything') }}</td>
-                                    <td>{{ _('material, brand, aspect, diameter, color, weight, temperatures - no database id') }}</td>
+                                    <td>{{ _('material, brand, aspect, diameter, color, weight, remaining weight, name, temperatures - no database id') }}</td>
                                     <td>{{ _('not supported') }}</td>
                                 </tr>
                                 <tr>
                                     <td>{{ _('NTAG213') }}</td>
                                     <td>{{ _('write fails (tag too small)') }}</td>
                                     <td>{{ _('first color only, no temperatures, no diameter') }}</td>
-                                    <td>{{ _('material, brand, aspect, diameter, color, weight, temperatures - no database id') }}</td>
+                                    <td>{{ _('material, brand, aspect, diameter, color, weight, remaining weight, name, temperatures - no database id') }}</td>
                                     <td>{{ _('not supported') }}</td>
                                 </tr>
                                 <tr>
@@ -1038,7 +1038,7 @@ FPE;	2.16
                         </table>
                         <span class="help-block">
                             <small>
-                                {{ _('"Everything" means every field that format defines - OpenSpool has no field for color name, density or spool/used weight, so those are never written whatever the tag size. On small NFC-V tags, prefer Extended. Extended supports 1-3 colors plus transparent/rainbow, OpenSpool 1-3 opaque colors (older OctoScale firmware writes only the first); TigerTag and OpenPrintTag always store a single opaque color.') }}
+                                {{ _('"Everything" means every field that format defines - OpenSpool has no field for color name, density or spool/used weight, so those are never written whatever the tag size. On small NFC-V tags, prefer Extended. Extended supports 1-3 colors plus transparent/rainbow, OpenSpool 1-3 opaque colors (older OctoScale firmware writes only the first); TigerTag and OpenPrintTag always store a single opaque color. TigerTag keeps up to 28 bytes of the display name; remaining weight and name need newer OctoScale firmware, older firmware leaves both empty.') }}
                             </small>
                         </span>
                         <a href="#" data-bind="click: function () { nfcFormatFieldsExpanded(!nfcFormatFieldsExpanded()); return false; }" style="font-size: 12px;">
@@ -1131,15 +1131,17 @@ FPE;	2.16
                                     <strong style="font-size: 12px;">{{ _('TigerTag') }}</strong><br>
                                     <small class="muted">{{ _('Raw page layout, NTAG213/215/216, open spec (unsigned/Standard only)') }}</small>
                                     <ul style="padding-left: 16px; margin: 6px 0 0; font-size: 12px;">
-                                        <li>{{ _('Material, brand, aspect, diameter, weight unit (TigerTag\'s own numeric ids)') }}</li>
+                                        <li>{{ _('Material, brand, aspect (from the finish), diameter, weight unit (TigerTag\'s own numeric ids)') }}</li>
                                         <li>{{ _('Color (RGB)') }}</li>
                                         <li>{{ _('Total weight') }}</li>
+                                        <li>{{ _('Remaining weight - updated when the spool is weighed on the OctoScale with its tag on the reader (newer firmware)') }}</li>
+                                        <li>{{ _('Display name, up to 28 bytes (newer firmware)') }}</li>
                                         <li>{{ _('Nozzle temp (min/max)') }}</li>
                                         <li>{{ _('Bed temp (min/max)') }}</li>
                                         <li>{{ _('Drying temp / time') }}</li>
                                         <li class="muted">{{ _('Database ID - not written') }}</li>
                                         <li class="muted">{{ _('Color name, density, used weight - not written') }}</li>
-                                        <li class="muted">{{ _('Serial, batch number, purchase info, finish, display name, dates, TD - not written') }}</li>
+                                        <li class="muted">{{ _('Serial, batch number, purchase info, dates, TD - not written') }}</li>
                                     </ul>
                                     <small class="help-block" style="margin-top: 4px; border-left: 2px solid #ddd; padding-left: 8px;">
                                         {{ _('No database id field, same as OpenPrintTag - matched back to a spool by the tag\'s own UID. A field whose value cannot be matched to a TigerTag id (e.g. an unlisted vendor) is left off the tag rather than guessed. Total weight and total length share one slot on the tag - weight wins if both are set.') }}
@@ -1178,7 +1180,7 @@ FPE;	2.16
                             <small>
                                 <strong>{{ _('Extended') }}</strong> {{ _('writes every field OctoScale knows, including 1-3 colors plus transparent/rainbow, but needs NTAG215/216 - on NTAG213 the write fails outright rather than falling back.') }}<br>
                                 <strong>{{ _('OpenSpool') }}</strong> {{ _('writes a standard NDEF/JSON record readable by generic phone NFC apps. 1-3 opaque colors (older OctoScale firmware writes only the first; an NTAG213 keeps only the first).') }}<br>
-                                <strong>{{ _('TigerTag') }}</strong> {{ _('writes TigerTag Standard (unsigned, open spec) - material, brand, aspect, diameter and weight unit as TigerTag\'s own ids, plus a single color, weight, and nozzle/bed temperature range. No database id (matched back to a spool by the tag\'s own UID, like OpenPrintTag). TigerTag+ (signed) is not supported.') }}
+                                <strong>{{ _('TigerTag') }}</strong> {{ _('writes TigerTag Standard (unsigned, open spec) - material, brand, aspect, diameter and weight unit as TigerTag\'s own ids, plus a single color, weight, and nozzle/bed temperature range; newer OctoScale firmware also writes the remaining weight and the display name (up to 28 bytes). No database id (matched back to a spool by the tag\'s own UID, like OpenPrintTag). TigerTag+ (signed) is not supported.') }}
                             </small>
                         </span>
                     </div>
@@ -1301,16 +1303,17 @@ FPE;	2.16
                                         <li>{{ _('Nozzle temp (min/max)') }}</li>
                                         <li>{{ _('Bed temp (min/max)') }}</li>
                                         <li>{{ _('Drying temp / time - Snapmaker, TigerTag, Bambu') }}</li>
+                                        <li>{{ _('Remaining weight, display name - TigerTag only, if set on the tag. The remaining weight is offered when reading into an existing spool; a new spool starts from its weighed or nominal amount.') }}</li>
                                     </ul>
                                 </div>
                                 <div class="span6">
                                     <strong style="font-size: 12px;">{{ _('Not on any vendor tag') }}</strong>
                                     <ul style="padding-left: 16px; margin: 6px 0 0; font-size: 12px;">
                                         <li class="muted">{{ _('Empty spool weight - needed for the scale, comes from a template') }}</li>
-                                        <li class="muted">{{ _('Remaining filament - a tag says nothing about use') }}</li>
-                                        <li class="muted">{{ _('Display name - suggested from vendor + material') }}</li>
+                                        <li class="muted">{{ _('Remaining filament - except on TigerTag, a tag says nothing about use') }}</li>
+                                        <li class="muted">{{ _('Display name - except on TigerTag, suggested from vendor + material') }}</li>
                                         <li class="muted">{{ _('Density - looked up from the material name') }}</li>
-                                        <li class="muted">{{ _('TD - no vendor format stores it') }}</li>
+                                        <li class="muted">{{ _('TD - not read from vendor tags') }}</li>
                                         <li class="muted">{{ _('Cost, purchase date, batch number') }}</li>
                                     </ul>
                                 </div>
