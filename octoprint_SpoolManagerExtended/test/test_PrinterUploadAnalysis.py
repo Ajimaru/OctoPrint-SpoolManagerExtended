@@ -144,6 +144,53 @@ class TestPrinterUploadAnalysis(unittest.TestCase):
         self._assertSampleUsage(self.analysis.filamentFor("ROCKET~1.GCO"))
         self.assertEqual(set(self._copiesLeft()), copiesBefore)
 
+    def test_theAnalysisIsPendingFromTheUploadUntilItsResultIsStored(self):
+        held = []
+        self.analysis = PrinterUploadAnalysis(
+            logging.getLogger("test.printeruploadanalysis"),
+            self.dataFolder,
+            runInBackground=lambda target, *args: held.append((target, args)),
+        )
+        self.assertFalse(self.analysis.isAnalysisPending("rocket~1.gco"))
+
+        # the copy is taken before the transfer starts, FILE_ADDED comes after it
+        self._upload("rocket.gcode")
+        # ...and the printer lists the file under its own name
+        self.assertTrue(self.analysis.isAnalysisPending("ROCKET~1.GCO"))
+
+        self.analysis.onFileAdded("printer", "rocket~1.gco")
+        self.assertTrue(self.analysis.isAnalysisPending("ROCKET~1.GCO"))
+        self.assertIsNone(self.analysis.filamentFor("ROCKET~1.GCO"))
+
+        target, args = held.pop()
+        target(*args)
+        self.assertFalse(self.analysis.isAnalysisPending("ROCKET~1.GCO"))
+        self._assertSampleUsage(self.analysis.filamentFor("ROCKET~1.GCO"))
+
+    def test_aCopyForLocalStorageIsPendingOnlyUntilItsFileAdded(self):
+        self._upload("Rocket.gcode")
+        self.assertTrue(self.analysis.isAnalysisPending("other~1.gco"))
+
+        self.analysis.onFileAdded("local", "Rocket.gcode")
+
+        self.assertFalse(self.analysis.isAnalysisPending("other~1.gco"))
+
+    def test_aCopyWhoseFileAddedNeverCameIsNotPendingForever(self):
+        self._upload("rocket.gcode")
+        self.analysis._pending["rocket.gcode"]["startedAt"] -= (
+            PrinterUploadAnalysis.PENDING_TIMEOUT_SECONDS + 1
+        )
+
+        self.assertFalse(self.analysis.isAnalysisPending("rocket~1.gco"))
+        self.assertEqual({}, self.analysis._pending)
+
+    def test_anAnalysisThatFailsIsNotPendingForever(self):
+        self._upload("rocket~1.gco")
+        with mock.patch.object(self.analysis, "analyse", side_effect=ValueError()):
+            self.analysis.onFileAdded("printer", "rocket~1.gco")
+        self.assertFalse(self.analysis.isAnalysisPending("rocket~1.gco"))
+        self.assertIsNone(self.analysis.filamentFor("rocket~1.gco"))
+
     def test_fileKeptUnderAnotherNameIsFound(self):
         self._upload("rocket~1.gco")
 
@@ -502,6 +549,67 @@ class TestTransferFailedEvent(unittest.TestCase):
         )
 
         self.assertEqual(["ROCKET~1.GCO"], recorded)
+
+
+class MetaDataReadingPlugin(object):
+    """_readingFilamentMetaData() on a job whose metadata lookup comes back empty."""
+
+    _readingFilamentMetaData = SpoolmanagerPlugin._readingFilamentMetaData
+    _uploadAnalysisStillRunning = SpoolmanagerPlugin._uploadAnalysisStillRunning
+
+    def __init__(self, origin, pending):
+        # one answer per isAnalysisPending() call, or the same for all
+        answers = list(pending) if isinstance(pending, list) else [pending, pending]
+        self._logger = logging.getLogger("test.readingfilamentmetadata")
+        self._printer = types.SimpleNamespace(current_job=None)
+        self._printerUploadAnalysis = types.SimpleNamespace(
+            isAnalysisPending=lambda path: answers.pop(0)
+        )
+        self._origin = origin
+        self.metaDataFilamentLengths = None
+        self._unslicedJobFile = None
+
+    def _getCurrentJobFileLocation(self):
+        return self._origin, "ROCKET~1.GCO"
+
+    def _getFilamentMetaData(self, origin, path, plate=1):
+        return None
+
+
+class TestMetaDataMissingWhileTheUploadIsAnalysed(unittest.TestCase):
+    # Seen on every SD transfer: OctoPrint selects the file as the job when the transfer
+    # starts, before FILE_ADDED, and the selection checks warned four times about missing
+    # metadata that the analysis delivered 0.2 s later.
+
+    def _levels(self, plugin):
+        with self.assertLogs(plugin._logger, level="DEBUG") as logged:
+            self.assertFalse(plugin._readingFilamentMetaData())
+        self.assertEqual([], plugin.metaDataFilamentLengths)
+        return [record.levelname for record in logged.records]
+
+    def test_aRunningAnalysisIsNoWarning(self):
+        self.assertEqual(
+            ["DEBUG"], self._levels(MetaDataReadingPlugin("printer", True))
+        )
+
+    def test_anAnalysisLandingDuringTheLookupIsNoWarningEither(self):
+        # seen live: the lookup started before the result was stored, and by the time
+        # the lookup came back empty the analysis was no longer pending
+        self.assertEqual(
+            ["DEBUG"], self._levels(MetaDataReadingPlugin("printer", [True, False]))
+        )
+
+    def test_aFileWithoutAnyAnalysisStillWarns(self):
+        self.assertEqual(
+            ["WARNING"], self._levels(MetaDataReadingPlugin("printer", False))
+        )
+
+    def test_aLocalFileIsNotMistakenForAnUpload(self):
+        # the analysis store is keyed by the name on the printer; a local job of the same
+        # name has its own metadata and gets the warning when that is missing
+        self.assertEqual(
+            ["WARNING"], self._levels(MetaDataReadingPlugin("local", True))
+        )
 
 
 if __name__ == "__main__":

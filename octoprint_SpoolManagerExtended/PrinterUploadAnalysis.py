@@ -71,6 +71,11 @@ class PrinterUploadAnalysis(object):
     every line it streams to an SD card (serial_comm's process_gcode_line), so the file
     there is smaller than the upload. A new upload under the same name replaces the entry,
     deleting the file removes it, and so does a transfer that fails (onTransferFailed).
+
+    The transfer is also the moment OctoPrint selects the file as the job - before it
+    fires FILE_ADDED - so the plugin asks for the usage while the copy still waits or is
+    in the odometer; isAnalysisPending() tells those callers apart from a file that
+    really has no analysis.
     """
 
     STORE_FILE_NAME = "printerUploadFilament.json"
@@ -94,6 +99,8 @@ class PrinterUploadAnalysis(object):
         # file on the printer (lower case) -> time its transfer failed, for an analysis
         # that is still running when the failure arrives (see onTransferFailed)
         self._failedTransfers = {}
+        # files on the printer (lower case) whose copy is in the odometer right now
+        self._analysing = set()
 
     ############################################################################ upload side
 
@@ -165,6 +172,8 @@ class PrinterUploadAnalysis(object):
             self._removeCopy(entry)
             return
 
+        with self._lock:
+            self._analysing.add(path.lower())
         self._runInBackground(self._analyseAndStore, path, entry)
 
     def onTransferFailed(self, path):
@@ -212,6 +221,24 @@ class PrinterUploadAnalysis(object):
             return None
         return copy.deepcopy(entry["filament"])
 
+    def isAnalysisPending(self, path):
+        """
+        Whether the usage of a file on the printer is still on its way: its copy waits
+        for FILE_ADDED or is in the odometer. filamentFor() knows nothing yet, but will
+        once this is False.
+        """
+        if path is None:
+            return False
+        self._dropStalePending()
+        with self._lock:
+            if path.lower() in self._analysing:
+                return True
+            # a copy waits under the upload's name, which the printer may list
+            # differently (see onFileAdded) - so any copy counts, for the transfer that
+            # runs right now. One taken for local storage is gone with its FILE_ADDED,
+            # moments later.
+            return len(self._pending) > 0
+
     ############################################################################ analysis
 
     def analyse(self, gcodePath):
@@ -231,6 +258,15 @@ class PrinterUploadAnalysis(object):
         return filament
 
     def _analyseAndStore(self, path, entry):
+        try:
+            self._analyseCopyAndStore(path, entry)
+        finally:
+            # cleared only after the result is in the store, so that
+            # isAnalysisPending() going False means filamentFor() has it
+            with self._lock:
+                self._analysing.discard(path.lower())
+
+    def _analyseCopyAndStore(self, path, entry):
         try:
             filament = self.analyse(entry["copyPath"])
         except Exception:
