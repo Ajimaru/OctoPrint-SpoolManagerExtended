@@ -570,6 +570,8 @@ class MetaDataReadingPlugin(object):
         self._unslicedJobFile = None
 
     def _getCurrentJobFileLocation(self):
+        if self._origin is None:
+            return None, None
         return self._origin, "ROCKET~1.GCO"
 
     def _getFilamentMetaData(self, origin, path, plate=1):
@@ -603,6 +605,11 @@ class TestMetaDataMissingWhileTheUploadIsAnalysed(unittest.TestCase):
         self.assertEqual(
             ["WARNING"], self._levels(MetaDataReadingPlugin("printer", False))
         )
+
+    def test_noSelectedJobIsNoWarning(self):
+        # the idle state: UPDATED_FILES and FILE_DESELECTED arrive with no job, around
+        # every SD transfer among others
+        self.assertEqual(["DEBUG"], self._levels(MetaDataReadingPlugin(None, False)))
 
     def test_aLocalFileIsNotMistakenForAnUpload(self):
         # the analysis store is keyed by the name on the printer; a local job of the same

@@ -1596,8 +1596,10 @@ class SpoolmanagerPlugin(
 
         origin, path = self._getCurrentJobFileLocation()
         if origin is None or path is None:
-            self._logger.warning(
-                "calculating filament aborted because no current job file could be determined"
+            # the usual idle state, not a fault: the file list changed or a job was
+            # deselected while nothing is selected (every SD transfer does both)
+            self._logger.debug(
+                "no job selected, nothing to read the filament usage from"
             )
             return False
 
