@@ -16,9 +16,12 @@ import os
 import shutil
 import tempfile
 import threading
+import time
+import types
 import unittest
 from unittest import mock
 
+from octoprint.events import Events
 from octoprint.filemanager.storage.common import StorageCapabilities
 from octoprint.filemanager.util import DiskFileWrapper, StreamWrapper
 
@@ -207,6 +210,58 @@ class TestPrinterUploadAnalysis(unittest.TestCase):
         self.analysis.onFileAdded("printer", "rocket~1.gco")
 
         self.assertIsNone(self.analysis.filamentFor("rocket~1.gco"))
+
+    def test_failedTransferDropsTheResult(self):
+        # OctoPrint fires FILE_ADDED when the transfer to the printer starts, so the
+        # result is stored before anyone knows whether the file arrives
+        self._upload("rocket~1.gco")
+        self.analysis.onFileAdded("printer", "rocket~1.gco")
+        self._assertSampleUsage(self.analysis.filamentFor("rocket~1.gco"))
+
+        self.analysis.onTransferFailed("ROCKET~1.GCO")
+
+        self.assertIsNone(self.analysis.filamentFor("rocket~1.gco"))
+        self.assertIsNone(self._analysis().filamentFor("rocket~1.gco"))
+
+    def test_transferFailingWhileTheCopyIsAnalysedKeepsNothing(self):
+        queued = []
+        self.analysis._runInBackground = lambda target, *args: queued.append(
+            (target, args)
+        )
+        self._upload("rocket~1.gco")
+        self.analysis.onFileAdded("printer", "rocket~1.gco")
+
+        self.analysis.onTransferFailed("rocket~1.gco")
+        for target, args in queued:
+            target(*args)
+
+        self.assertIsNone(self.analysis.filamentFor("rocket~1.gco"))
+
+    def test_anEarlierFailedTransferDoesNotBlockTheNextUpload(self):
+        with mock.patch.object(time, "time", return_value=time.time() - 5):
+            self.analysis.onTransferFailed("rocket~1.gco")
+
+        self._upload("rocket~1.gco")
+        self.analysis.onFileAdded("printer", "rocket~1.gco")
+
+        self._assertSampleUsage(self.analysis.filamentFor("rocket~1.gco"))
+
+    def test_staleFailureMarkersAreForgotten(self):
+        longAgo = time.time() - 2 * PrinterUploadAnalysis.PENDING_TIMEOUT_SECONDS
+        with mock.patch.object(time, "time", return_value=longAgo):
+            self.analysis.onTransferFailed("old~1.gco")
+
+        self.analysis._dropStalePending()
+
+        self.assertEqual({}, self.analysis._failedTransfers)
+
+    def test_failedTransferWithoutAPathIsIgnored(self):
+        self._upload("rocket~1.gco")
+        self.analysis.onFileAdded("printer", "rocket~1.gco")
+
+        self.analysis.onTransferFailed(None)
+
+        self._assertSampleUsage(self.analysis.filamentFor("rocket~1.gco"))
 
     def test_resultIsACopy(self):
         self._upload("rocket~1.gco")
@@ -429,6 +484,24 @@ class TestConcurrentPrinterFileReads(unittest.TestCase):
 
         self.assertEqual(connection.downloads, ["job.gcode"])
         self.assertEqual(results, [{"tool3": {"length": 297.65}}] * 2)
+
+
+class TestTransferFailedEvent(unittest.TestCase):
+    def test_theFilesPathOnThePrinterReachesTheAnalysis(self):
+        recorded = []
+        plugin = types.SimpleNamespace(
+            _printerUploadAnalysis=types.SimpleNamespace(
+                onTransferFailed=recorded.append
+            )
+        )
+
+        SpoolmanagerPlugin.on_event(
+            plugin,
+            Events.TRANSFER_FAILED,
+            {"local": "rocket.gcode", "remote": "ROCKET~1.GCO", "time": 3.2},
+        )
+
+        self.assertEqual(["ROCKET~1.GCO"], recorded)
 
 
 if __name__ == "__main__":

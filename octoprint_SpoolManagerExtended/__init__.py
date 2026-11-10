@@ -2404,6 +2404,29 @@ class SpoolmanagerPlugin(
             )
         return tools
 
+    def _logShortJobEnd(self, printStatus, printDuration):
+        # Said only where the short duration changes what is booked (see
+        # commitOdometerData): the sliced fallback is booked for a finished job only,
+        # Klipper's own count for any job end on a Moonraker printer. A pause, or a cancel
+        # elsewhere, books what it always books - "finished" was simply wrong there.
+        if printStatus == "success":
+            self._logger.info(
+                "print 'finished' after only %.1fs - sliced filament usage will not be booked (spurious event?)"
+                % printDuration
+            )
+        elif printStatus in ("failed", "canceled") and self._isMoonrakerConnection():
+            self._logger.info(
+                "print %s after only %.1fs - Klipper's filament count will not be booked"
+                % (printStatus, printDuration)
+            )
+
+    def _isMoonrakerConnection(self):
+        u1RfidManager = getattr(self, "_u1RfidManager", None)
+        return (
+            u1RfidManager is not None
+            and u1RfidManager._getConnectorParams() is not None
+        )
+
     #### print job finished
     def _on_printJobFinished(self, printStatus, payload):
         printDuration = payload.get("time") if payload else None
@@ -2416,10 +2439,7 @@ class SpoolmanagerPlugin(
             printDuration is not None
             and printDuration < self.MINIMUM_PRINT_DURATION_FOR_SLICED_USAGE
         ):
-            self._logger.info(
-                "print 'finished' after only %.1fs - sliced filament usage will not be booked (spurious event?)"
-                % printDuration
-            )
+            self._logShortJobEnd(printStatus, printDuration)
         self.commitOdometerData(printStatus=printStatus, printDuration=printDuration)
 
         # update remaining data in selected spools after a print
@@ -2761,17 +2781,20 @@ class SpoolmanagerPlugin(
             self.alreadyCanceled = True
             self._on_printJobFinished("canceled", payload)
 
-        if event in (Events.FILE_ADDED, Events.FILE_REMOVED):
+        if event in (Events.FILE_ADDED, Events.FILE_REMOVED, Events.TRANSFER_FAILED):
             printerUploadAnalysis = getattr(self, "_printerUploadAnalysis", None)
             if printerUploadAnalysis is not None and payload:
                 if Events.FILE_ADDED == event:
                     printerUploadAnalysis.onFileAdded(
                         payload.get("storage"), payload.get("path")
                     )
-                else:
+                elif Events.FILE_REMOVED == event:
                     printerUploadAnalysis.onFileRemoved(
                         payload.get("storage"), payload.get("path")
                     )
+                else:
+                    # "remote" is the file's path on the printer, as in FILE_ADDED
+                    printerUploadAnalysis.onTransferFailed(payload.get("remote"))
 
         if (
             Events.FILE_SELECTED == event
