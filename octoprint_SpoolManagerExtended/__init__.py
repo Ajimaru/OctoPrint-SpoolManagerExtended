@@ -1604,8 +1604,23 @@ class SpoolmanagerPlugin(
         currentJob = getattr(self._printer, "current_job", None)
         plate = getattr(currentJob, "plate", 1) if currentJob is not None else 1
 
+        # taken before the lookup: an analysis that lands while the lookup runs was not
+        # missing either - the next check finds it
+        uploadAnalysisWasPending = self._uploadAnalysisStillRunning(origin, path)
         filamentMetaData = self._getFilamentMetaData(origin, path, plate=plate)
         if filamentMetaData is None:
+            if uploadAnalysisWasPending or self._uploadAnalysisStillRunning(
+                origin, path
+            ):
+                # OctoPrint selects a file on a serial printer's SD card as the job the
+                # moment its transfer starts - before the FILE_ADDED that starts the
+                # uploaded copy's analysis - so the selection checks find nothing yet.
+                # That is not missing metadata, it is on its way.
+                self._logger.debug(
+                    "filament usage of 'printer:%s' is still being analysed from the upload"
+                    % path
+                )
+                return False
             self._logger.warning(
                 "calculating filament aborted because filament analysis metadata was missing for '%s:%s'"
                 % (origin, path)
@@ -1621,6 +1636,14 @@ class SpoolmanagerPlugin(
             filamentLengthPresentInMeta = True
 
         return filamentLengthPresentInMeta
+
+    def _uploadAnalysisStillRunning(self, origin, path):
+        printerUploadAnalysis = getattr(self, "_printerUploadAnalysis", None)
+        return (
+            printerUploadAnalysis is not None
+            and origin == FileDestinations.PRINTER
+            and printerUploadAnalysis.isAnalysisPending(path)
+        )
 
     def _evaluateRequiredWeight(
         self, selectedSpools, forToolIndex=None, warnUser=False
