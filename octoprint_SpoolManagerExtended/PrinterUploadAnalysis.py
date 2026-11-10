@@ -70,7 +70,7 @@ class PrinterUploadAnalysis(object):
     The copy is compared with nothing on the printer later: OctoPrint strips comments from
     every line it streams to an SD card (serial_comm's process_gcode_line), so the file
     there is smaller than the upload. A new upload under the same name replaces the entry,
-    deleting the file removes it.
+    deleting the file removes it, and so does a transfer that fails (onTransferFailed).
     """
 
     STORE_FILE_NAME = "printerUploadFilament.json"
@@ -91,6 +91,9 @@ class PrinterUploadAnalysis(object):
         self._pending = {}
         # file on the printer (lower case) -> entry, see _analyseAndStore(); loaded lazily
         self._store = None
+        # file on the printer (lower case) -> time its transfer failed, for an analysis
+        # that is still running when the failure arrives (see onTransferFailed)
+        self._failedTransfers = {}
 
     ############################################################################ upload side
 
@@ -164,6 +167,27 @@ class PrinterUploadAnalysis(object):
 
         self._runInBackground(self._analyseAndStore, path, entry)
 
+    def onTransferFailed(self, path):
+        """
+        TransferFailed: the file never got onto the printer complete. OctoPrint fires
+        FILE_ADDED when a transfer to printer storage starts, not when it ends, so the
+        analysis is usually stored already - or, for a transfer that fails at once, still
+        running; _analyseAndStore() checks for that.
+        """
+        if path is None:
+            return
+        key = path.lower()
+        with self._lock:
+            self._failedTransfers[key] = time.time()
+            store = self._loadStore()
+            dropped = store.pop(key, None) is not None
+            if dropped:
+                self._saveStore(store)
+        if dropped:
+            self._logger.info(
+                "transfer of 'printer:%s' failed, its upload analysis is dropped" % path
+            )
+
     def onFileRemoved(self, storage, path):
         if storage != "printer" or path is None:
             return
@@ -216,6 +240,14 @@ class PrinterUploadAnalysis(object):
             self._removeCopy(entry)
 
         with self._lock:
+            failedAt = self._failedTransfers.pop(path.lower(), None)
+            if failedAt is not None and failedAt >= entry["startedAt"]:
+                # this upload's transfer failed while the copy was being analysed
+                self._logger.info(
+                    "transfer of 'printer:%s' failed, its upload analysis is not kept"
+                    % path
+                )
+                return
             store = self._loadStore()
             if filament:
                 store[path.lower()] = {
@@ -284,6 +316,9 @@ class PrinterUploadAnalysis(object):
                 if entry["startedAt"] < threshold
             ]
             staleEntries = [self._pending.pop(key) for key in staleKeys]
+            # a failure marker only matters to an analysis already running when it came
+            for key in [k for k, t in self._failedTransfers.items() if t < threshold]:
+                del self._failedTransfers[key]
         for entry in staleEntries:
             self._removeCopy(entry)
 
