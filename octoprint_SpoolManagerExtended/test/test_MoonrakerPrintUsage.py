@@ -80,6 +80,7 @@ class FakePlugin(object):
     _sendPayload2EventBus = SpoolmanagerPlugin._sendPayload2EventBus
     _calculateWeight = SpoolmanagerPlugin._calculateWeight
     _moonrakerUsagePerTool = _productionMethod("_moonrakerUsagePerTool")
+    _sdPositionUsagePerTool = _productionMethod("_sdPositionUsagePerTool")
     _moonrakerJobFilename = staticmethod(_productionMethod("_moonrakerJobFilename"))
     _readMoonrakerFilamentUsed = _productionMethod("_readMoonrakerFilamentUsed")
     _slicedLengthsPerTool = _productionMethod("_slicedLengthsPerTool")
@@ -110,6 +111,9 @@ class FakePlugin(object):
         self._printJobStartedTimestamp = None
         self._printJobStartFileLocation = ("printer", JOB_PATH)
         self._moonrakerUsageBooked = 0.0
+        self._printerUploadAnalysis = None
+        self._printJobEndFilePosition = (None, None)
+        self._sdPositionUsageBooked = False
         self._printJobUsageReported = False
         self._printJobUsagePerTool = {}
         self.currentJobLocation = ("printer", JOB_PATH)

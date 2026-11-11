@@ -11,6 +11,7 @@
 # Run with:  .venv/bin/python -m pytest octoprint_SpoolManagerExtended/test/test_PrinterUploadAnalysis.py -v
 
 import io
+import json
 import logging
 import os
 import shutil
@@ -190,6 +191,115 @@ class TestPrinterUploadAnalysis(unittest.TestCase):
             self.analysis.onFileAdded("printer", "rocket~1.gco")
         self.assertFalse(self.analysis.isAnalysisPending("rocket~1.gco"))
         self.assertIsNone(self.analysis.filamentFor("rocket~1.gco"))
+
+    # What OctoPrint streams of SAMPLE_GCODE: 16 lines, 121 content bytes (the header
+    # comment line is dropped, comments and whitespace stripped). With Marlin's two-byte
+    # line ends the file on the card is 153 bytes; the point after "G1 X10 Y10 E5.0" sits
+    # at content byte 24, line 3 -> card offset 30, with tool 0 at 5.0 mm.
+    SAMPLE_CONTENT_BYTES = 121
+    SAMPLE_LINES = 16
+    SAMPLE_CARD_SIZE = 121 + 16 * 2
+
+    def _usage(self, usage):
+        return {tool: data["length"] for tool, data in usage.items()}
+
+    def test_theAnalysisKeepsSupportPointsAlongTheFile(self):
+        self._upload("rocket~1.gco")
+        self.analysis.onFileAdded("printer", "rocket~1.gco")
+
+        with self.analysis._lock:
+            positions = self.analysis._loadStore()["rocket~1.gco"]["positions"]
+        self.assertEqual(positions["bytes"], self.SAMPLE_CONTENT_BYTES)
+        self.assertEqual(positions["lines"], self.SAMPLE_LINES)
+        self.assertEqual(positions["points"][-1], [121, 16, [12.5, 4.25]])
+        self.assertIn([24, 3, [5.0]], positions["points"])
+        self.assertLessEqual(len(positions["points"]), self.SAMPLE_LINES)
+
+    def test_usageAtAPositionFollowsTheFile(self):
+        self._upload("rocket~1.gco")
+        self.analysis.onFileAdded("printer", "rocket~1.gco")
+        size = self.SAMPLE_CARD_SIZE
+
+        self.assertEqual({}, self.analysis.usageAtPosition("ROCKET~1.GCO", 0, size))
+        self.assertEqual(
+            {"tool0": 5.0},
+            self._usage(self.analysis.usageAtPosition("rocket~1.gco", 30, size)),
+        )
+        # after "G1 X20 E8.0": content byte 42, line 5 -> offset 52
+        self.assertEqual(
+            {"tool0": 8.0},
+            self._usage(self.analysis.usageAtPosition("rocket~1.gco", 52, size)),
+        )
+        # halfway between the points at offsets 13 (0 mm) and 30 (5 mm)
+        self.assertAlmostEqual(
+            2.5,
+            self.analysis.usageAtPosition("rocket~1.gco", 21.5, size)["tool0"][
+                "length"
+            ],
+        )
+        self.assertEqual(
+            {"tool0": 12.5, "tool1": 4.25},
+            self._usage(self.analysis.usageAtPosition("rocket~1.gco", size, size)),
+        )
+        # a position past the end (should not happen) still means everything
+        self.assertEqual(
+            {"tool0": 12.5, "tool1": 4.25},
+            self._usage(self.analysis.usageAtPosition("rocket~1.gco", size + 99, size)),
+        )
+
+    def test_theLineEndIsTakenFromTheSizeOnThePrinter(self):
+        self._upload("rocket~1.gco")
+        self.analysis.onFileAdded("printer", "rocket~1.gco")
+
+        # a firmware that writes "\n": the point after line 3 sits at 24 + 3
+        oneByte = self.SAMPLE_CONTENT_BYTES + self.SAMPLE_LINES
+        self.assertEqual(
+            {"tool0": 5.0},
+            self._usage(self.analysis.usageAtPosition("rocket~1.gco", 27, oneByte)),
+        )
+        # unknown size, or one that cannot be this file: Marlin's two bytes are assumed
+        for size in (None, 0, 10, 10**6):
+            with self.subTest(size=size):
+                self.assertEqual(
+                    {"tool0": 5.0},
+                    self._usage(
+                        self.analysis.usageAtPosition("rocket~1.gco", 30, size)
+                    ),
+                )
+
+    def test_positionsSurviveARestart(self):
+        self._upload("rocket~1.gco")
+        self.analysis.onFileAdded("printer", "rocket~1.gco")
+
+        self.assertEqual(
+            {"tool0": 5.0},
+            self._usage(
+                self._analysis().usageAtPosition(
+                    "rocket~1.gco", 30, self.SAMPLE_CARD_SIZE
+                )
+            ),
+        )
+
+    def test_nothingIsKnownWithoutPositions(self):
+        # a result stored before positions were recorded, and a file never uploaded
+        with open(
+            os.path.join(self.dataFolder, PrinterUploadAnalysis.STORE_FILE_NAME), "w"
+        ) as f:
+            json.dump(
+                {
+                    "old.gco": {
+                        "path": "old.gco",
+                        "filament": {"tool0": {"length": 7.0}},
+                    }
+                },
+                f,
+            )
+        analysis = self._analysis()
+
+        self.assertEqual({"tool0": 7.0}, self._usage(analysis.filamentFor("old.gco")))
+        self.assertIsNone(analysis.usageAtPosition("old.gco", 100, 1000))
+        self.assertIsNone(analysis.usageAtPosition("never.gco", 100, 1000))
+        self.assertIsNone(analysis.usageAtPosition("old.gco", None, 1000))
 
     def test_fileKeptUnderAnotherNameIsFound(self):
         self._upload("rocket~1.gco")

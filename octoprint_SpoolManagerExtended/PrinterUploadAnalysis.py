@@ -13,6 +13,20 @@ from datetime import datetime
 from octoprint_SpoolManagerExtended.newodometer import NewFilamentOdometer
 
 
+def _stripComment(line):
+    """What OctoPrint's serial streaming keeps of a line (its strip_comment())."""
+    if ";" not in line:
+        return line
+    escaped = False
+    result = []
+    for character in line:
+        if character == ";" and not escaped:
+            break
+        result.append(character)
+        escaped = (character == "\\") and not escaped
+    return "".join(result)
+
+
 class TeeStream(io.RawIOBase):
     """
     Passes a stream through unchanged and writes a copy of everything read from it to
@@ -76,12 +90,25 @@ class PrinterUploadAnalysis(object):
     fires FILE_ADDED - so the plugin asks for the usage while the copy still waits or is
     in the odometer; isAnalysisPending() tells those callers apart from a file that
     really has no analysis.
+
+    The analysis also keeps support points along the file (usageAtPosition), so that a
+    print the printer runs by itself and ends early can be booked up to the position in
+    the file it reported last (M27).
     """
 
     STORE_FILE_NAME = "printerUploadFilament.json"
     MAX_STORED_FILES = 200
     # how long a copy waits for the FILE_ADDED event that tells where its upload went
     PENDING_TIMEOUT_SECONDS = 600
+    # about this many support points across a file, see analyse()
+    POSITION_SAMPLES = 100
+    # Marlin writes every streamed line to the card with "\r\n"; assumed when the size
+    # of the file on the printer is unknown or does not fit the analysed file. The bytes
+    # per line derived from that size also carry what other preprocessors add after the
+    # copy was taken (DisplayLayerProgress inserts an M117 per layer: 2.24 bytes per line
+    # seen on a 74-layer file), so the fit is loose.
+    DEFAULT_LINE_END_BYTES = 2.0
+    MAX_LINE_END_BYTES = 8.0
 
     def __init__(
         self, logger, dataFolder, g90InfluencesExtruder=False, runInBackground=None
@@ -221,6 +248,67 @@ class PrinterUploadAnalysis(object):
             return None
         return copy.deepcopy(entry["filament"])
 
+    def usageAtPosition(self, path, filePosition, fileSizeOnPrinter=None):
+        """
+        The extrusion per tool up to `filePosition` - bytes into the file on the printer,
+        as the printer reports it (M27) - shaped like filamentFor(): {"tool0": {"length":
+        123.4}}. {} before the first extrusion; None when nothing is known for the file,
+        or it was analysed before positions were recorded.
+
+        `fileSizeOnPrinter` tells the firmware's line end apart (see analyse()); without
+        it, or when it does not fit, DEFAULT_LINE_END_BYTES is assumed.
+        """
+        if path is None or filePosition is None:
+            return None
+        with self._lock:
+            entry = self._loadStore().get(path.lower())
+        positions = (entry or {}).get("positions") or {}
+        points = positions.get("points")
+        if not points:
+            return None
+        lineEnd = self._lineEndBytes(positions, fileSizeOnPrinter)
+
+        previousOffset = 0.0
+        previousLengths = []
+        lengths = None
+        for contentBytes, lines, pointLengths in points:
+            offset = contentBytes + lines * lineEnd
+            if filePosition < offset:
+                # linear between the previous point and this one - at most one
+                # sample step of the file apart
+                span = offset - previousOffset
+                share = (filePosition - previousOffset) / span if span > 0 else 1.0
+                share = min(max(share, 0.0), 1.0)
+                before = previousLengths + [0.0] * (
+                    len(pointLengths) - len(previousLengths)
+                )
+                lengths = [
+                    earlier + (later - earlier) * share
+                    for earlier, later in zip(before, pointLengths)
+                ]
+                break
+            previousOffset, previousLengths = offset, pointLengths
+        if lengths is None:
+            # at or past the end of the file: everything
+            lengths = previousLengths
+        return {
+            "tool%d" % toolIndex: {"length": length}
+            for toolIndex, length in enumerate(lengths)
+            if length > 0.0
+        }
+
+    def _lineEndBytes(self, positions, fileSizeOnPrinter):
+        lines = positions.get("lines") or 0
+        if fileSizeOnPrinter and lines > 0:
+            lineEnd = (fileSizeOnPrinter - positions.get("bytes", 0)) / float(lines)
+            if 0.0 <= lineEnd <= self.MAX_LINE_END_BYTES:
+                return lineEnd
+            self._logger.debug(
+                "file size on the printer (%s) does not fit the analysed file, assuming %d-byte line ends"
+                % (fileSizeOnPrinter, self.DEFAULT_LINE_END_BYTES)
+            )
+        return self.DEFAULT_LINE_END_BYTES
+
     def isAnalysisPending(self, path):
         """
         Whether the usage of a file on the printer is still on its way: its copy waits
@@ -242,12 +330,37 @@ class PrinterUploadAnalysis(object):
     ############################################################################ analysis
 
     def analyse(self, gcodePath):
-        """Per-tool extrusion of a gcode file, counted the way a streamed print is."""
+        """
+        Per-tool extrusion of a gcode file, counted the way a streamed print is, and the
+        support points that map a position in the file on the printer back to the
+        extrusion up to there: (filament, positions).
+
+        OctoPrint streams every line to the card as strip_comment(line).strip() plus a
+        line end the firmware chooses (Marlin: two bytes), so a point is [content bytes,
+        lines, extrusion per tool] and the line end is derived from the size of the file
+        on the printer when a position is looked up.
+        """
         odometer = NewFilamentOdometer()
         odometer.set_g90_extruder(self._g90InfluencesExtruder)
+        contentBytes = 0
+        lineCount = 0
+        points = []
+        sampleStep = max(1, os.path.getsize(gcodePath) // self.POSITION_SAMPLES)
+        nextSampleAt = 0
         with open(gcodePath, "r", encoding="utf-8", errors="replace") as gcodeFile:
             for line in gcodeFile:
                 odometer.processGCodeLine(line.strip())
+                streamed = _stripComment(line).strip()
+                if not streamed:
+                    # OctoPrint does not send it, so it takes no room on the card
+                    continue
+                contentBytes += len(streamed)
+                lineCount += 1
+                if contentBytes >= nextSampleAt:
+                    points.append(self._point(contentBytes, lineCount, odometer))
+                    nextSampleAt = contentBytes + sampleStep
+        if not points or points[-1][0] != contentBytes:
+            points.append(self._point(contentBytes, lineCount, odometer))
 
         filament = {}
         for toolIndex, length in enumerate(odometer.getExtrusionAmount()):
@@ -255,7 +368,16 @@ class PrinterUploadAnalysis(object):
                 # a tool the file does not use stays absent - allowedToPrint() reads the
                 # tools in use from the keys
                 filament["tool%d" % toolIndex] = {"length": length}
-        return filament
+        positions = {"bytes": contentBytes, "lines": lineCount, "points": points}
+        return filament, positions
+
+    @staticmethod
+    def _point(contentBytes, lineCount, odometer):
+        return [
+            contentBytes,
+            lineCount,
+            [round(length, 3) for length in odometer.getExtrusionAmount()],
+        ]
 
     def _analyseAndStore(self, path, entry):
         try:
@@ -268,7 +390,7 @@ class PrinterUploadAnalysis(object):
 
     def _analyseCopyAndStore(self, path, entry):
         try:
-            filament = self.analyse(entry["copyPath"])
+            filament, positions = self.analyse(entry["copyPath"])
         except Exception:
             self._logger.exception("Could not analyse the upload 'printer:%s'" % path)
             return
@@ -291,6 +413,7 @@ class PrinterUploadAnalysis(object):
                     "uploadedAs": entry["path"],
                     "analysedAt": datetime.now().isoformat(),
                     "filament": filament,
+                    "positions": positions,
                 }
             else:
                 # an upload without any extrusion replaces whatever was known for the name
