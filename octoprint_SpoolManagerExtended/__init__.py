@@ -133,6 +133,14 @@ class SpoolmanagerPlugin(
         # how much of Klipper's own filament count for this job is booked already, so an end
         # event that arrives twice books the count once; see _moonrakerUsagePerTool()
         self._moonrakerUsageBooked = 0.0
+        # where the printer was in its SD file when this job ended, and that file's size
+        # on the card - for a job the printer prints by itself; see _sdPositionUsagePerTool()
+        self._printJobEndFilePosition = (None, None)
+        self._sdPositionUsageBooked = False
+        # the printer's last SD status report (M27: "SD printing byte 123/4567") as
+        # (position, size) - the only record of the position left when the printer dies
+        # mid-print; see on_receivedGCodeHook()
+        self._lastSdStatusReport = (None, None)
         # set once this job's end has been reported with print_job_usage_booked, so a
         # repeated end event that books nothing does not replace that report with an empty one
         self._printJobUsageReported = False
@@ -1876,6 +1884,9 @@ class SpoolmanagerPlugin(
         self._printJobStartedTimestamp = time.time()
         self._printJobStartFileLocation = self._getCurrentJobFileLocation()
         self._moonrakerUsageBooked = 0.0
+        self._printJobEndFilePosition = (None, None)
+        self._sdPositionUsageBooked = False
+        self._lastSdStatusReport = (None, None)
         self._printJobUsageReported = False
         self._printJobUsagePerTool = {}
 
@@ -2047,7 +2058,75 @@ class SpoolmanagerPlugin(
         )
         return filamentUsed, split, source
 
-    def _logToolWithoutSpool(self, toolIndex, moonrakerUsage, jobSlicedLengths):
+    def _jobEndFilePosition(self, payload):
+        """
+        (position in the job's file, the file's size) as of this job end: from the event's
+        payload - PRINT_CANCELLED and PRINT_PAUSED carry the position - else from the
+        printer's progress data, else from the last SD status report the printer sent.
+        A PRINT_FAILED on an error carries no position, and OctoPrint has deselected the
+        job by the time it reaches us, so a printer that died mid-print only leaves the
+        last report.
+        """
+        filePosition = size = None
+        if payload:
+            filePosition = payload.get("fileposition")
+            size = payload.get("size")
+        if filePosition is None:
+            try:
+                currentData = self._printer.get_current_data() or {}
+                filePosition = (currentData.get("progress") or {}).get("filepos")
+                if size is None:
+                    size = ((currentData.get("job") or {}).get("file") or {}).get(
+                        "size"
+                    )
+            except Exception:
+                self._logger.debug(
+                    "Could not read the job's file position", exc_info=True
+                )
+        if filePosition is None:
+            filePosition, reportedSize = self._lastSdStatusReport
+            if size is None:
+                size = reportedSize
+        return filePosition, size
+
+    def _sdPositionUsagePerTool(self):
+        """
+        What a serial printer printed from its SD card before the job ended early, per
+        tool: (file position, {toolIndex: length}, source) - or None, which leaves the
+        sliced fallback (and so nothing, for an unfinished job) in charge.
+
+        The printer prints such a job by itself, so neither the odometer nor a connector
+        can say what was extruded. The position in the file it reported last (M27) is
+        mapped onto the extrusion counted when the file was uploaded - exact at the
+        support points, linear in between, and ahead of the nozzle by what the firmware
+        had buffered: an estimate ("sdPositionEstimated").
+        """
+        if self._sdPositionUsageBooked:
+            # the job's end reported again - booked already
+            return None
+        printerUploadAnalysis = getattr(self, "_printerUploadAnalysis", None)
+        filePosition, size = self._printJobEndFilePosition
+        if printerUploadAnalysis is None or filePosition is None:
+            return None
+        origin, path = self._printJobFileLocation()
+        if origin != FileDestinations.PRINTER or path is None:
+            return None
+        usage = printerUploadAnalysis.usageAtPosition(path, filePosition, size)
+        if usage is None:
+            return None
+        split = {int(toolName[4:]): data["length"] for toolName, data in usage.items()}
+        self._logger.info(
+            "job 'printer:%s' ended at byte %s of %s, booking the extrusion sliced up to there (sdPositionEstimated): %s"
+            % (
+                path,
+                filePosition,
+                size,
+                {"tool%d" % index: round(length, 2) for index, length in split.items()},
+            )
+        )
+        return filePosition, split, "sdPositionEstimated"
+
+    def _logToolWithoutSpool(self, toolIndex, externalUsage, jobSlicedLengths):
         """
         Log a tool that has no spool selected when a job's usage is booked.
 
@@ -2063,10 +2142,15 @@ class SpoolmanagerPlugin(
 
         if extrudedLength is not None and extrudedLength > 0.0:
             usage = "%.1fmm extruded" % extrudedLength
-        elif moonrakerUsage is not None and toolIndex in moonrakerUsage[1]:
-            usage = "%.1fmm counted by Klipper (%s)" % (
-                moonrakerUsage[1][toolIndex],
-                moonrakerUsage[2],
+        elif externalUsage is not None and toolIndex in externalUsage[1]:
+            usage = "%.1fmm %s (%s)" % (
+                externalUsage[1][toolIndex],
+                (
+                    "counted by Klipper"
+                    if str(externalUsage[2]).startswith("moonraker")
+                    else "printed up to the reported file position"
+                ),
+                externalUsage[2],
             )
         elif toolIndex < len(jobSlicedLengths) and jobSlicedLengths[toolIndex] > 0.0:
             usage = (
@@ -2108,6 +2192,24 @@ class SpoolmanagerPlugin(
             except Exception:
                 # must not cost the booking itself - odometer and sliced fallback still work
                 self._logger.exception("Reading Klipper's filament count failed")
+        # A serial printer's SD job that ended early: the same guard, and only where
+        # Klipper has nothing to say - see _sdPositionUsagePerTool(). A finished one
+        # books the sliced plan below, as before.
+        sdPositionUsage = None
+        if (
+            moonrakerUsage is None
+            and printStatus in ("failed", "canceled")
+            and slicedUsagePlausible
+        ):
+            try:
+                sdPositionUsage = self._sdPositionUsagePerTool()
+            except Exception:
+                self._logger.exception(
+                    "Estimating the usage from the SD file position failed"
+                )
+        externalUsage = (
+            moonrakerUsage if moonrakerUsage is not None else sdPositionUsage
+        )
         # per-tool snapshot for api_getLastPrintJobUsage(), taken here because it's the
         # last point where the odometer still holds this job's data - reset_extruded_length()
         # below wipes it, and a second plugin's PRINT_DONE handler may run before or after
@@ -2119,7 +2221,7 @@ class SpoolmanagerPlugin(
         jobSlicedLengths = []
         if (
             printStatus in ("success", "failed", "canceled")
-            and moonrakerUsage is None
+            and externalUsage is None
             and any(spoolModel is None for spoolModel in selectedSpools)
         ):
             try:
@@ -2132,7 +2234,7 @@ class SpoolmanagerPlugin(
                 )
         for toolIndex, spoolModel in enumerate(selectedSpools):
             if spoolModel is None:
-                self._logToolWithoutSpool(toolIndex, moonrakerUsage, jobSlicedLengths)
+                self._logToolWithoutSpool(toolIndex, externalUsage, jobSlicedLengths)
                 toolSnapshots.append(None)
                 continue
 
@@ -2149,13 +2251,14 @@ class SpoolmanagerPlugin(
             usageSource = "odometer"
             if (
                 currentExtrusionLength is None or currentExtrusionLength <= 0.0
-            ) and moonrakerUsage is not None:
-                # counted by Klipper - a tool the job does not use keeps its odometer value,
-                # and the sliced fallback below stays out of it
-                moonrakerLength = moonrakerUsage[1].get(toolIndex)
-                if moonrakerLength is not None:
-                    currentExtrusionLength = moonrakerLength
-                    usageSource = moonrakerUsage[2]
+            ) and externalUsage is not None:
+                # counted by Klipper, or read off the SD file position - a tool the job
+                # does not use keeps its odometer value, and the sliced fallback below
+                # stays out of it
+                externalLength = externalUsage[1].get(toolIndex)
+                if externalLength is not None:
+                    currentExtrusionLength = externalLength
+                    usageSource = externalUsage[2]
             elif (
                 (currentExtrusionLength is None or currentExtrusionLength <= 0.0)
                 and printStatus == "success"
@@ -2284,6 +2387,8 @@ class SpoolmanagerPlugin(
             self._moonrakerUsageBooked = max(
                 self._moonrakerUsageBooked, moonrakerUsage[0]
             )
+        if sdPositionUsage is not None:
+            self._sdPositionUsageBooked = True
 
         bookedSomething = any(
             toolSnapshot is not None and (toolSnapshot["usedLength"] or 0.0) > 0.0
@@ -2465,6 +2570,7 @@ class SpoolmanagerPlugin(
             and printDuration < self.MINIMUM_PRINT_DURATION_FOR_SLICED_USAGE
         ):
             self._logShortJobEnd(printStatus, printDuration)
+        self._printJobEndFilePosition = self._jobEndFilePosition(payload)
         self.commitOdometerData(printStatus=printStatus, printDuration=printDuration)
 
         # update remaining data in selected spools after a print
@@ -2763,6 +2869,23 @@ class SpoolmanagerPlugin(
         #   self._logger.info("Filament is running out, pausing print")
         #   self._printer.pause_print()
         pass
+
+    # Listen to what the printer answers (thread: comm.monitoring_thread). Only the SD
+    # status report is of interest, so the check is a cheap substring test.
+    SD_STATUS_REPORT = re.compile(
+        r"SD printing byte (?P<current>[0-9]+)/(?P<total>[0-9]+)"
+    )
+
+    def on_receivedGCodeHook(self, comm_instance, line, *args, **kwargs):
+        if "SD printing byte" in line:
+            match = self.SD_STATUS_REPORT.search(line)
+            if match:
+                current = int(match.group("current"))
+                total = int(match.group("total"))
+                if current > 0 or total > 0:
+                    # "0/0" is Marlin for "not printing", not a position
+                    self._lastSdStatusReport = (current, total)
+        return line
 
     def on_event(self, event, payload):
 
@@ -3272,6 +3395,7 @@ def __plugin_load__():
     __plugin_hooks__ = {
         "octoprint.plugin.softwareupdate.check_config": __plugin_implementation__.get_update_information,
         "octoprint.comm.protocol.gcode.sent": __plugin_implementation__.on_sentGCodeHook,
+        "octoprint.comm.protocol.gcode.received": __plugin_implementation__.on_receivedGCodeHook,
         "octoprint.filemanager.preprocessor": __plugin_implementation__.on_filePreprocessor,
         # "octoprint.comm.protocol.scripts": __plugin_implementation__.message_on_connect
         "octoprint.events.register_custom_events": __plugin_implementation__.register_custom_events,
