@@ -37,7 +37,7 @@ from octoprint_SpoolManagerExtended.WrappedLoggingHandler import WrappedLoggingH
 
 FORCE_CREATE_TABLES = False
 
-CURRENT_DATABASE_SCHEME_VERSION = 13
+CURRENT_DATABASE_SCHEME_VERSION = 14
 
 # Filename of the local SQLite database inside the plugin's data folder. Fixed, not
 # derived from the plugin identifier - the legacy migration relies on that.
@@ -413,6 +413,7 @@ class DatabaseManager(object):
             self._upgradeFrom10To11,
             self._upgradeFrom11To12,
             self._upgradeFrom12To13,
+            self._upgradeFrom13To14,
         ]
 
         for migrationMethodIndex in range(
@@ -428,6 +429,33 @@ class DatabaseManager(object):
             migrationFunctions[migrationMethodIndex]()
             pass
         pass
+
+    def _upgradeFrom13To14(self):
+        self._logger.info(" Starting 13 -> 14")
+        # What is changed:
+        # - rfidTagKeySource = CharField(null=True) # since V14
+        # Records that a spool's rfidTagKey was taught in by the plugin itself after writing
+        # a TigerTag/OpenPrintTag ("ownWrite"), so reading such a tag back is not flagged as
+        # a foreign tag that merely shares the key - see common/RfidKeyCollision.py. Same
+        # shape as the 9 -> 10 migration: database-agnostic and idempotent through the
+        # column check, since several OctoPrint instances may share one external database.
+        columnNames = [
+            column.name for column in self._database.get_columns("spo_spoolmodel")
+        ]
+        if "rfidTagKeySource" in columnNames:
+            self._logger.info(
+                "  column 'rfidTagKeySource' already present, skipping ALTER TABLE"
+            )
+        else:
+            self._database.execute_sql(
+                "ALTER TABLE spo_spoolmodel ADD COLUMN rfidTagKeySource VARCHAR(255)"
+            )
+
+        PluginMetaDataModel.update(value="14").where(
+            PluginMetaDataModel.key == PluginMetaDataModel.KEY_DATABASE_SCHEME_VERSION
+        ).execute()
+
+        self._logger.info(" Successfully 13 -> 14")
 
     def _upgradeFrom12To13(self):
         self._logger.info(" Starting 12 -> 13")

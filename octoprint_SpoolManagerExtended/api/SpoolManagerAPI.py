@@ -384,9 +384,15 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         spoolModel.code = self._toStringFromJSONOrNone(
             "code", jsonData, validationErrors
         )
+        previousRfidTagKey = spoolModel.rfidTagKey
         spoolModel.rfidTagKey = self._toStringFromJSONOrNone(
             "rfidTagKey", jsonData, validationErrors
         )
+        # rfidTagKeySource is never taken from the client: it records how the key got
+        # there (see the model), and a key edited by hand is no longer the one the plugin
+        # taught in. A GET -> save round trip that leaves the key alone keeps it.
+        if spoolModel.rfidTagKey != previousRfidTagKey:
+            spoolModel.rfidTagKeySource = None
         spoolModel.batchNumber = self._toStringFromJSONOrNone(
             "batchNumber", jsonData, validationErrors
         )
@@ -1159,7 +1165,9 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             {"spool": Transformer.transformSpoolModelToDict(spoolModel)}
         )
 
-    def _describeRfidMatch(self, rfidTagKey, idSource=None, tagFormat=None):
+    def _describeRfidMatch(
+        self, rfidTagKey, idSource=None, tagFormat=None, matchedSpool=None
+    ):
         """
         The caveat for a spool that was found through its rfidTagKey, as
         {"foreignTag": bool, "ambiguous": bool} - or None when no such lookup happened.
@@ -1176,6 +1184,10 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         both optional: a caller that never saw the tag - a typed code, a stored key - passes
         neither and gets the ambiguity answer alone, rather than a foreignTag flag invented
         from nothing.
+
+        matchedSpool is the spool the lookup found: a key the plugin taught in after writing
+        the tag itself (rfidTagKeySource "ownWrite") makes a foreign-format tag a legitimate
+        match rather than a collision.
 
         Any doubt answers None rather than a cleared flag: an unreachable count must not read
         as "checked, and it is fine".
@@ -1195,6 +1207,7 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             matchingSpoolCount=matchingSpoolCount,
             idSource=idSource,
             tagFormat=tagFormat,
+            matchedSpoolKeySource=getattr(matchedSpool, "rfidTagKeySource", None),
         )
 
     @octoprint.plugin.BlueprintPlugin.route(
@@ -1240,7 +1253,9 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 # match on a whole field and needs no caveat. No idSource here - this endpoint
                 # is handed a string and never sees the reader, so it can only answer the
                 # ambiguity half. See common/RfidKeyCollision.py.
-                "match": self._describeRfidMatch(matchedByRfidTagKey),
+                "match": self._describeRfidMatch(
+                    matchedByRfidTagKey, matchedSpool=spoolModel
+                ),
             }
         )
 
@@ -2816,7 +2831,9 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 # Null when no spool matched.
                 "match": (
                     self._describeRfidMatch(
-                        rfidTagKey, tagFormat=filament.source_processor
+                        rfidTagKey,
+                        tagFormat=filament.source_processor,
+                        matchedSpool=matchedSpool,
                     )
                     if matchedSpool is not None
                     else None
@@ -2931,6 +2948,9 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             return flask.jsonify(response)
 
         spoolModel.rfidTagKey = newKey
+        # the plugin wrote this tag for this spool - reading it back is no collision, see
+        # RfidKeyCollision.isOwnWrite()
+        spoolModel.rfidTagKeySource = RfidKeyCollision.RFID_TAG_KEY_SOURCE_OWN_WRITE
         self._databaseManager.saveSpool(spoolModel)
         self._logger.info(
             "OpenPrintTag rfidTagKey teach-in: spool "

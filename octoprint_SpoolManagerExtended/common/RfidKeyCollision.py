@@ -40,9 +40,21 @@ def isAmbiguous(matchingSpoolCount):
 
 # Formats that are verified and well-formed but carry no SpoolManager id at all: a tag in one
 # of these belongs to another tool's ecosystem and cannot legitimately be any spool in this
-# database. Kept as ids rather than imported from TagFormats so this module stays free of
-# plugin imports and testable on its own; the ids are part of the wire format and stable.
-_FOREIGN_TAG_FORMATS = frozenset(("ntagTigerTag", "nfcvOpenPrintTag"))
+# database. Two id namespaces name the same formats: the read path reports the parser's
+# id (FilamentTagParsers: "tigerTag", "openPrintTag"), the write side the TagFormats id
+# ("ntagTigerTag", "nfcvOpenPrintTag"). Both are listed - until they were, the read path
+# never matched and the flag stayed False for every tag. Kept as literals rather than
+# imported so this module stays free of plugin imports and testable on its own; the ids
+# are part of the wire format and stable.
+_FOREIGN_TAG_FORMATS = frozenset(
+    ("tigerTag", "openPrintTag", "ntagTigerTag", "nfcvOpenPrintTag")
+)
+
+# Value of SpoolModel.rfidTagKeySource for a key the plugin taught in after writing such a
+# format itself (POST /octoscale/teachRfidTagKey): the tag is foreign in format but ours
+# in origin. Any other value - a key typed in, taught from a read, or older than the
+# column - says nothing about where the tag came from.
+RFID_TAG_KEY_SOURCE_OWN_WRITE = "ownWrite"
 
 
 def isForeignTagFormat(tagFormat):
@@ -72,7 +84,18 @@ def isForeignTagPayload(idSource):
     return idSource == "extendedNoId"
 
 
-def describeMatch(matchingSpoolCount, idSource=None, tagFormat=None):
+def isOwnWrite(matchedSpoolKeySource):
+    """
+    True when the matched spool's key was taught in by this plugin writing the tag - a
+    TigerTag or OpenPrintTag the plugin wrote for that very spool. Its format is foreign,
+    the match is not a coincidence.
+    """
+    return matchedSpoolKeySource == RFID_TAG_KEY_SOURCE_OWN_WRITE
+
+
+def describeMatch(
+    matchingSpoolCount, idSource=None, tagFormat=None, matchedSpoolKeySource=None
+):
     """
     The caveat for one lookup result, as {"foreignTag": bool, "ambiguous": bool}.
 
@@ -81,10 +104,16 @@ def describeMatch(matchingSpoolCount, idSource=None, tagFormat=None):
     Either source alone is enough to call a tag foreign - they answer the same question from
     two directions and never contradict each other for a tag that is genuinely ours.
 
+    matchedSpoolKeySource is SpoolModel.rfidTagKeySource of the spool that was found: a key
+    the plugin taught in after writing the tag itself (isOwnWrite) makes a foreign-format
+    tag a legitimate match - the plugin writes TigerTag and OpenPrintTag too. Ambiguity is
+    untouched by it: a second spool sharing the key is still a second spool.
+
     Both flags default to False, which is also what a caller on an older code path produces -
     so a missing answer never reads as "this match is fine".
     """
+    foreignFormat = isForeignTagFormat(tagFormat) or isForeignTagPayload(idSource)
     return {
-        "foreignTag": isForeignTagFormat(tagFormat) or isForeignTagPayload(idSource),
+        "foreignTag": foreignFormat and not isOwnWrite(matchedSpoolKeySource),
         "ambiguous": isAmbiguous(matchingSpoolCount),
     }

@@ -57,6 +57,19 @@
                     <i class="fas fa-check"></i>
                     {{ _('Recognized as') }} <strong data-bind="text: octoScaleTagWriter.readTagResult().parserLabel"></strong>.
                     <!-- ko if: octoScaleTagWriter.readTagResult().matchedSpoolId != null -->
+                    {# match.foreignTag: the tag carries no SpoolManager id (a manufacturer's TigerTag or
+                       OpenPrintTag), so the spool was found by its tag UID alone - unless the plugin
+                       taught that key in itself after writing the tag (see common/RfidKeyCollision.py). #}
+                    <!-- ko if: octoScaleTagWriter.readTagResult().match != null && octoScaleTagWriter.readTagResult().match.foreignTag === true -->
+                    <div class="text-warning" style="margin-top: 6px;">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        {{ _('A spool with the same tag key exists:') }}
+                        <strong data-bind="text: octoScaleTagWriter.readTagResult().matchedSpoolDisplayName"></strong>
+                        ({{ _('id') }} <span data-bind="text: octoScaleTagWriter.readTagResult().matchedSpoolId"></span>).
+                        {{ _('This is a manufacturer tag without a SpoolManager id, so the match may be a coincidence - check before you create a duplicate.') }}
+                    </div>
+                    <!-- /ko -->
+                    <!-- ko ifnot: octoScaleTagWriter.readTagResult().match != null && octoScaleTagWriter.readTagResult().match.foreignTag === true -->
                     <div class="text-warning" style="margin-top: 6px;">
                         <i class="fas fa-exclamation-triangle"></i>
                         {{ _('This tag already belongs to') }}
@@ -64,6 +77,7 @@
                         ({{ _('id') }} <span data-bind="text: octoScaleTagWriter.readTagResult().matchedSpoolId"></span>).
                         {{ _('Creating a new spool from it would give you a duplicate.') }}
                     </div>
+                    <!-- /ko -->
                     <!-- /ko -->
                     <table class="table table-condensed" style="margin: 8px 0 0 0;">
                         <tbody data-bind="foreach: octoScaleTagWriter.readTagValues">
