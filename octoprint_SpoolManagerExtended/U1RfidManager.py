@@ -710,6 +710,36 @@ class U1RfidManager(object):
             self._logger.exception("U1 RFID: spool lookup failed: %s" % exception)
             return None
 
+    def _selectedSpoolForChannel(self, channel):
+        # channel N -> tool N, like the selection below. None when no spool is selected
+        # for that tool or anything goes wrong - the popup then just leaves the offer out.
+        try:
+            databaseIds = (
+                self._plugin._settings.get(
+                    [SettingsKeys.SETTINGS_KEY_SELECTED_SPOOLS_DATABASE_IDS]
+                )
+                or []
+            )
+            if channel < 0 or channel >= len(databaseIds):
+                return None
+            databaseId = databaseIds[channel]
+            if databaseId is None:
+                return None
+            spoolModel = self._plugin._databaseManager.loadSpool(databaseId)
+        except Exception:
+            self._logger.exception(
+                "U1 RFID: could not load the spool selected for tool %d" % channel
+            )
+            return None
+        if spoolModel is None:
+            return None
+        return {
+            "databaseId": spoolModel.databaseId,
+            "displayName": spoolModel.displayName,
+            # an already assigned key would be replaced - the dialog says so
+            "rfidTagKey": getattr(spoolModel, "rfidTagKey", None),
+        }
+
     def _onTagDetected(self, channel, uid, channelInfo):
         spoolModel = self._findSpoolByUid(uid)
 
@@ -735,6 +765,10 @@ class U1RfidManager(object):
                     "uid": uid,
                     "rfidTagKey": rfidTagKey,
                     "metadata": metadata,
+                    # Typical case: a spool picked for this tool (sidebar, QR code,
+                    # OctoScale) whose tag was never assigned - the popup offers to
+                    # assign it to exactly that spool.
+                    "selectedSpool": self._selectedSpoolForChannel(channel),
                 }
             )
             return

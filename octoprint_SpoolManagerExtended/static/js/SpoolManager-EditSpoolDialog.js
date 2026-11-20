@@ -791,6 +791,16 @@ function SpoolManagerExtendedEditSpoolDialog() {
         return self.u1RfidUnknownTags().length > 0;
     });
 
+    // Set by applyU1RfidUid(): the form field it writes (rfidTagKey) is not shown in the
+    // dialog, so without saying so a click looked like it did nothing.
+    self.u1RfidAssignedKey = ko.observable(null);
+    // the key that assignment replaces, if the spool already had a different one
+    self.u1RfidReplacedKey = ko.observable(null);
+
+    self.isU1RfidTagAssigned = function (entry) {
+        return entry != null && entry.rfidTagKey === self.u1RfidAssignedKey();
+    };
+
     self.refreshU1RfidUnknownTags = function () {
         if (self.apiClient == null || self.apiClient.getU1RfidUnknownTags == null) {
             return;
@@ -828,7 +838,17 @@ function SpoolManagerExtendedEditSpoolDialog() {
         if (entry == null || !entry.rfidTagKey) {
             return;
         }
+        var previousKey = self.spoolItemForEditing.rfidTagKey();
+        if (self.u1RfidAssignedKey() != null) {
+            // switching between two offered tags: what gets replaced is still the spool's
+            // own key, not the one picked a moment ago
+            previousKey = self.u1RfidReplacedKey();
+        }
         self.spoolItemForEditing.rfidTagKey(entry.rfidTagKey);
+        self.u1RfidAssignedKey(entry.rfidTagKey);
+        self.u1RfidReplacedKey(
+            previousKey && previousKey !== entry.rfidTagKey ? previousKey : null
+        );
     };
 
     this.startTagWriting = function () {
@@ -2125,11 +2145,15 @@ function SpoolManagerExtendedEditSpoolDialog() {
     // instance sees: a weight booked through another OctoPrint instance sharing the same
     // database (e.g. the one OctoScale reports to) left the table - and every dialog opened
     // from it - showing values the database no longer held.
+    // `options.assignU1Tag` (an unknown-tag entry: {channel, uid, rfidTagKey, label}) opens
+    // an existing spool with that tag already assigned in the form - used by the "Assign
+    // to <spool>" button of the unknown-tag popup. Nothing is stored before Save.
     this.showDialog = function (
         spoolItem,
         closeDialogHandler,
         isLoadedInTool,
-        u1RfidContext
+        u1RfidContext,
+        options
     ) {
         var openRequest = {};
         self._pendingDialogOpen = openRequest;
@@ -2140,7 +2164,8 @@ function SpoolManagerExtendedEditSpoolDialog() {
                 spoolItem,
                 closeDialogHandler,
                 isLoadedInTool,
-                u1RfidContext
+                u1RfidContext,
+                options
             );
             return;
         }
@@ -2177,7 +2202,8 @@ function SpoolManagerExtendedEditSpoolDialog() {
                     spoolItem,
                     closeDialogHandler,
                     isLoadedInTool,
-                    u1RfidContext
+                    u1RfidContext,
+                    options
                 );
                 return;
             }
@@ -2202,7 +2228,8 @@ function SpoolManagerExtendedEditSpoolDialog() {
                 spoolItemToShow,
                 closeDialogHandler,
                 isLoadedInTool,
-                u1RfidContext
+                u1RfidContext,
+                options
             );
         });
     };
@@ -2211,9 +2238,12 @@ function SpoolManagerExtendedEditSpoolDialog() {
         spoolItem,
         closeDialogHandler,
         isLoadedInTool,
-        u1RfidContext
+        u1RfidContext,
+        options
     ) {
         self.autoUpdateEnabled = false;
+        self.u1RfidAssignedKey(null);
+        self.u1RfidReplacedKey(null);
         self.closeDialogHandler = closeDialogHandler;
         // the table/sidebar row behind the dialog, kept in step by _applyServerSpool()
         self._sourceSpoolItem = spoolItem;
@@ -2305,6 +2335,9 @@ function SpoolManagerExtendedEditSpoolDialog() {
         }
 
         self.refreshU1RfidUnknownTags();
+        if (options != null && options.assignU1Tag != null && self.isExistingSpool()) {
+            self.applyU1RfidUid(options.assignU1Tag);
+        }
 
         // freeze the simple-view weight-field visibility for as long as this dialog is open
         self._snapshotSpoolInUse();

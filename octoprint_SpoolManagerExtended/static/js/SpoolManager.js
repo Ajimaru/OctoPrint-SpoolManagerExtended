@@ -2500,6 +2500,13 @@ $(function () {
                 return;
             }
             var tagDescription = SPOOLMANAGER_U1RFID.describeTag(data.metadata);
+            // Typically a spool picked for this tool (sidebar, QR code, OctoScale) whose
+            // tag was never assigned - offer exactly that spool first.
+            var selectedSpool =
+                data.selectedSpool != null && data.selectedSpool.databaseId != null
+                    ? data.selectedSpool
+                    : null;
+            var canAssign = selectedSpool != null && !!data.rfidTagKey;
             var message =
                 "Channel " +
                 data.channel +
@@ -2508,6 +2515,23 @@ $(function () {
                 "</strong>" +
                 (tagDescription ? " (" + tagDescription + ")" : "") +
                 ", which is not assigned to any spool yet.";
+            if (canAssign) {
+                message +=
+                    " Tool " +
+                    data.channel +
+                    " has <strong>" +
+                    SPOOLMANAGER_DIALOGS.escapeHtml(selectedSpool.displayName) +
+                    "</strong> selected.";
+                if (
+                    selectedSpool.rfidTagKey &&
+                    selectedSpool.rfidTagKey !== data.rfidTagKey
+                ) {
+                    message +=
+                        " Assigning replaces its current tag key <strong>" +
+                        SPOOLMANAGER_DIALOGS.escapeHtml(selectedSpool.rfidTagKey) +
+                        "</strong>.";
+                }
+            }
 
             var rfidContext = {
                 uid: data.uid,
@@ -2516,6 +2540,71 @@ $(function () {
                 metadata: data.metadata || {}
             };
 
+            var buttons = [];
+            if (canAssign) {
+                buttons.push({
+                    // PNotify sets button labels with .text(), so the name needs no escaping
+                    text:
+                        "Assign to '" +
+                        (selectedSpool.displayName || "Spool") +
+                        "' (tool " +
+                        data.channel +
+                        ")",
+                    addClass: "btn-small btn-primary",
+                    onClick: function () {
+                        if (self.schemeUpgradeNeeded() == true) {
+                            self._notifySchemeUpgradeNeeded();
+                            return;
+                        }
+                        self._openSpoolToAssignU1Tag(data.channel, selectedSpool, {
+                            channel: data.channel,
+                            uid: data.uid,
+                            rfidTagKey: data.rfidTagKey,
+                            label: "Channel " + data.channel + ": " + data.uid
+                        });
+                    }
+                });
+            }
+            buttons.push(
+                {
+                    // both "New Spool" buttons create a spool - before, the second one
+                    // read "Open Spool Edit" and looked like it would edit an existing one
+                    text: "New Spool (Wizard)",
+                    addClass: "btn-small" + (canAssign ? "" : " btn-primary"),
+                    onClick: function () {
+                        if (self.schemeUpgradeNeeded() == true) {
+                            self._notifySchemeUpgradeNeeded();
+                            return;
+                        }
+                        self.addSpoolWizard.showDialog(closeDialogHandler, rfidContext);
+                    }
+                },
+                {
+                    text: "New Spool (Form)",
+                    addClass: "btn-small",
+                    onClick: function () {
+                        if (self.schemeUpgradeNeeded() == true) {
+                            self._notifySchemeUpgradeNeeded();
+                            return;
+                        }
+                        self.spoolDialog.showDialog(
+                            null,
+                            closeDialogHandler,
+                            false,
+                            rfidContext
+                        );
+                    }
+                },
+                {
+                    text: "Cancel",
+                    addClass: "btn-small",
+                    onClick: function () {
+                        // nothing to do - the UID stays available in the settings
+                        // status and in the edit dialog's "Assign" buttons
+                    }
+                }
+            );
+
             SPOOLMANAGER_DIALOGS.notifyWithActions({
                 type: "notice",
                 title: "Unknown RFID tag",
@@ -2523,46 +2612,28 @@ $(function () {
                 // one popup per UID: several channels reporting in quick succession must
                 // not stack notifications
                 identity: "u1rfid-unknown-" + data.uid,
-                buttons: [
-                    {
-                        text: "Open Spool Wizard",
-                        addClass: "btn-small btn-primary",
-                        onClick: function () {
-                            if (self.schemeUpgradeNeeded() == true) {
-                                self._notifySchemeUpgradeNeeded();
-                                return;
-                            }
-                            self.addSpoolWizard.showDialog(
-                                closeDialogHandler,
-                                rfidContext
-                            );
-                        }
-                    },
-                    {
-                        text: "Open Spool Edit",
-                        addClass: "btn-small",
-                        onClick: function () {
-                            if (self.schemeUpgradeNeeded() == true) {
-                                self._notifySchemeUpgradeNeeded();
-                                return;
-                            }
-                            self.spoolDialog.showDialog(
-                                null,
-                                closeDialogHandler,
-                                false,
-                                rfidContext
-                            );
-                        }
-                    },
-                    {
-                        text: "Cancel",
-                        addClass: "btn-small",
-                        onClick: function () {
-                            // nothing to do - the UID stays available in the settings
-                            // status and in the edit dialog's "adopt UID" button
-                        }
-                    }
-                ]
+                buttons: buttons
+            });
+        };
+
+        // Opens the spool selected for `toolIndex` with the unknown tag already assigned in
+        // the form - the user only checks it and saves (nothing is stored before Save).
+        self._openSpoolToAssignU1Tag = function (toolIndex, selectedSpool, tagEntry) {
+            var sidebarEntry = self.selectedSpoolsForSidebar()[toolIndex];
+            var spoolItem = sidebarEntry != null ? sidebarEntry() : null;
+            if (
+                spoolItem == null ||
+                spoolItem.databaseId() !== selectedSpool.databaseId
+            ) {
+                // sidebar not in step yet - showDialog() loads the spool by id anyway
+                spoolItem = self.spoolDialog.createSpoolItemForTable({
+                    databaseId: selectedSpool.databaseId,
+                    displayName: selectedSpool.displayName
+                });
+            }
+            spoolItem.selectedForTool(toolIndex);
+            self.spoolDialog.showDialog(spoolItem, closeDialogHandler, true, null, {
+                assignU1Tag: tagEntry
             });
         };
 
