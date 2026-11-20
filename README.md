@@ -9,13 +9,13 @@
 [![Downloads][badge-downloads]](https://github.com/Ajimaru/OctoPrint-SpoolManagerExtended/releases)
 [![Made with Love][badge-love]](https://github.com/Ajimaru/OctoPrint-SpoolManagerExtended)
 
-[badge-license]: https://img.shields.io/github/license/Ajimaru/OctoPrint-SpoolManagerExtended?style=flat-square
-[badge-python]: https://img.shields.io/badge/python-3.11%2B-blue.svg?style=flat-square
-[badge-octoprint]: https://img.shields.io/badge/OctoPrint-2.0.0%2B-blue.svg?style=flat-square
-[badge-octoscale]: https://img.shields.io/badge/OctoScale-v0.0.6%2B-blue.svg?style=flat-square
-[badge-release]: https://img.shields.io/github/v/release/Ajimaru/OctoPrint-SpoolManagerExtended?style=flat-square
-[badge-prerelease]: https://img.shields.io/github/v/release/Ajimaru/OctoPrint-SpoolManagerExtended?include_prereleases&label=prerelease&style=flat-square
-[badge-downloads]: https://img.shields.io/github/downloads/Ajimaru/OctoPrint-SpoolManagerExtended/total.svg?style=flat-square
+[badge-license]: https://img.shields.io/github/license/Ajimaru/OctoPrint-SpoolManagerExtended?style=flat-square&logo=gnu&logoColor=white
+[badge-python]: https://img.shields.io/badge/python-3.11%2B-blue.svg?style=flat-square&logo=python&logoColor=white
+[badge-octoprint]: https://img.shields.io/badge/OctoPrint-2.0.0%2B-blue.svg?style=flat-square&logo=octoprint&logoColor=white
+[badge-octoscale]: https://img.shields.io/badge/OctoScale-v0.0.6%2B-blue.svg?style=flat-square&logo=espressif&logoColor=white
+[badge-release]: https://img.shields.io/github/v/release/Ajimaru/OctoPrint-SpoolManagerExtended?style=flat-square&logo=github&logoColor=white
+[badge-prerelease]: https://img.shields.io/github/v/release/Ajimaru/OctoPrint-SpoolManagerExtended?include_prereleases&label=prerelease&style=flat-square&logo=github&logoColor=white
+[badge-downloads]: https://img.shields.io/github/downloads/Ajimaru/OctoPrint-SpoolManagerExtended/total.svg?style=flat-square&logo=github&logoColor=white
 [badge-love]: https://img.shields.io/badge/made_with-%E2%9D%A4%EF%B8%8F-ff69b4?style=flat-square
 
 An OctoPrint plugin that manages spool information (filament type, color, remaining weight, RFID/QR tagging, and more) and stores it in a database (SQLite by default; MySQL/PostgreSQL supported experimentally).
