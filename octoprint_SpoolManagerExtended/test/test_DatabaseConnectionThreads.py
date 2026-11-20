@@ -21,6 +21,7 @@
 #                octoprint_SpoolManagerExtended/test/test_DatabaseConnectionThreads.py
 
 import copy
+import datetime
 import logging
 import os
 import shutil
@@ -239,6 +240,46 @@ class TestMetaInformations(_DatabaseManagerTestCase):
             str(result["localSchemeVersionFromDatabaseModel"]),
             str(result["schemeVersionFromPlugin"]),
         )
+
+
+class TestUpdatedTimestamp(_DatabaseManagerTestCase):
+    # SpoolModel.updated used to keep the creation time forever: it only had a column default
+    # and saveSpool() never touched it.
+    def _backdate(self, databaseId, when):
+        SpoolModel.update(created=when, updated=when).where(
+            SpoolModel.databaseId == databaseId
+        ).execute()
+
+    def test_saving_a_spool_refreshes_updated(self):
+        manager = self.databaseManager
+        databaseId = self._createSpool()
+        longAgo = datetime.datetime(2020, 1, 1, 12, 0)
+        self._backdate(databaseId, longAgo)
+        spoolModel = manager.loadSpool(databaseId)
+        spoolModel.displayName = "renamed"
+
+        before = datetime.datetime.now().replace(microsecond=0)
+        self.assertEqual(manager.saveSpool(spoolModel), databaseId)
+
+        stored = manager.loadSpool(databaseId)
+        self.assertGreaterEqual(stored.updated, before)
+        # created is the other half of the pair and must stay where it was
+        self.assertEqual(longAgo, stored.created)
+
+    def test_a_refused_save_leaves_updated_alone(self):
+        manager = self.databaseManager
+        databaseId = self._createSpool()
+        longAgo = datetime.datetime(2020, 1, 1, 12, 0)
+        self._backdate(databaseId, longAgo)
+        stale = manager.loadSpool(databaseId)
+        fresh = manager.loadSpool(databaseId)
+        self.assertEqual(manager.saveSpool(fresh), databaseId)
+        updatedByTheFirstSave = manager.loadSpool(databaseId).updated
+
+        stale.displayName = "second"
+        self.assertIsNone(manager.saveSpool(stale, suppressConflictMessage=True))
+
+        self.assertEqual(updatedByTheFirstSave, manager.loadSpool(databaseId).updated)
 
 
 class TestSaveOutcome(_DatabaseManagerTestCase):
