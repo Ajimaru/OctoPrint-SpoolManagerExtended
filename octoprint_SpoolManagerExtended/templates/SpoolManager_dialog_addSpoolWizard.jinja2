@@ -78,6 +78,17 @@
                         {{ _('Creating a new spool from it would give you a duplicate.') }}
                     </div>
                     <!-- /ko -->
+                    {# uidMatchedSpoolId: the spool id written on the tag found one spool, its UID key
+                       another - set only for OctoScale's own extended format, see readOctoScaleTag. #}
+                    <!-- ko if: octoScaleTagWriter.readTagResult().uidMatchedSpoolId != null -->
+                    <div class="text-warning" style="margin-top: 6px;">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        {{ _('Its tag key is also assigned to') }}
+                        <strong data-bind="text: octoScaleTagWriter.readTagResult().uidMatchedSpoolDisplayName"></strong>
+                        ({{ _('id') }} <span data-bind="text: octoScaleTagWriter.readTagResult().uidMatchedSpoolId"></span>).
+                        {{ _('The spool id written on the tag wins - check which spool this really is.') }}
+                    </div>
+                    <!-- /ko -->
                     <!-- /ko -->
                     <table class="table table-condensed" style="margin: 8px 0 0 0;">
                         <tbody data-bind="foreach: octoScaleTagWriter.readTagValues">

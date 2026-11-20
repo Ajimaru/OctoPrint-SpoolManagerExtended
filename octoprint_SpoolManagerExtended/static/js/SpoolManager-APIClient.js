@@ -651,7 +651,10 @@ function SpoolManagerExtendedAPIClient(pluginId, baseUrl) {
     // Reads a vendor tag (Bambu, Anycubic, Elegoo, ...) currently on the reader and returns
     // the spool fields it describes:
     //   {success, parsed, parserId, parserLabel, fields, uid, rfidTagKey,
-    //    matchedSpoolId, matchedSpoolDisplayName, diagnostics}
+    //    matchedSpoolId, matchedSpoolDisplayName, matchedBy ("tagId" | "uid" | null),
+    //    uidMatchedSpoolId, uidMatchedSpoolDisplayName, match, diagnostics}
+    // An OctoScale extended tag is matched by the spool id written on it first, its UID
+    // second; uidMatchedSpoolId is set only when the two point at different spools.
     // Nothing is stored - the answer is a suggestion the user confirms in a dialog.
     // Synchronous from the caller's point of view but slow (the device may need a couple of
     // seconds), so only ever call this on an explicit user action, never from a poll.
