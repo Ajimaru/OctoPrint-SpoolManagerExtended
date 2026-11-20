@@ -3276,6 +3276,12 @@ class SpoolmanagerPlugin(
             ),
         ]
 
+    def is_template_autoescaped(self):
+        # Without this OctoPrint wraps the templates in "autoesc false" and logs a warning on
+        # every start; OctoPrint 2.1 enforces autoescaping anyway. The templates output only
+        # _() strings (Markup under autoescape), macros, element ids and url_for() URLs.
+        return True
+
     ##~~ AssetPlugin mixin
     def get_assets(self):
         # Define your plugin's asset files to automatically include in the
