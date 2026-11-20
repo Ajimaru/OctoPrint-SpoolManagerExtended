@@ -60,11 +60,16 @@ deriveRfidTagKey = U1RfidManager.deriveRfidTagKey
 
 
 class FakeSettings(object):
-    def __init__(self, enabled=True):
+    def __init__(self, enabled=True, selectedSpoolIds=None):
         self._enabled = enabled
+        # per tool index, like settings' selectedSpoolsDatabaseIds
+        self._selectedSpoolIds = selectedSpoolIds or []
 
     def get_boolean(self, keys):
         return self._enabled
+
+    def get(self, keys):
+        return self._selectedSpoolIds
 
 
 class FakeConnectorPlugin(object):
@@ -90,22 +95,30 @@ class FakePrinter(object):
 
 
 class FakeSpoolModel(object):
-    def __init__(self, databaseId, displayName):
+    def __init__(self, databaseId, displayName, rfidTagKey=None):
         self.databaseId = databaseId
         self.displayName = displayName
+        self.rfidTagKey = rfidTagKey
 
 
 class FakeDatabaseManager(object):
     # Keyed by rfidTagKey (the last 4 hex chars of a 4-byte UID, the whole UID of a
     # 7/8-byte one), matching production's loadSpoolByRfidTagKey() - see
     # U1RfidManager.deriveRfidTagKey().
-    def __init__(self, spoolsByRfidTagKey=None):
+    def __init__(self, spoolsByRfidTagKey=None, spoolsById=None):
         self._spoolsByRfidTagKey = spoolsByRfidTagKey or {}
+        self._spoolsById = spoolsById or {}
         self.lookedUpRfidTagKeys = []
 
     def loadSpoolByRfidTagKey(self, rfidTagKey):
         self.lookedUpRfidTagKeys.append(rfidTagKey)
         return self._spoolsByRfidTagKey.get(rfidTagKey)
+
+    def loadSpool(self, databaseId):
+        spool = self._spoolsById.get(databaseId)
+        if isinstance(spool, Exception):
+            raise spool
+        return spool
 
 
 class FakePlugin(object):
@@ -116,11 +129,13 @@ class FakePlugin(object):
         connectorInstalled=True,
         connectionState=None,
         spoolsByRfidTagKey=None,
+        selectedSpoolIds=None,
+        spoolsById=None,
     ):
-        self._settings = FakeSettings(settingsEnabled)
+        self._settings = FakeSettings(settingsEnabled, selectedSpoolIds)
         self._plugin_manager = FakePluginManager(connectorEnabled, connectorInstalled)
         self._printer = FakePrinter(connectionState)
-        self._databaseManager = FakeDatabaseManager(spoolsByRfidTagKey)
+        self._databaseManager = FakeDatabaseManager(spoolsByRfidTagKey, spoolsById)
         self._plugin_version = "test"
         self.sentMessages = []
         self.selectSpoolForToolCalls = []
@@ -658,6 +673,73 @@ class TestHandleMessage(unittest.TestCase):
         manager._handleMessage({})
         self.assertEqual(plugin.selectSpoolForToolCalls, [])
         self.assertEqual(plugin.sentMessages, [])
+
+
+class TestUnknownTagOffersSelectedSpool(unittest.TestCase):
+    # An unknown tag in a channel whose tool already has a spool selected - typically the
+    # spool just picked by QR code or OctoScale, whose tag was never assigned. The popup
+    # offers to assign the tag to exactly that spool, so the push has to name it.
+
+    def _unknownTagPush(self, plugin):
+        pushed = [m for m in plugin.sentMessages if m["action"] == "u1RfidUnknownTag"]
+        self.assertEqual(len(pushed), 1)
+        return pushed[0]
+
+    def test_namesTheSpoolSelectedForTheChannelsTool(self):
+        manager, plugin = _makeManager(
+            selectedSpoolIds=[None, 23],
+            spoolsById={23: FakeSpoolModel(23, "Brown")},
+        )
+        manager._handleChannel(1, {"CARD_UID": [4, 168, 139, 86, 203, 42, 129]})
+
+        self.assertEqual(
+            self._unknownTagPush(plugin)["selectedSpool"],
+            {"databaseId": 23, "displayName": "Brown", "rfidTagKey": None},
+        )
+
+    def test_reportsAnAlreadyAssignedKeySoTheDialogCanWarn(self):
+        manager, plugin = _makeManager(
+            selectedSpoolIds=[None, 23],
+            spoolsById={23: FakeSpoolModel(23, "Brown", rfidTagKey="AABBCCDDEEFF00")},
+        )
+        manager._handleChannel(1, {"CARD_UID": [4, 168, 139, 86, 203, 42, 129]})
+
+        self.assertEqual(
+            self._unknownTagPush(plugin)["selectedSpool"]["rfidTagKey"],
+            "AABBCCDDEEFF00",
+        )
+
+    def test_noSpoolSelectedForThatTool(self):
+        manager, plugin = _makeManager(
+            selectedSpoolIds=[23, None],
+            spoolsById={23: FakeSpoolModel(23, "Brown")},
+        )
+        manager._handleChannel(1, {"CARD_UID": [1, 2, 3, 4]})
+
+        self.assertIsNone(self._unknownTagPush(plugin)["selectedSpool"])
+
+    def test_channelBeyondTheSelectedToolsList(self):
+        manager, plugin = _makeManager(selectedSpoolIds=[23])
+        manager._handleChannel(3, {"CARD_UID": [1, 2, 3, 4]})
+
+        self.assertIsNone(self._unknownTagPush(plugin)["selectedSpool"])
+
+    def test_selectedSpoolDeletedInTheMeantime(self):
+        manager, plugin = _makeManager(selectedSpoolIds=[None, 23], spoolsById={})
+        manager._handleChannel(1, {"CARD_UID": [1, 2, 3, 4]})
+
+        self.assertIsNone(self._unknownTagPush(plugin)["selectedSpool"])
+
+    def test_databaseErrorStillReportsTheTag(self):
+        manager, plugin = _makeManager(
+            selectedSpoolIds=[None, 23],
+            spoolsById={23: RuntimeError("database gone")},
+        )
+        manager._handleChannel(1, {"CARD_UID": [1, 2, 3, 4]})
+
+        push = self._unknownTagPush(plugin)
+        self.assertEqual(push["uid"], "01020304")
+        self.assertIsNone(push["selectedSpool"])
 
 
 if __name__ == "__main__":
