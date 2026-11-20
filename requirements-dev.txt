@@ -7,17 +7,17 @@
 #   brew install python@3.13
 #   /opt/homebrew/opt/python@3.13/bin/python3.13 -m venv .venv
 #   .venv/bin/pip install --upgrade pip
-#   .venv/bin/pip install --pre --no-build-isolation -r requirements-dev.txt
+#   .venv/bin/pip install --no-build-isolation -r requirements-dev.txt
 #   .venv/bin/pre-commit install
 #
-# `--pre` is required because OctoPrint 2.0.0 is only available as a release candidate.
 # `--no-build-isolation` is required for the editable install below: setup.py imports
 # octoprint_setuptools, which pip's isolated build environment cannot see.
 #
 # Frontend tooling (eslint/stylelint/prettier) lives in package.json - run `npm install`.
 
 # OctoPrint 1.x is not supported - see __plugin_check__ in the plugin module.
-OctoPrint==2.0.0rc5
+# 2.0.0rc1-rc6 carry a stored XSS (GHSA-p623-mxf7-qxjm) - never pin below 2.0.0rc7.
+OctoPrint==2.0.1
 
 # the plugin itself, editable, including its runtime dependencies from setup.py
 --editable .

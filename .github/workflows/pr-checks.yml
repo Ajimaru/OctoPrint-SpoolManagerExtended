@@ -53,16 +53,15 @@ jobs:
         # build env cannot see OctoPrint) that import only succeeds once OctoPrint is
         # already installed in the same environment. Doing it in a single pip call fails
         # with "Could not import OctoPrint's setuptools" - verified locally on 3.11.
-        # --pre is required throughout: OctoPrint 2.0.0 only exists as a release candidate.
         #
         # The OctoPrint pin is read back out of requirements-dev.txt rather than repeated
-        # here, so bumping the rc in that file stays the only edit needed.
+        # here, so bumping the version in that file stays the only edit needed.
         run: |
           python -m pip install --upgrade pip setuptools wheel
           OCTOPRINT_PIN="$(grep -E '^OctoPrint==' requirements-dev.txt)"
           echo "Installing $OCTOPRINT_PIN first (see comment above)"
-          pip install --pre "$OCTOPRINT_PIN"
-          pip install --pre --no-build-isolation -r requirements-dev.txt
+          pip install "$OCTOPRINT_PIN"
+          pip install --no-build-isolation -r requirements-dev.txt
 
       - name: Run tests
         run: python -m pytest octoprint_SpoolManagerExtended/test -q
