@@ -2114,6 +2114,32 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # its tag recognized as its own (see the "unchanged" teach-in branch).
         return self._loadOwnWriteSpoolForTagUid(nfcData.get("uid")) is None
 
+    def _loadSpoolForTagDatabaseId(self, tagDatabaseId):
+        """
+        The spool an OctoScale extended tag names by its own databaseId, or None.
+
+        The id is only meaningful in the database the tag was written from; one that names
+        no spool here (deleted since, or written from another database) simply yields None
+        and leaves the UID as the only way to a spool. Templates are skipped for the same
+        reason loadSpoolByRfidTagKey() skips them: a tag belongs to a physical spool.
+        """
+        if isinstance(tagDatabaseId, bool) or not isinstance(tagDatabaseId, int):
+            return None
+        if tagDatabaseId < 1:
+            return None
+        try:
+            spoolModel = self._databaseManager.loadSpool(tagDatabaseId)
+        except Exception:
+            self._logger.exception(
+                "Could not look up the spool id '"
+                + str(tagDatabaseId)
+                + "' written on the tag"
+            )
+            return None
+        if spoolModel is None or spoolModel.isTemplate is True:
+            return None
+        return spoolModel
+
     def _loadOwnWriteSpoolForTagUid(self, uid):
         """
         The spool this plugin wrote the tag with this UID for (rfidTagKeySource "ownWrite"),
@@ -2794,22 +2820,46 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         # the same "this tag already belongs to this spool" fact the write flow surfaces,
         # never something applyToSpoolItem should write back onto a spool.
         octoscaleExtendedFields = getattr(filament, "octoscaleExtendedFields", None)
+        tagDatabaseId = None
         if (
             octoscaleExtendedFields
             and octoscaleExtendedFields.get("databaseId") is not None
         ):
-            diagnostics["tagDatabaseId"] = octoscaleExtendedFields["databaseId"]
+            tagDatabaseId = octoscaleExtendedFields["databaseId"]
+            diagnostics["tagDatabaseId"] = tagDatabaseId
+
+        # The spool id written on the tag wins, the UID is the fallback - the order the
+        # OctoScale firmware itself uses when it weighs a spool (flowOnTagPresent). Only
+        # OctoScale's own extended format carries such an id, and its parsers accept it
+        # only behind a verified magic and CRC (see common/UnverifiableSpoolId.py for why
+        # that makes the id trustworthy). Before this, the id was read but never used: a
+        # tag written for one spool was attributed to whichever spool its UID key pointed
+        # at, or to none at all when no key had been taught in.
+        spoolByTagId = self._loadSpoolForTagDatabaseId(tagDatabaseId)
 
         # A vendor tag carries no SpoolManager id, so an already-known spool can only be
         # found by the tag's own UID - the same path OpenPrintTag and the Snapmaker U1 use.
-        matchedSpool = None
+        spoolByUid = None
         if rfidTagKey:
             try:
-                matchedSpool = self._databaseManager.loadSpoolByRfidTagKey(rfidTagKey)
+                spoolByUid = self._databaseManager.loadSpoolByRfidTagKey(rfidTagKey)
             except Exception:
                 self._logger.exception(
                     "Could not look up a spool for rfidTagKey '" + str(rfidTagKey) + "'"
                 )
+
+        matchedSpool = spoolByTagId if spoolByTagId is not None else spoolByUid
+        # The UID key pointing at a different spool than the id on the tag: the tag was
+        # written for one spool after its UID had been taught in to another. Reported
+        # rather than resolved - which of the two the physical spool is, only the user
+        # can tell.
+        conflictingUidSpool = (
+            spoolByUid
+            if spoolByTagId is not None
+            and spoolByUid is not None
+            and spoolByUid.databaseId != spoolByTagId.databaseId
+            else None
+        )
 
         parserDescriptor = FilamentTagParsers.getParser(filament.source_processor)
 
@@ -2860,18 +2910,39 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
                 "matchedSpoolDisplayName": (
                     matchedSpool.displayName if matchedSpool is not None else None
                 ),
+                # "tagId" (the spool id written on the tag), "uid" (the tag's UID key) or
+                # null when no spool matched.
+                "matchedBy": (
+                    "tagId"
+                    if spoolByTagId is not None
+                    else ("uid" if spoolByUid is not None else None)
+                ),
+                # Set only when the UID key points at a different spool than the id on the
+                # tag - see conflictingUidSpool above.
+                "uidMatchedSpoolId": (
+                    conflictingUidSpool.databaseId
+                    if conflictingUidSpool is not None
+                    else None
+                ),
+                "uidMatchedSpoolDisplayName": (
+                    conflictingUidSpool.displayName
+                    if conflictingUidSpool is not None
+                    else None
+                ),
                 # Whether matchedSpool is really this tag's spool, or only the spool whose
                 # key it happens to share - see common/RfidKeyCollision.py. The parsed
                 # format is the evidence here: a TigerTag or OpenPrintTag carries no
                 # SpoolManager id, so any spool found for it was found by its UID key alone.
-                # Null when no spool matched.
+                # Null when no spool matched, and when the id on the tag found it: that is
+                # an exact match on a primary key and needs no caveat, the same way a `code`
+                # hit does on /spool/byCode.
                 "match": (
                     self._describeRfidMatch(
                         rfidTagKey,
                         tagFormat=filament.source_processor,
                         matchedSpool=matchedSpool,
                     )
-                    if matchedSpool is not None
+                    if spoolByTagId is None and matchedSpool is not None
                     else None
                 ),
                 "diagnostics": diagnostics,
