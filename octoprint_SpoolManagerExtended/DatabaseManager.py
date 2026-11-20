@@ -25,7 +25,11 @@ from peewee import (
 from playhouse.shortcuts import ReconnectMixin, model_to_dict
 
 from octoprint_SpoolManagerExtended.api import Transformer
-from octoprint_SpoolManagerExtended.common import ErrorMessages, StringUtils
+from octoprint_SpoolManagerExtended.common import (
+    ErrorMessages,
+    RfidKeyCollision,
+    StringUtils,
+)
 from octoprint_SpoolManagerExtended.models.PluginMetaDataModel import (
     PluginMetaDataModel,
 )
@@ -2490,6 +2494,62 @@ class DatabaseManager(object):
 
         return self._handleReusableConnection(
             databaseCallMethode, withReusedConnection, "loadSpoolByRfidTagKey"
+        )
+
+    def loadOwnWriteSpoolByRfidTagKey(self, rfidTagKey, withReusedConnection=False):
+        # The spool whose rfidTagKey the plugin taught in after writing that very tag itself
+        # (rfidTagKeySource "ownWrite", see common/RfidKeyCollision.py), or None. Unlike
+        # loadSpoolByRfidTagKey() it only considers such spools: when a typed-in key shares
+        # the value, the newest-match-wins pick there could land on the wrong one and hide
+        # the spool the tag was actually written for.
+        def databaseCallMethode():
+            if rfidTagKey is None or len(str(rfidTagKey).strip()) == 0:
+                return None
+            return (
+                SpoolModel.select()
+                .where(
+                    (SpoolModel.rfidTagKey == str(rfidTagKey).strip())
+                    & (
+                        SpoolModel.rfidTagKeySource
+                        == RfidKeyCollision.RFID_TAG_KEY_SOURCE_OWN_WRITE
+                    )
+                    & (
+                        (SpoolModel.isTemplate == False)
+                        | (SpoolModel.isTemplate == None)
+                    )
+                )
+                .order_by(SpoolModel.databaseId.desc())
+                .first()
+            )
+
+        return self._handleReusableConnection(
+            databaseCallMethode, withReusedConnection, "loadOwnWriteSpoolByRfidTagKey"
+        )
+
+    def markRfidTagKeySource(
+        self, databaseId, rfidTagKey, rfidTagKeySource, withReusedConnection=False
+    ):
+        # Records where a spool's rfidTagKey came from (SpoolModel.rfidTagKeySource) without
+        # going through saveSpool(): the source is bookkeeping, not spool content, so it
+        # neither bumps the version nor counts as a concurrent edit. An edit dialog open on
+        # the same spool still saves without a conflict, and that save keeps the source as
+        # long as it leaves the key alone (SpoolManagerAPI._updateSpoolModelFromJSONData).
+        #
+        # Matches on the key as well: a key changed in the meantime is no longer the one the
+        # source describes. Returns the number of rows changed (0 or 1), None on a database
+        # error.
+        def databaseCallMethode():
+            return (
+                SpoolModel.update(rfidTagKeySource=rfidTagKeySource)
+                .where(
+                    (SpoolModel.databaseId == databaseId)
+                    & (SpoolModel.rfidTagKey == rfidTagKey)
+                )
+                .execute()
+            )
+
+        return self._handleReusableConnection(
+            databaseCallMethode, withReusedConnection, "markRfidTagKeySource"
         )
 
     def countSpoolsByRfidTagKey(self, rfidTagKey, withReusedConnection=False):

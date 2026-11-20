@@ -2078,6 +2078,19 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
             spoolExistsInDatabase=spoolExistsInDatabase,
         )
 
+        # A TigerTag/OpenPrintTag this plugin wrote itself (rfidTagKeySource "ownWrite") is
+        # not a vendor tag: the frontend skips the vendor-tag protections for it and asks the
+        # ordinary "belongs to another spool" question instead, which these fields answer -
+        # the tag carries no SpoolManager id of its own. Looked up only for such tags, so the
+        # frequent NFC poll costs no database query for any other tag.
+        result["ownWrite"] = False
+        if result["present"] is True and result["idSource"] == "extendedNoId":
+            ownWriteSpool = self._loadOwnWriteSpoolForTagUid(result["uid"])
+            if ownWriteSpool is not None:
+                result["ownWrite"] = True
+                result["ownWriteSpoolId"] = ownWriteSpool.databaseId
+                result["ownWriteSpoolDisplayName"] = ownWriteSpool.displayName
+
         return flask.jsonify(result)
 
     def _tagOnReaderHasForeignExtendedPayload(self):
@@ -2093,7 +2106,30 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         nfcData = self._probeTagOnReader()
         if nfcData is None:
             return False
-        return nfcData.get("idSource") == "extendedNoId"
+        if nfcData.get("idSource") != "extendedNoId":
+            return False
+        # Foreign in format, but written by this plugin for one of its spools: there is no
+        # manufacturer data on it for the vendor-tag setting to protect. Re-writing such a tag
+        # is the ordinary update case - and the only way a spool taught in before V14 gets
+        # its tag recognized as its own (see the "unchanged" teach-in branch).
+        return self._loadOwnWriteSpoolForTagUid(nfcData.get("uid")) is None
+
+    def _loadOwnWriteSpoolForTagUid(self, uid):
+        """
+        The spool this plugin wrote the tag with this UID for (rfidTagKeySource "ownWrite"),
+        or None.
+
+        Any doubt answers None, which keeps a TigerTag/OpenPrintTag treated as foreign: an
+        implausible (truncated) UID derives a key the tag never presents, and a failed
+        lookup must not lift a protection.
+        """
+        normalizedUid = normalizeCardUid(uid)
+        if not normalizedUid or not isPlausibleTagUid(normalizedUid):
+            return None
+        rfidTagKey = deriveRfidTagKey(normalizedUid)
+        if not rfidTagKey:
+            return None
+        return self._databaseManager.loadOwnWriteSpoolByRfidTagKey(rfidTagKey)
 
     def _probeTagOnReader(self):
         """
@@ -2928,6 +2964,29 @@ class SpoolManagerAPI(octoprint.plugin.BlueprintPlugin):
         )
 
         if not shouldSave:
+            if (
+                reason == RfidTeachIn.REASON_UNCHANGED
+                and not RfidKeyCollision.isOwnWrite(spoolModel.rfidTagKeySource)
+            ):
+                # The tag just written presents the key this spool already carries - typed
+                # in, taught from a read, or taught before rfidTagKeySource existed. The key
+                # stays as it is, but the plugin has now written that tag for this spool, so
+                # reading it back is no longer a foreign tag that merely shares the key.
+                # Without this, every spool taught in before V14 stayed flagged for good:
+                # re-writing its tag always ended here, never in the save below.
+                markedRows = self._databaseManager.markRfidTagKeySource(
+                    spoolModel.databaseId,
+                    newKey,
+                    RfidKeyCollision.RFID_TAG_KEY_SOURCE_OWN_WRITE,
+                )
+                if markedRows:
+                    self._logger.info(
+                        "OpenPrintTag rfidTagKey teach-in: spool "
+                        + str(databaseId)
+                        + " keeps rfidTagKey '"
+                        + str(newKey)
+                        + "', now marked as written by the plugin"
+                    )
             self._logger.info(
                 "OpenPrintTag rfidTagKey teach-in skipped for spool "
                 + str(databaseId)

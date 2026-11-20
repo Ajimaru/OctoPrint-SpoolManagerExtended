@@ -579,6 +579,13 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
     // Raw idSource from the firmware (see the endpoint comment in SpoolManagerAPI.py).
     // "" for older firmware that does not report it.
     self.tagIdSource = ko.observable("");
+    // Set by the backend (/octoscale/nfc) when the tag on the reader is a TigerTag or
+    // OpenPrintTag this plugin wrote itself (SpoolModel.rfidTagKeySource "ownWrite"). Such a
+    // tag carries no SpoolManager id, so ownWriteSpoolId/ownWriteSpoolDisplayName name the
+    // spool it was written for instead. All three stay at their defaults on older backends.
+    self.tagIsOwnWrite = ko.observable(false);
+    self.ownWriteSpoolId = ko.observable(null);
+    self.ownWriteSpoolDisplayName = ko.observable(null);
     self.tagValues = ko.observable(null); // raw "extended" payload of the tag currently on the reader, if any
     self.errorMessage = ko.observable(null);
     self.isWriting = ko.observable(false);
@@ -703,8 +710,21 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
 
     // A tag that already carries a *different* spool id would be silently re-labelled by a
     // write, so the user has to confirm first.
-    self.needsOverwriteConfirmation = ko.pureComputed(function () {
+    // The spool the tag on the reader belongs to: the id written on it, or - for a
+    // TigerTag/OpenPrintTag this plugin wrote, which carries none - the spool it was written
+    // for. Without the fallback, exempting such tags from the vendor-tag protections (see
+    // hasForeignExtendedPayload) would let one spool's tag be overwritten for another with
+    // no question asked at all.
+    self.tagOwnerSpoolId = ko.pureComputed(function () {
         var existingId = self.tagSpoolId();
+        if (existingId != null) {
+            return existingId;
+        }
+        return self.tagIsOwnWrite() === true ? self.ownWriteSpoolId() : null;
+    });
+
+    self.needsOverwriteConfirmation = ko.pureComputed(function () {
+        var existingId = self.tagOwnerSpoolId();
         if (existingId == null) {
             return false;
         }
@@ -732,8 +752,16 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
     // Extended tags as well, and occupancy is not computed at all once a tag is recognized
     // as extended (the firmware's "!extendedCacheHasExtended" guard), so it arrives as "".
     // Measured on a real TigerTag: hasExtendedData true, occupancy "", tagSpoolId null.
+    //
+    // Except when this plugin wrote that payload itself (tagIsOwnWrite): then there is no
+    // manufacturer data on the tag to protect, and re-writing it is the ordinary update. The
+    // backend applies the same exemption to its own vendor-tag guard in writeOctoScaleTag.
     self.hasForeignExtendedPayload = ko.pureComputed(function () {
-        return self.tagPresent() == true && self.tagIdSource() === "extendedNoId";
+        return (
+            self.tagPresent() == true &&
+            self.tagIdSource() === "extendedNoId" &&
+            self.tagIsOwnWrite() !== true
+        );
     });
 
     self.isPossiblyForeignTag = ko.pureComputed(function () {
@@ -949,11 +977,14 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
     });
 
     self.overwriteWarningText = ko.pureComputed(function () {
-        var existingId = self.tagSpoolId();
+        var existingId = self.tagOwnerSpoolId();
         if (existingId == null) {
             return "";
         }
-        var displayName = self.tagSpoolDisplayName();
+        var displayName =
+            self.tagSpoolId() != null
+                ? self.tagSpoolDisplayName()
+                : self.ownWriteSpoolDisplayName();
         if (displayName) {
             return (
                 "This tag already belongs to '" +
@@ -962,6 +993,10 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
                 existingId +
                 ")."
             );
+        }
+        if (self.tagSpoolId() == null) {
+            // only reachable through ownWriteSpoolId: the spool exists, it just has no name
+            return "This tag already belongs to spool id " + existingId + ".";
         }
         if (self.spoolIdIsUnverifiable()) {
             // Deliberately not phrased as a fact about the tag's owner. The number was read out
@@ -1102,7 +1137,7 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
             }
             if (responseData && responseData.success === true) {
                 consecutiveFailures = 0;
-                var previousSpoolId = self.tagSpoolId();
+                var previousSpoolId = self.tagOwnerSpoolId();
                 var previousUid = self.tagUid();
                 self.tagPresent(responseData.present === true);
                 self.tagUid(responseData.present === true ? responseData.uid : null);
@@ -1118,6 +1153,13 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
                 );
                 self.tagIdSource(
                     responseData.present === true ? responseData.idSource || "" : ""
+                );
+                var isOwnWrite =
+                    responseData.present === true && responseData.ownWrite === true;
+                self.tagIsOwnWrite(isOwnWrite);
+                self.ownWriteSpoolId(isOwnWrite ? responseData.ownWriteSpoolId : null);
+                self.ownWriteSpoolDisplayName(
+                    isOwnWrite ? responseData.ownWriteSpoolDisplayName || null : null
                 );
                 self.tagType(responseData.present === true ? responseData.tagType : null);
                 self.tagTypeName(
@@ -1140,7 +1182,7 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
                     responseData.present === true ? responseData.occupancy || "" : ""
                 );
                 // a different tag on the reader invalidates a confirmation given for the previous one
-                if (previousSpoolId != self.tagSpoolId()) {
+                if (previousSpoolId != self.tagOwnerSpoolId()) {
                     self.overwriteConfirmed(false);
                 }
                 // The foreign-tag confirmation has to key off the UID instead: a
@@ -1233,6 +1275,9 @@ function SpoolManagerOctoScaleTagWriter(apiClient, pluginSettings) {
         self.hasExtendedData(false);
         self.spoolIdIsUnverifiable(false);
         self.tagIdSource("");
+        self.tagIsOwnWrite(false);
+        self.ownWriteSpoolId(null);
+        self.ownWriteSpoolDisplayName(null);
         self.tagValues(null);
         self.targetSpoolItem(null);
         self.overwriteConfirmed(false);
