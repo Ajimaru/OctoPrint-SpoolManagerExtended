@@ -2842,6 +2842,10 @@ class DatabaseManager(object):
                     # 	#  remove template flag from last templateSpool
                     # 	SpoolModel.update({SpoolModel.isTemplate: False}).where(SpoolModel.isTemplate == True).execute()
 
+                    # "updated" only ever had its column default, so it kept the creation time
+                    # through every later save. Set here, after the version check, so a refused
+                    # save never reaches it - and on the one path every spool change takes.
+                    spoolModel.updated = datetime.datetime.now()
                     spoolModel.save()
                     databaseId = spoolModel.get_id()
                     # do expicit commit
