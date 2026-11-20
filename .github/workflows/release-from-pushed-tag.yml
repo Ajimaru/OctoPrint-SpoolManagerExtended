@@ -97,9 +97,17 @@ jobs:
           fi
 
       - name: Install build tools
+        # setup.py imports octoprint_setuptools at import time, and that module ships
+        # inside the OctoPrint distribution. pip's isolated build environment only
+        # has setuptools, so `python -m build` failed there ("Could not import
+        # OctoPrint's setuptools", 2.0.0a3 tag). Install OctoPrint at the version
+        # requirements-dev.txt pins - one place for the pin - and build without
+        # isolation, the same way pr-checks.yml installs the plugin.
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
-          pip install build
+          OCTOPRINT_PIN=$(grep -E '^OctoPrint==' requirements-dev.txt)
+          pip install build "$OCTOPRINT_PIN"
 
       - name: Build wheel and sdist
         # Replaces the former "zip -r main.zip * -i '\octoprint_*' ...". That
@@ -109,7 +117,7 @@ jobs:
         # precisely because the minified bundles under static/ only carry the
         # copyright header. Building through MANIFEST.in fixes that by
         # construction, and the archive now matches what pip actually installs.
-        run: python -m build
+        run: python -m build --no-isolation
 
       - name: Stage release artifacts
         shell: bash
