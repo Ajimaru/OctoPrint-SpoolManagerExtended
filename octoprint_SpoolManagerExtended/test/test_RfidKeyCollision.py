@@ -34,6 +34,12 @@ class TestIsForeignTagFormat(unittest.TestCase):
     def test_openprinttag_is_foreign(self):
         self.assertTrue(RfidKeyCollision.isForeignTagFormat("nfcvOpenPrintTag"))
 
+    def test_the_parser_ids_of_the_read_path_are_foreign_too(self):
+        # /octoscale/readTag reports the parser's id, not the TagFormats id. Until both were
+        # listed the read path never matched and no tag was ever flagged.
+        for parserId in ("tigerTag", "openPrintTag"):
+            self.assertTrue(RfidKeyCollision.isForeignTagFormat(parserId), parserId)
+
     def test_our_own_extended_format_is_not_foreign(self):
         # Carries a databaseId, so a spool found for it was identified, not guessed.
         self.assertFalse(RfidKeyCollision.isForeignTagFormat("octoscaleExtended"))
@@ -122,6 +128,33 @@ class TestDescribeMatch(unittest.TestCase):
             matchingSpoolCount=1, tagFormat="octoscaleExtended", idSource="extended"
         )
         self.assertEqual({"foreignTag": False, "ambiguous": False}, result)
+
+    def test_a_foreign_format_the_plugin_wrote_itself_is_a_legitimate_match(self):
+        # The plugin writes TigerTag and OpenPrintTag too and teaches their UID key in; the
+        # spool found for such a tag is the spool the tag was written for.
+        for evidence in ({"tagFormat": "tigerTag"}, {"idSource": "extendedNoId"}):
+            result = RfidKeyCollision.describeMatch(
+                matchingSpoolCount=1,
+                matchedSpoolKeySource=RfidKeyCollision.RFID_TAG_KEY_SOURCE_OWN_WRITE,
+                **evidence
+            )
+            self.assertEqual({"foreignTag": False, "ambiguous": False}, result)
+
+    def test_an_own_write_does_not_hide_a_second_spool_on_the_key(self):
+        result = RfidKeyCollision.describeMatch(
+            matchingSpoolCount=2,
+            tagFormat="tigerTag",
+            matchedSpoolKeySource=RfidKeyCollision.RFID_TAG_KEY_SOURCE_OWN_WRITE,
+        )
+        self.assertEqual({"foreignTag": False, "ambiguous": True}, result)
+
+    def test_only_an_own_write_lifts_the_flag(self):
+        # a key typed in, taught from a read, or older than the column says nothing
+        for source in (None, "", "read", "ownwrite"):
+            result = RfidKeyCollision.describeMatch(
+                matchingSpoolCount=1, tagFormat="tigerTag", matchedSpoolKeySource=source
+            )
+            self.assertTrue(result["foreignTag"], source)
 
     def test_both_flags_are_always_present(self):
         # The frontend reads the keys directly; a missing key would read as undefined and

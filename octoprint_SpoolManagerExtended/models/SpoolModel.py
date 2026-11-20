@@ -63,6 +63,11 @@ class SpoolModel(BaseModel):
     # was observed to be shared by many different tags. A spool taught in before that
     # change still carries a 4-character key such a tag no longer presents.
     rfidTagKey = CharField(null=True, index=True)
+    # Where rfidTagKey came from, when that matters: "ownWrite" for a key the plugin taught
+    # in after writing a TigerTag/OpenPrintTag for this spool itself (see
+    # common/RfidKeyCollision.py). NULL for a typed key, one taught from a read, or one
+    # older than this column. Cleared whenever rfidTagKey is changed by hand.
+    rfidTagKeySource = CharField(null=True)  # since V14
 
     firstUse = DateTimeField(null=True)
     lastUse = DateTimeField(null=True)
