@@ -551,6 +551,10 @@ function octoScaleFormatDiffValue(value, unit) {
     if (octoScaleIsEmptyDiffValue(value)) {
         return "(not set)";
     }
+    // Drop floating-point noise from computed values (e.g. total - used weight).
+    if (typeof value === "number" && isFinite(value)) {
+        value = parseFloat(value.toPrecision(12));
+    }
     if (unit && (typeof value === "number" || !isNaN(parseFloat(value)))) {
         return value + " " + unit;
     }
