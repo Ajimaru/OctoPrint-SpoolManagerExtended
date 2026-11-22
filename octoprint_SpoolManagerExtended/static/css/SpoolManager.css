@@ -560,6 +560,14 @@ input.spm-number-invalid {
     border-color: #74b8ff;
 }
 
+/* ------------------------------------------------------------------ Changed-value rows
+   Bootstrap's `tr.info` background is a fixed light blue that dark themes leave in place.
+   A translucent tint keeps the theme's text colour readable on light and dark alike. */
+#dialog_read_tag_import .table tbody tr.info > td,
+#spmx-dialog_legacy_settings .table tbody tr.info > td {
+    background-color: rgb(58 135 173 / 25%);
+}
+
 /* ------------------------------------------------------------------------ Color picker
    Styling for the component in common/colorPicker.js, which replaced the pick-a-color
    widget (and its 30 KB of Bootstrap-2 stylesheet).
