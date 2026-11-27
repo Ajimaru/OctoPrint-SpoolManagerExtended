@@ -190,6 +190,10 @@ jobs:
 
           cp -f "$zip_versioned" "$zip_latest"
 
+          # Installed versions download main.zip through the pip URL of their
+          # software update config, so every release has to carry it.
+          cp -f "$zip_versioned" release_zips/main.zip
+
       - name: Validate staged artifacts
         shell: bash
         run: |
@@ -214,6 +218,11 @@ jobs:
           if ! unzip -l "release_zips/OctoPrint-SpoolManagerExtended-${version}.zip" \
                | grep -q 'octoprint_SpoolManagerExtended/__init__.py'; then
             echo "::error::Source zip does not contain octoprint_SpoolManagerExtended/__init__.py"
+            exit 1
+          fi
+
+          if [ ! -s release_zips/main.zip ]; then
+            echo "::error::main.zip is missing; the software update downloads it"
             exit 1
           fi
 
