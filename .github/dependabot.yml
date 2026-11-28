@@ -30,12 +30,7 @@ updates:
           - "*"
         update-types:
           - minor
-    # Patch bumps are ignored to keep PR volume low; security fixes still
-    # arrive through Dependabot security alerts, which ignore this filter.
-    ignore:
-      - dependency-name: "*"
-        update-types:
-          - version-update:semver-patch
+    # Patch bumps are not filtered, so exact dev pins follow patch releases.
 
   # Everything below is a lint-only toolchain: package.json declares no runtime
   # `dependencies` at all, and node_modules reaches neither the sdist nor the
@@ -58,7 +53,9 @@ updates:
           - "*"
         update-types:
           - minor
-    # Same rationale as the pip block above. Note the cost, though: both
+    # Patch bumps are ignored to keep PR volume low; security fixes still
+    # arrive through Dependabot security alerts, which ignore this filter.
+    # Note the cost, though: both
     # advisories this repository has seen on the npm side were patch bumps
     # (source-map-js 1.2.1 -> 1.2.2, brace-expansion 5.0.9 -> 5.0.12), so they
     # were only ever going to surface as security alerts, never as routine

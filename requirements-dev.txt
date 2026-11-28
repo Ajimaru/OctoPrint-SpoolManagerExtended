@@ -17,7 +17,7 @@
 
 # OctoPrint 1.x is not supported - see __plugin_check__ in the plugin module.
 # 2.0.0rc1-rc6 carry a stored XSS (GHSA-p623-mxf7-qxjm) - never pin below 2.0.0rc7.
-OctoPrint==2.0.1
+OctoPrint==2.0.2
 
 # the plugin itself, editable, including its runtime dependencies from setup.py
 --editable .
